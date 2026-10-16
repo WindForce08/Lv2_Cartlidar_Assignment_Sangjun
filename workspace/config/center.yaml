@@ -1,0 +1,45 @@
+# 최적화 전 코드
+center_node:
+  ros__parameters:
+
+    # Motor range
+    yaw_min: 0.0
+    yaw_max: 4095.0
+
+    pitch_min: 0.0
+    pitch_max: 4095.0
+
+    # Control parameters
+    max_delta_tick_: 100.0
+    deadband: 0.03
+
+    yaw_kp: 100.0
+    pitch_kp: 100.0
+
+    # Tracking state (IDLE / TRACKING / LOST)
+    input_timeout_sec: 0.5       # 마지막 /target 수신 후 이 시간 동안 없으면 LOST(TIMEOUT)
+    resume_frames: 3             # IDLE·LOST → TRACKING 에 필요한 연속 검출 프레임 수
+    state_check_period_sec: 0.05 # 무수신 감지 주기드
+
+# 최적화 후 에러난 코드
+# center_node:
+#   ros__parameters:
+
+#     # Motor range
+#     yaw_min: 698.0
+#     yaw_max: 3502.0
+
+#     pitch_min: 1933.0
+#     pitch_max: 2811.0
+
+#     # Control parameters
+#     max_delta_tick_: 100
+#     deadband: 0.03
+
+#     yaw_kp: 100.0
+#     pitch_kp: 100.0
+
+#     # Tracking state (IDLE / TRACKING / LOST)
+#     input_timeout_sec: 0.5       # 마지막 /target 수신 후 이 시간 동안 없으면 LOST(TIMEOUT)
+#     resume_frames: 3             # IDLE·LOST → TRACKING 에 필요한 연속 검출 프레임 수
+#     state_check_period_sec: 0.05 # 무수신 감지 주기드

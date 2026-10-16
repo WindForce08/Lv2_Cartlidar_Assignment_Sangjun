@@ -1,0 +1,14 @@
+# 인지(검출) 설정 — perception_node 읽음 (perception::load_config)
+# HSV 값 — 실습 환경에서 test 완료
+
+detector:
+  hsv_ranges:
+    - lower: [98, 190, 25]
+      upper: [118, 255, 230]
+  min_area_px: 300.0       # 이보다 작은 컨투어는 잡음으로 제외
+  blur_ksize: 5            # 0 = 블러 끔, 홀수
+  morph_kernel: 5          # open·close 에 쓰는 타원 커널 크기(px), 클수록 큰 잡음·구멍까지 정리
+  bbox_style: rotated      # 목표 중심 = bbox 중심, axis(boundingRect) | rotated(minAreaRect, 기울어진 블록)
+  resize_width: null       # null = D435 color 해상도 그대로 (예: 640x480), 값이 있으면 폭 기준·높이는 비율 유지
+  max_distance_m: 1.5      # 이보다 먼 후보 제외 (depth 필요), null = depth 미사용
+  min_fill_ratio: 0.5      # 채움률(컨투어 면적 / 회전 bbox 면적)이 이보다 낮으면 제외, null = 끔

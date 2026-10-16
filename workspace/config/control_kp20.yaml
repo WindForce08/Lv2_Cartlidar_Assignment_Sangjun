@@ -1,0 +1,24 @@
+# Kp 시험 설정 (세션 3) — Kp 외 값은 두 파일이 동일
+# Kp 단위: tick / 프레임 / 정규화 오차 (center 는 dt 없이 /target 수신마다 계산)
+# 사용: cp control_kp20.yaml center.yaml 후 실행, center 시작 로그의 Kp 값 확인
+center_node:
+  ros__parameters:
+
+    # Motor range [tick] (펌웨어가 안전 범위 yaw 698~3502, pitch 2230~3033 으로 한 번 더 자름)
+    yaw_min: 0.0
+    yaw_max: 4095.0
+
+    pitch_min: 0.0
+    pitch_max: 4095.0
+
+    # Control parameters
+    max_delta_tick_: 100.0        # 한 번 이동 최대 [tick] (코드 파라미터 이름과 일치, 실수형)
+    deadband: 0.03
+
+    yaw_kp: 20.0
+    pitch_kp: 20.0
+
+    # Tracking state (IDLE / TRACKING / LOST)
+    input_timeout_sec: 0.5       # 마지막 /target 수신 후 이 시간 동안 없으면 LOST(TIMEOUT)
+    resume_frames: 3             # IDLE·LOST → TRACKING 에 필요한 연속 검출 프레임 수
+    state_check_period_sec: 0.05 # 무수신 감지 주기
