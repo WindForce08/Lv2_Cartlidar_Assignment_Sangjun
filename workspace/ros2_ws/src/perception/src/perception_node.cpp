@@ -37,12 +37,9 @@
 #include "perception/geometry.hpp"
 #include "perception/tag_detector.hpp"
 #include "perception/target_tracker.hpp"
+#include "perception/tf_helper.hpp"
 #include "tf2/LinearMath/Matrix3x3.hpp"
 #include "tf2/LinearMath/Quaternion.hpp"
-#include "tf2/LinearMath/Transform.hpp"
-#include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
-#include "tf2_ros/buffer.hpp"
-#include "tf2_ros/transform_listener.hpp"
 
 namespace perception
 {
@@ -186,8 +183,7 @@ public:
     RCLCPP_INFO(get_logger(), "검출기: %s %s · 태그 %s", detector_->name().c_str(), info.c_str(),
       tag_->ok() ? "사용 가능" : "패밀리 오류");
 
-    tf_buffer_ = std::make_unique<tf2_ros::Buffer>(get_clock());
-    tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
+    tf_ = std::make_unique<TfHelper>(*this);
 
     // 영상 콜백은 받아 두기만 한다(병렬). 모드 변경과 처리는 한 그룹에서 차례로 돌아 구독 생성·삭제와 겹치지 않는다
     cam_cbg_ = create_callback_group(rclcpp::CallbackGroupType::Reentrant);
@@ -317,26 +313,22 @@ private:
   }
 
   // ------------------------------ 처리 ------------------------------
-  // 카메라 광학 좌표 점 → base_link · odom. 카메라는 차체에 고정이라 base 변환은 최신값, odom 은 촬영 시각
+  // 카메라 광학 좌표 점 → base_link · odom. D435 는 차체에 고정이라 base 변환은 한 번 찾아 기억하고, odom 은 촬영 시각
   bool to_base_odom(const cv::Point3d & p, const std::string & cam_frame, const rclcpp::Time & stamp, Vec3 & base, Vec3 & odom)
   {
-    tf2::Transform t_bc;
-    try {
-      tf2::fromMsg(tf_buffer_->lookupTransform(base_frame_, cam_frame, tf2::TimePointZero).transform, t_bc);
-    } catch (const tf2::TransformException & e) {
-      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "TF %s→%s 없음: %s", cam_frame.c_str(), base_frame_.c_str(), e.what());
-      return false;
-    }
-    const tf2::Vector3 b = t_bc * tf2::Vector3(p.x, p.y, p.z);
+    const auto t_bc = tf_->fixed(base_frame_, cam_frame);
+    if (!t_bc) {return false;}
+    const tf2::Vector3 b = *t_bc * tf2::Vector3(p.x, p.y, p.z);
     base = {b.x(), b.y(), b.z()};
     odom = base;
     try {
       geometry_msgs::msg::TransformStamped t_ob;
       const tf2::TimePoint tp = tf2_ros::fromRclcpp(stamp);
-      if (tf_buffer_->canTransform(odom_frame_, base_frame_, tp)) {
-        t_ob = tf_buffer_->lookupTransform(odom_frame_, base_frame_, tp);
+      auto & buf = tf_->buffer();
+      if (buf.canTransform(odom_frame_, base_frame_, tp)) {
+        t_ob = buf.lookupTransform(odom_frame_, base_frame_, tp);
       } else {
-        t_ob = tf_buffer_->lookupTransform(odom_frame_, base_frame_, tf2::TimePointZero);
+        t_ob = buf.lookupTransform(odom_frame_, base_frame_, tf2::TimePointZero);
       }
       tf2::Transform t;
       tf2::fromMsg(t_ob.transform, t);
@@ -583,8 +575,7 @@ private:
   cv::Mat map1_, map2_, newK_;
   cv::Size map_size_;
 
-  std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
-  std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
+  std::unique_ptr<TfHelper> tf_;
   rclcpp::CallbackGroup::SharedPtr cam_cbg_, ctl_cbg_;
   rclcpp::Publisher<Result>::SharedPtr pub_;
   rclcpp::Service<SetMode>::SharedPtr srv_;
