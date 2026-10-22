@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <string>
 #include <vector>
 
 #include <opencv2/core.hpp>
@@ -17,23 +18,32 @@ struct PinholeK
 };
 
 // 화소 (u, v) + 깊이 z(m) → 광학 좌표 (x 오른쪽 · y 아래 · z 앞). D435 정렬 컬러는 왜곡 0.
+// 결과는 영상 header.frame_id(컬러 광학 프레임) 기준이므로 TF 로 바로 base_link 로 바꾼다.
 inline cv::Point3d deproject(const PinholeK & k, double u, double v, double z)
 {
   return {(u - k.ppx) / k.fx * z, (v - k.ppy) / k.fy * z, z};
 }
 
-// 광학 좌표 → 링크 좌표 (x 앞 · y 왼 · z 위) — camera_front_link 등 URDF 링크 규약
-inline cv::Point3d optical_to_link(const cv::Point3d & p) {return {p.z, -p.x, -p.y};}
+// 깊이 영상 인코딩 → m 환산 배율. 16UC1(realsense2_camera)은 mm, 32FC1(Isaac Sim)은 m. 모르는 인코딩은 0
+inline double depth_scale_for_encoding(const std::string & enc)
+{
+  if (enc == "16UC1" || enc == "mono16") {return 0.001;}
+  if (enc == "32FC1") {return 1.0;}
+  return 0.0;
+}
 
-// 박스 중심 주변 (2·half+1)² 창의 깊이 중앙값 (m). 유효 값이 없으면 NaN
-inline double median_depth(const cv::Mat & depth16, cv::Point c, int half, double scale, double min_m, double max_m)
+// 박스 중심 주변 (2·half+1)² 창의 깊이 중앙값 (m). depth 는 CV_16U 또는 CV_32F. 유효 값이 없으면 NaN
+//   0 · NaN · inf(깊이 없음)와 [min_m, max_m] 밖 값은 뺀다
+inline double median_depth(const cv::Mat & depth, cv::Point c, int half, double scale, double min_m, double max_m)
 {
   std::vector<double> v;
+  const bool f32 = depth.type() == CV_32F;
+  if (!f32 && depth.type() != CV_16U) {return std::numeric_limits<double>::quiet_NaN();}
   for (int y = c.y - half; y <= c.y + half; ++y) {
     for (int x = c.x - half; x <= c.x + half; ++x) {
-      if (x < 0 || y < 0 || x >= depth16.cols || y >= depth16.rows) {continue;}
-      const double d = depth16.at<uint16_t>(y, x) * scale;
-      if (d >= min_m && d <= max_m) {v.push_back(d);}
+      if (x < 0 || y < 0 || x >= depth.cols || y >= depth.rows) {continue;}
+      const double d = f32 ? static_cast<double>(depth.at<float>(y, x)) * scale : depth.at<uint16_t>(y, x) * scale;
+      if (std::isfinite(d) && d >= min_m && d <= max_m) {v.push_back(d);}
     }
   }
   if (v.empty()) {return std::numeric_limits<double>::quiet_NaN();}
