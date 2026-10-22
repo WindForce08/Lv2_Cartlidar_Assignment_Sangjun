@@ -5,11 +5,20 @@
 
 #include <stdint.h>
 
+// 보드별 펌웨어 빌드: 1=바퀴 보드, 2=팔 보드.
+// Arduino 빌드 설정에서 OPENCR_BOARD_ROLE=2 로 지정해 팔 보드 이미지를 별도로 만든다.
+#ifndef OPENCR_BOARD_ROLE
+#define OPENCR_BOARD_ROLE 1
+#endif
+#if OPENCR_BOARD_ROLE != 1 && OPENCR_BOARD_ROLE != 2
+#error "OPENCR_BOARD_ROLE must be 1 (wheel) or 2 (arm)"
+#endif
+
 // ---- 통신 ----
 #define DXL_SERIAL        Serial3          // OpenCR RS-485 (Dynamixel 포트)
 #define DXL_DIR_PIN       84               // OpenCR DXL 방향 핀
 #define DXL_BAUD          1000000          // Dynamixel Wizard 2.0 으로 미리 1 Mbps 설정
-#define HOST_SERIAL       Serial           // USB CDC (/dev/opencr)
+#define HOST_SERIAL       Serial           // USB CDC (/dev/ttyACM* 후보 중 역할 응답으로 식별)
 
 #define CONTROL_PERIOD_US 10000            // 100 Hz
 #define CMD_TIMEOUT_MS    200              // 이 시간 동안 CMD 없으면 바퀴 0 · 팔 위치 유지
@@ -19,9 +28,9 @@
 
 // ---- 바퀴 (Velocity 모드) ----
 // 슬롯 순서 = URDF opencr.ros2_control.xacro: 왼쪽 앞 → 뒤, 오른쪽 앞 → 뒤
-#define WHEEL_COUNT       4                // 4륜 확정 (2026-10-22)
+#define WHEEL_COUNT       6                // 실제 구성: 6개 바퀴 모터 (ID 1~6)
 static const uint8_t WHEEL_IDS[6]   = {1, 2, 3, 4, 5, 6};
-static const int8_t  WHEEL_DIR[6]   = {+1, +1, -1, -1, 0, 0};   // 오른쪽은 반대로 장착 ★ (6바퀴면 {+1,+1,+1,-1,-1,-1})
+static const int8_t  WHEEL_DIR[6]   = {+1, +1, +1, -1, -1, -1}; // 슬롯 방향: 실물 회전 확인 후 보정 필수
 static const float   WHEEL_GEAR     = 1.5f;   // 바퀴 각속도 / 모터 각속도 (증속벨트 36T→24T). 직결이면 1.0
 static const int32_t WHEEL_VEL_LIMIT_RAW = 330;   // Goal Velocity 한계 (0.229 rpm 단위, XM430-W210 12 V 무부하 ≈ 77 rpm) ★
 static const uint16_t WHEEL_MODEL = 1030;  // 부팅 점검: 바퀴 XM430-W210 (= 1030, 확정 2026-10-22). W350 이면 1020

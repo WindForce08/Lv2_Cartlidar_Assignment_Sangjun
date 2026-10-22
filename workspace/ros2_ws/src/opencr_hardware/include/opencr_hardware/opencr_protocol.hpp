@@ -5,11 +5,12 @@
 // 프레임: 0xFF 0xFD | TYPE(1) | LEN(1) | PAYLOAD(LEN) | CRC16(2, 리틀엔디안)
 //   CRC 범위: 헤더 2바이트 ~ PAYLOAD 끝. Dynamixel 프로토콜 2.0과 같은 CRC-16 (다항식 0x8005, 초기값 0).
 //   모든 다바이트 값은 리틀엔디안, 실수는 IEEE-754 float32.
-// CMD   0x01  Jetson → OpenCR 100 Hz  : wheel_vel[6] rad/s · arm_pos[6] rad · gripper_pos · flags · seq   (54 B)
-// STATE 0x81  OpenCR → Jetson 100 Hz  : pos[12] · vel[12] · effort[12] · quat[4](w,x,y,z) · gyro[3] · accel[3]
-//                                       · battery_v · error · fw_version · seq                         (191 B)
+// CMD   0x01  Jetson → OpenCR 100 Hz  : role · wheel_vel[6] · arm_pos[6] · gripper_pos · flags · seq   (55 B)
+// STATE 0x81  OpenCR → Jetson 100 Hz  : role · pos[12] · vel[12] · effort[12] · quat[4] · gyro[3] · accel[3]
+//                                       · battery_v · error · fw_version · seq                         (192 B)
 //   fw_version = PROTOCOL_VERSION — 호스트는 다르면 활성화를 거부 (Xmen 의 펌웨어 버전 확인과 같은 목적)
-//   관절 순서(12): 바퀴 슬롯 0~5 → 0~5, 팔 슬롯 0~5 → 6~11. 쓰지 않는 바퀴 슬롯은 0.
+//   role = ROLE_WHEEL(1) 또는 ROLE_ARM(2). 각 OpenCR은 자기 역할의 배열 칸만 채우거나 적용한다.
+//   관절 순서(12): 바퀴 슬롯 0~5 → 0~5, 팔 슬롯 0~5 → 6~11. 쓰지 않는 칸은 0.
 #ifndef OPENCR_PROTOCOL_H_
 #define OPENCR_PROTOCOL_H_
 
@@ -24,7 +25,11 @@ static const uint8_t HDR0 = 0xFF;
 static const uint8_t HDR1 = 0xFD;
 static const uint8_t TYPE_CMD = 0x01;
 static const uint8_t TYPE_STATE = 0x81;
-static const uint8_t PROTOCOL_VERSION = 3;   // 패킷 규격이 바뀌면 올린다 (호스트 · 펌웨어 같은 헤더)
+static const uint8_t PROTOCOL_VERSION = 4;   // 역할 필드 추가: v3와 호환되지 않음
+
+// 보드 역할은 물리 USB 포트 번호와 무관하게 프레임 안에서 확인한다.
+static const uint8_t ROLE_WHEEL = 1;
+static const uint8_t ROLE_ARM = 2;
 
 static const int MAX_WHEELS = 6;
 static const int ARM_JOINTS = 6;          // joint1~5 + gripper_roll
@@ -41,15 +46,17 @@ static const uint8_t ERR_CMD_TIMEOUT = 0x02;   // 200 ms 동안 CMD 없음 → �
 static const uint8_t ERR_HW_ESTOP = 0x04;   // 물리 E-stop 눌림
 static const uint8_t ERR_MOTOR_HW = 0x08;   // 모터 Hardware Error Status ≠ 0
 static const uint8_t ERR_MOTOR_CONFIG = 0x10;   // 부팅 점검 실패: 응답 없음 · 모델 다름 · Homing Offset ≠ 0
+static const uint8_t ERR_ROLE_MISMATCH = 0x20;  // 호스트 CMD의 역할이 이 보드와 다름
 
-static const size_t CMD_PAYLOAD = (MAX_WHEELS + ARM_JOINTS + 1) * 4 + 2;            // 54
-static const size_t STATE_PAYLOAD = (STATE_JOINTS * 3 + 4 + 3 + 3 + 1) * 4 + 3;     // 191
+static const size_t CMD_PAYLOAD = (MAX_WHEELS + ARM_JOINTS + 1) * 4 + 3;            // role + values + flags + seq = 55
+static const size_t STATE_PAYLOAD = (STATE_JOINTS * 3 + 4 + 3 + 3 + 1) * 4 + 4;     // role + error + version + seq = 192
 static const size_t FRAME_OVERHEAD = 2 + 1 + 1 + 2;
 static const size_t MAX_PAYLOAD = STATE_PAYLOAD;
 static const size_t MAX_FRAME = MAX_PAYLOAD + FRAME_OVERHEAD;
 
 struct Cmd
 {
+  uint8_t role;                  // ROLE_WHEEL 또는 ROLE_ARM
   float wheel_vel[MAX_WHEELS];   // rad/s
   float arm_pos[ARM_JOINTS];     // rad
   float gripper_pos;             // rad 또는 m (액추에이터 미정, FLAG_GRIPPER_VALID 일 때만 사용)
@@ -59,6 +66,7 @@ struct Cmd
 
 struct State
 {
+  uint8_t role;                  // ROLE_WHEEL 또는 ROLE_ARM
   float pos[STATE_JOINTS];       // rad
   float vel[STATE_JOINTS];       // rad/s
   float effort[STATE_JOINTS];    // A (Present Current)
@@ -113,6 +121,7 @@ inline size_t encode_cmd(const Cmd & c, uint8_t * out)
 {
   uint8_t pl[CMD_PAYLOAD];
   size_t i = 0;
+  pl[i++] = c.role;
   i += put_floats(pl + i, c.wheel_vel, MAX_WHEELS);
   i += put_floats(pl + i, c.arm_pos, ARM_JOINTS);
   i += put_floats(pl + i, &c.gripper_pos, 1);
@@ -125,6 +134,7 @@ inline bool decode_cmd(const uint8_t * pl, size_t len, Cmd & c)
 {
   if (len != CMD_PAYLOAD) {return false;}
   size_t i = 0;
+  c.role = pl[i++];
   i += get_floats(pl + i, c.wheel_vel, MAX_WHEELS);
   i += get_floats(pl + i, c.arm_pos, ARM_JOINTS);
   i += get_floats(pl + i, &c.gripper_pos, 1);
@@ -137,6 +147,7 @@ inline size_t encode_state(const State & s, uint8_t * out)
 {
   uint8_t pl[STATE_PAYLOAD];
   size_t i = 0;
+  pl[i++] = s.role;
   i += put_floats(pl + i, s.pos, STATE_JOINTS);
   i += put_floats(pl + i, s.vel, STATE_JOINTS);
   i += put_floats(pl + i, s.effort, STATE_JOINTS);
@@ -154,6 +165,7 @@ inline bool decode_state(const uint8_t * pl, size_t len, State & s)
 {
   if (len != STATE_PAYLOAD) {return false;}
   size_t i = 0;
+  s.role = pl[i++];
   i += get_floats(pl + i, s.pos, STATE_JOINTS);
   i += get_floats(pl + i, s.vel, STATE_JOINTS);
   i += get_floats(pl + i, s.effort, STATE_JOINTS);

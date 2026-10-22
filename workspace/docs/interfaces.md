@@ -69,14 +69,17 @@
 ## USB 패킷 (opencr_protocol.hpp = opencr_firmware/opencr_protocol.h)
 
 - 공통 프레임: `0xFF 0xFD · TYPE · LEN · PAYLOAD · CRC16(Dynamixel 2.0, 리틀엔디안)`
-- 바퀴: **4륜 확정** (ID 1~4, 슬롯 0~3). 패킷은 6자리를 유지하고 슬롯 4 · 5 는 0.
-- CMD 0x01 (Jetson → OpenCR, 100 Hz, 54 B):
-  - `wheel_vel[6]` · `arm_pos[6]` · `gripper_pos` · `flags` · `seq`
+- 구성: OpenCR 두 대 — 바퀴 ID 1~6 (Velocity Mode), 팔 ID 11~16 (Position Mode). 프레임의 역할 값으로 보드를 판별한다.
+- CMD 0x01 (Jetson → OpenCR, 100 Hz, 55 B):
+  - `role` · `wheel_vel[6]` · `arm_pos[6]` · `gripper_pos` · `flags` · `seq`
   - flags: bit0 TORQUE_ON · bit1 ESTOP · bit2 GRIPPER_VALID
-- STATE 0x81 (OpenCR → Jetson, 100 Hz, 191 B):
-  - `pos[12]` · `vel[12]` · `effort[12]` · `quat[4]` · `gyro[3]` · `accel[3]` · `battery_v` · `error` · `fw_version` · `seq`
-  - error 비트: 0x01 SyncRead 누락 · 0x02 명령 타임아웃 · 0x04 물리 E-stop · 0x08 모터 HW · 0x10 모터 설정 (부팅 점검 실패)
-- `PROTOCOL_VERSION = 3`: `fw_version` 이 다르면 opencr_hardware 가 활성화를 거부 (펌웨어 다시 올림)
+- STATE 0x81 (OpenCR → Jetson, 100 Hz, 192 B):
+  - `role` · `pos[12]` · `vel[12]` · `effort[12]` · `quat[4]` · `gyro[3]` · `accel[3]` · `battery_v` · `error` · `fw_version` · `seq`
+  - 바퀴 보드는 바퀴 슬롯 0~5, 팔 보드는 팔 슬롯 6~11을 채운다. IMU·배터리는 바퀴 보드 값만 사용한다.
+  - error 비트: 0x01 SyncRead 누락 · 0x02 명령 타임아웃 · 0x04 물리 E-stop · 0x08 모터 HW · 0x10 모터 설정 · 0x20 CMD 역할 불일치
+- `PROTOCOL_VERSION = 4`: v3 payload는 길이가 달라 거부된다. 호스트는 역할별 STATE를 하나씩 받고 두 보드 모두 v4인지 확인해야 활성화한다.
+- OpenCR 빌드: `OPENCR_BOARD_ROLE=1` 바퀴, `=2` 팔. 각각 따로 빌드·업로드한다.
+- 포트: `ports` 파라미터에 두 후보 경로를 쉼표로 전달한다. `/dev/ttyACM0`과 `/dev/ttyACM1`은 후보일 뿐이며, 실제 역할은 STATE.role로 연결한다.
 - 부팅 점검 (펌웨어): ping · 모델 번호 · Homing Offset 0 확인, Return Delay 0 기록. 하나라도 실패면 0x10 → 토크 켜기 거부
 - Bus Watchdog 500 ms (25 단위): 토크 켤 때 모든 모터에 설정 — OpenCR 이 멈춰도 모터가 스스로 정지
 - 시리얼은 `flock` + `TIOCEXCL` 로 한 프로세스만 연다

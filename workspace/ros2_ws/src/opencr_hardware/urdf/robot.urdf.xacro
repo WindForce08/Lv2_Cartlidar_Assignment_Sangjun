@@ -3,9 +3,9 @@
      링크 위치 · 관절 원점은 값이 확정되지 않아 ★ 표시한 자리값이다 (Perception 팀이 센서 장착 위치 제공).
      형상(visual/collision)은 넣지 않았다. waffle_4wd 메시를 쓰려면 base_link 에 visual 을 추가한다. -->
 <robot name="puckbot" xmlns:xacro="http://www.ros.org/wiki/xacro">
-  <xacro:arg name="wheel_count" default="4"/>
+  <xacro:arg name="wheel_count" default="6"/>
   <xacro:arg name="use_gripper" default="false"/>
-  <xacro:arg name="port" default="/dev/opencr"/>
+  <xacro:arg name="ports" default="/dev/ttyACM0,/dev/ttyACM1"/>
   <xacro:arg name="joy_required" default="true"/>
   <xacro:include filename="$(find opencr_hardware)/urdf/opencr.ros2_control.xacro"/>
 
@@ -71,6 +71,6 @@
   <xacro:fixed_link name="tfmini_link"     parent="gripper_roll_link" xyz="0.02 0 -0.035" rpy="0 0 0"/>
   <xacro:fixed_link name="tool_link"       parent="gripper_roll_link" xyz="0.086 0 0" rpy="0 0 0"/>
 
-  <xacro:opencr_ros2_control port="$(arg port)" wheel_count="${wheel_count}" use_gripper="$(arg use_gripper)"
+  <xacro:opencr_ros2_control ports="$(arg ports)" wheel_count="${wheel_count}" use_gripper="$(arg use_gripper)"
                              joy_required="$(arg joy_required)"/>
 </robot>

@@ -1,9 +1,9 @@
 # Lv2_Cartlidar_Assignment
 
-퍽 운반 로봇 (4륜 · 5축 매뉴퓰레이터 · LiDAR · D435 × 2 · Arducam) — Perception · Controller · Firmware. ROS 2 Lyrical · C++17 component.
+퍽 운반 로봇 (6륜 · 매니퓰레이터 · LiDAR · D435 × 2 · Arducam) — Perception · Controller · Firmware. ROS 2 Lyrical · C++17 component.
 
 - 노드 설계 기준: [workspace/docs/robot_nodes.html](workspace/docs/robot_nodes.html) (4륜, XM430 ID 1~4)
-- 통신 정의 (동결): [workspace/docs/interfaces.md](workspace/docs/interfaces.md)
+- 통신 정의: [workspace/docs/interfaces.md](workspace/docs/interfaces.md), [workspace/docs/opencr_dual_board_v4.md](workspace/docs/opencr_dual_board_v4.md)
 - 설계 대비 검토 · 개선: [workspace/docs/review_robot_nodes.md](workspace/docs/review_robot_nodes.md)
 
 ## 패키지 (`workspace/ros2_ws/src`)
@@ -29,7 +29,7 @@ colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release
 
 선택 의존성은 있으면 켜지고, 없으면 경고만 내고 빌드된다: librealsense2 (없으면 D435 검색 모드 거부), TensorRT (없으면 HSV 색 검출), ONNX Runtime (없으면 `skill_enabled:=false`).
 
-펌웨어는 Arduino IDE 로 `opencr_firmware/opencr_firmware.ino` 를 올린다. `opencr_protocol.h` 는 `opencr_hardware/include/.../opencr_protocol.hpp` 와 같아야 한다 (시험이 확인).
+펌웨어는 Arduino IDE 로 `opencr_firmware/opencr_firmware.ino` 를 각각 바퀴·팔 역할로 빌드한다. `config.h`에서 `OPENCR_BOARD_ROLE=1`은 바퀴, `=2`는 팔이다. `opencr_protocol.h`는 `opencr_hardware/include/.../opencr_protocol.hpp`와 같아야 한다.
 
 ## 실행
 
@@ -38,7 +38,7 @@ source workspace/ros2_ws/install/setup.bash
 ros2 launch bringup bringup.launch.py
 ```
 
-주요 인자: `use_hardware` · `use_teleop` · `use_perception` · `use_ekf` (기본 true), `port` (기본 `/dev/opencr`), `skill_enabled` (기본 false, ONNX 빌드에서만 true).
+주요 인자: `use_hardware` · `use_teleop` · `use_perception` · `use_ekf` (기본 true), `ports` (기본 `/dev/ttyACM0,/dev/ttyACM1`, 역할은 프로토콜 응답으로 판별), `skill_enabled` (기본 false, ONNX 빌드에서만 true).
 nav2 · slam_toolbox 는 기존 launch 를 쓰고, nav2 체인의 마지막 출력만 `/cmd_vel_nav` 로 둔다.
 
 운용 순서:
@@ -58,7 +58,7 @@ cd workspace/ros2_ws
 colcon test && colcon test-result --verbose
 ```
 
-53개 (프로토콜 · 루프백 · 펌웨어 버전 불일치 거부 · 시리얼 독점, 미션표 문법, 정렬 · 안전, IK, 추적 · 검출, 정책 입출력).
+프로토콜 역할 분리 · 듀얼 보드 루프백 · 버전 불일치 거부 · 시리얼 독점, 미션표 문법, 정렬 · 안전, IK, 추적 · 검출, 정책 입출력.
 
 ## 실물에서 맞출 값 (★)
 

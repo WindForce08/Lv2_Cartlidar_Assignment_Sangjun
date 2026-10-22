@@ -29,12 +29,12 @@
     </joint>
   </xacro:macro>
 
-  <!-- wheel_count: 4 (기본, waffle_4wd) 또는 6 -->
-  <xacro:macro name="opencr_ros2_control" params="name:=OpenCRSystem port:=/dev/opencr wheel_count:=4 use_gripper:=false joy_required:=true">
+  <!-- 두 OpenCR의 순서는 고정하지 않고 STATE.role로 역할을 판별한다. -->
+  <xacro:macro name="opencr_ros2_control" params="name:=OpenCRSystem ports:=/dev/ttyACM0,/dev/ttyACM1 wheel_count:=6 use_gripper:=false joy_required:=true">
     <ros2_control name="${name}" type="system">
       <hardware>
         <plugin>opencr_hardware/OpenCRHardware</plugin>
-        <param name="port">${port}</param>
+        <param name="ports">${ports}</param>
         <param name="comm_timeout_s">0.5</param>
         <param name="first_state_timeout_s">2.0</param>
         <!-- 잠금식 E-stop: /joy heartbeat · 버튼 (조이스틱 모델에 맞춰 번호 확인 ★) -->

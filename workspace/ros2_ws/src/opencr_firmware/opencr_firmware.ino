@@ -1,11 +1,12 @@
 // opencr_firmware.ino — OpenCR 보드 (Firmware 팀)
-// Jetson(opencr_hardware) ↔ USB CDC ↔ OpenCR ↔ RS-485 1 Mbps ↔ Dynamixel (바퀴 Velocity · 팔 Position)
+// Jetson(opencr_hardware) ↔ USB CDC ↔ role별 OpenCR ↔ RS-485 1 Mbps ↔ 해당 Dynamixel 6개
+// OPENCR_BOARD_ROLE=1: 바퀴 ID 1~6 / Velocity Mode. =2: 팔 ID 11~16 / Position Mode.
 //
 // loop (100 Hz):
 //   receiveHost()  헤더 · 길이 · CRC 검증 후 CMD 해석
-//   handleCmd()    rad/s · rad → tick, 토크 ON 순간 현재 위치를 목표로 고정
-//   applySafety()  200 ms 무수신 · ESTOP 비트 · 물리 스위치 → 바퀴 0, 팔 위치 유지 (토크 유지, ROS 와 무관하게 동작)
-//   writeGoals()   SyncWrite 바퀴 addr 104, 팔 addr 116
+//   handleCmd()    역할이 일치하는 명령만 받아 rad/s 또는 rad → 모터 목표로 변환
+//   applySafety()  200 ms 무수신 · ESTOP 비트 · 물리 스위치 → 바퀴 0 또는 팔 현재 위치 유지
+//   writeGoals()   역할에 해당하는 SyncWrite만 수행
 //   readState()    SyncRead addr 126 부터 10 B, 응답 부족 시 오류 비트
 //   sendState()    상태 + IMU + 배터리 전압 + 오류 비트
 //
@@ -26,7 +27,8 @@ Dynamixel2Arduino dxl(DXL_SERIAL, DXL_DIR_PIN);
 cIMU imu;
 
 // ---- 상태 ----
-static const int N_MOTORS = WHEEL_COUNT + ARM_COUNT;
+static const uint8_t BOARD_ROLE = OPENCR_BOARD_ROLE;
+static const int N_MOTORS = BOARD_ROLE == opencr_proto::ROLE_WHEEL ? WHEEL_COUNT : ARM_COUNT;
 static uint8_t g_ids[N_MOTORS];
 
 struct __attribute__((packed)) PresentData { int16_t current; int32_t velocity; int32_t position; };
@@ -117,10 +119,12 @@ static void setupSync()
   g_sw_wheel.addr_length = 4;
   g_sw_wheel.p_xels = g_sw_wheel_xels;
   g_sw_wheel.xel_count = 0;
-  for (int i = 0; i < WHEEL_COUNT; ++i) {
-    g_sw_wheel_xels[i].id = WHEEL_IDS[i];
-    g_sw_wheel_xels[i].p_data = (uint8_t *)&g_wheel_goal_raw[i];
-    g_sw_wheel.xel_count++;
+  if (BOARD_ROLE == opencr_proto::ROLE_WHEEL) {
+    for (int i = 0; i < WHEEL_COUNT; ++i) {
+      g_sw_wheel_xels[i].id = WHEEL_IDS[i];
+      g_sw_wheel_xels[i].p_data = (uint8_t *)&g_wheel_goal_raw[i];
+      g_sw_wheel.xel_count++;
+    }
   }
   g_sw_wheel.is_info_changed = true;
 
@@ -130,10 +134,12 @@ static void setupSync()
   g_sw_arm.addr_length = 4;
   g_sw_arm.p_xels = g_sw_arm_xels;
   g_sw_arm.xel_count = 0;
-  for (int i = 0; i < ARM_COUNT; ++i) {
-    g_sw_arm_xels[i].id = ARM_IDS[i];
-    g_sw_arm_xels[i].p_data = (uint8_t *)&g_arm_goal_raw[i];
-    g_sw_arm.xel_count++;
+  if (BOARD_ROLE == opencr_proto::ROLE_ARM) {
+    for (int i = 0; i < ARM_COUNT; ++i) {
+      g_sw_arm_xels[i].id = ARM_IDS[i];
+      g_sw_arm_xels[i].p_data = (uint8_t *)&g_arm_goal_raw[i];
+      g_sw_arm.xel_count++;
+    }
   }
   g_sw_arm.is_info_changed = true;
 }
@@ -161,8 +167,9 @@ static void readState()
 
 static void holdArmAtPresent()
 {
+  if (BOARD_ROLE != opencr_proto::ROLE_ARM) {return;}
   for (int i = 0; i < ARM_COUNT; ++i) {
-    g_arm_goal_raw[i] = g_present[WHEEL_COUNT + i].position;
+    g_arm_goal_raw[i] = g_present[i].position;
   }
 }
 
@@ -174,6 +181,11 @@ static void receiveHost()
     if (g_parser.push(b) && g_parser.type() == opencr_proto::TYPE_CMD) {
       Cmd c;
       if (opencr_proto::decode_cmd(g_parser.payload(), g_parser.length(), c)) {
+        if (c.role != BOARD_ROLE) {
+          g_error |= opencr_proto::ERR_ROLE_MISMATCH;
+          continue;
+        }
+        g_error &= ~opencr_proto::ERR_ROLE_MISMATCH;
         g_cmd = c;
         g_have_cmd = true;
         g_last_cmd_ms = millis();
@@ -191,7 +203,9 @@ static void handleCmd()
   if (want_torque && !g_torque_on) {
     // 토크 ON 순간: 팔 목표 = 현재 위치, 바퀴 = 0 (튀지 않게)
     holdArmAtPresent();
-    for (int i = 0; i < WHEEL_COUNT; ++i) {g_wheel_goal_raw[i] = 0;}
+    if (BOARD_ROLE == opencr_proto::ROLE_WHEEL) {
+      for (int i = 0; i < WHEEL_COUNT; ++i) {g_wheel_goal_raw[i] = 0;}
+    }
     if (g_config_error) {return;}   // 부팅 점검 실패면 토크를 켜지 않음
     dxl.writeControlTableItem(TORQUE_ENABLE, DXL_BROADCAST_ID, 1);
 #if BUS_WATCHDOG_UNIT > 0
@@ -208,16 +222,21 @@ static void handleCmd()
   }
   if (!g_torque_on || g_safe_hold) {return;}
 
-  for (int i = 0; i < WHEEL_COUNT; ++i) {
-    g_wheel_goal_raw[i] = wheelRadsToRaw(g_cmd.wheel_vel[i], WHEEL_DIR[i]);
-  }
-  for (int i = 0; i < ARM_COUNT; ++i) {
-    const float q = clampf(g_cmd.arm_pos[i], ARM_MIN_RAD[i], ARM_MAX_RAD[i]);
-    g_arm_goal_raw[i] = radToTick(q, ARM_DIR[i]);
+  if (BOARD_ROLE == opencr_proto::ROLE_WHEEL) {
+    for (int i = 0; i < WHEEL_COUNT; ++i) {
+      g_wheel_goal_raw[i] = wheelRadsToRaw(g_cmd.wheel_vel[i], WHEEL_DIR[i]);
+    }
+  } else {
+    for (int i = 0; i < ARM_COUNT; ++i) {
+      const float q = clampf(g_cmd.arm_pos[i], ARM_MIN_RAD[i], ARM_MAX_RAD[i]);
+      g_arm_goal_raw[i] = radToTick(q, ARM_DIR[i]);
+    }
   }
 #if GRIPPER_ID != 0
+  if (BOARD_ROLE == opencr_proto::ROLE_ARM) {
   if (g_cmd.flags & opencr_proto::FLAG_GRIPPER_VALID) {
     g_gripper_goal_raw = radToTick(g_cmd.gripper_pos * GRIPPER_RAD_PER_UNIT, 1);
+  }
   }
 #endif
 }
@@ -236,7 +255,9 @@ static void applySafety()
 
   const bool stop = timeout || host_estop || hw_estop;
   if (stop) {
-    for (int i = 0; i < WHEEL_COUNT; ++i) {g_wheel_goal_raw[i] = 0;}
+    if (BOARD_ROLE == opencr_proto::ROLE_WHEEL) {
+      for (int i = 0; i < WHEEL_COUNT; ++i) {g_wheel_goal_raw[i] = 0;}
+    }
     // 무수신: 팔은 마지막 목표 유지. ESTOP: 현재 자세에서 멈춤. 토크는 끄지 않는다 (카트리지 낙하 방지)
     if ((host_estop || hw_estop) && !g_safe_hold) {holdArmAtPresent();}
     g_safe_hold = true;
@@ -248,12 +269,15 @@ static void applySafety()
 static void writeGoals()
 {
   if (!g_torque_on) {return;}
-  g_sw_wheel.is_info_changed = true;
-  dxl.syncWrite(&g_sw_wheel);
-  g_sw_arm.is_info_changed = true;
-  dxl.syncWrite(&g_sw_arm);
+  if (BOARD_ROLE == opencr_proto::ROLE_WHEEL) {
+    g_sw_wheel.is_info_changed = true;
+    dxl.syncWrite(&g_sw_wheel);
+  } else {
+    g_sw_arm.is_info_changed = true;
+    dxl.syncWrite(&g_sw_arm);
+  }
 #if GRIPPER_ID != 0
-  dxl.writeControlTableItem(GOAL_POSITION, GRIPPER_ID, g_gripper_goal_raw);
+  if (BOARD_ROLE == opencr_proto::ROLE_ARM) {dxl.writeControlTableItem(GOAL_POSITION, GRIPPER_ID, g_gripper_goal_raw);}
 #endif
 }
 
@@ -262,28 +286,34 @@ static void sendState()
 {
   State s;
   memset(&s, 0, sizeof(s));
-  for (int i = 0; i < WHEEL_COUNT; ++i) {
-    const PresentData & p = g_present[i];
-    s.pos[i] = tickToRad(p.position, WHEEL_DIR[i]) * WHEEL_GEAR;   // 다회전 누적 위치 (Velocity 모드)
-    s.vel[i] = WHEEL_DIR[i] * p.velocity * RADS_PER_VEL_RAW * WHEEL_GEAR;
-    s.effort[i] = WHEEL_DIR[i] * p.current * AMP_PER_CUR_RAW;
+  s.role = BOARD_ROLE;
+  if (BOARD_ROLE == opencr_proto::ROLE_WHEEL) {
+    for (int i = 0; i < WHEEL_COUNT; ++i) {
+      const PresentData & p = g_present[i];
+      s.pos[i] = tickToRad(p.position, WHEEL_DIR[i]) * WHEEL_GEAR;
+      s.vel[i] = WHEEL_DIR[i] * p.velocity * RADS_PER_VEL_RAW * WHEEL_GEAR;
+      s.effort[i] = WHEEL_DIR[i] * p.current * AMP_PER_CUR_RAW;
+    }
+  } else {
+    for (int i = 0; i < ARM_COUNT; ++i) {
+      const PresentData & p = g_present[i];
+      const int k = opencr_proto::MAX_WHEELS + i;
+      s.pos[k] = tickToRad(p.position, ARM_DIR[i]);
+      s.vel[k] = ARM_DIR[i] * p.velocity * RADS_PER_VEL_RAW;
+      s.effort[k] = ARM_DIR[i] * p.current * AMP_PER_CUR_RAW;
+    }
   }
-  for (int i = 0; i < ARM_COUNT; ++i) {
-    const PresentData & p = g_present[WHEEL_COUNT + i];
-    const int k = opencr_proto::MAX_WHEELS + i;
-    s.pos[k] = tickToRad(p.position, ARM_DIR[i]);
-    s.vel[k] = ARM_DIR[i] * p.velocity * RADS_PER_VEL_RAW;
-    s.effort[k] = ARM_DIR[i] * p.current * AMP_PER_CUR_RAW;
+  if (BOARD_ROLE == opencr_proto::ROLE_WHEEL) {
+    s.quat[0] = imu.quat[0];
+    s.quat[1] = imu.quat[1];
+    s.quat[2] = imu.quat[2];
+    s.quat[3] = imu.quat[3];
+    for (int i = 0; i < 3; ++i) {
+      s.gyro[i] = imu.SEN.gyroADC[i] * GYRO_FACTOR;
+      s.accel[i] = imu.SEN.accADC[i] * ACCEL_FACTOR;
+    }
+    s.battery_v = g_battery_v;
   }
-  s.quat[0] = imu.quat[0];   // w
-  s.quat[1] = imu.quat[1];
-  s.quat[2] = imu.quat[2];
-  s.quat[3] = imu.quat[3];
-  for (int i = 0; i < 3; ++i) {
-    s.gyro[i] = imu.SEN.gyroADC[i] * GYRO_FACTOR;
-    s.accel[i] = imu.SEN.accADC[i] * ACCEL_FACTOR;
-  }
-  s.battery_v = g_battery_v;
   if (g_config_error) {g_error |= opencr_proto::ERR_MOTOR_CONFIG;}
   s.error = g_error;
   s.fw_version = opencr_proto::PROTOCOL_VERSION;
@@ -299,15 +329,21 @@ void setup()
 #if ESTOP_PIN_ENABLE
   pinMode(ESTOP_PIN, INPUT_PULLUP);
 #endif
-  for (int i = 0; i < WHEEL_COUNT; ++i) {g_ids[i] = WHEEL_IDS[i]; g_wheel_goal_raw[i] = 0;}
-  for (int i = 0; i < ARM_COUNT; ++i) {g_ids[WHEEL_COUNT + i] = ARM_IDS[i];}
+  if (BOARD_ROLE == opencr_proto::ROLE_WHEEL) {
+    for (int i = 0; i < WHEEL_COUNT; ++i) {g_ids[i] = WHEEL_IDS[i]; g_wheel_goal_raw[i] = 0;}
+  } else {
+    for (int i = 0; i < ARM_COUNT; ++i) {g_ids[i] = ARM_IDS[i];}
+  }
 
   dxl.begin(DXL_BAUD);
   dxl.setPortProtocolVersion(2.0);
-  for (int i = 0; i < WHEEL_COUNT; ++i) {setupMotor(WHEEL_IDS[i], OP_VELOCITY, false, WHEEL_MODEL);}
-  for (int i = 0; i < ARM_COUNT; ++i) {setupMotor(ARM_IDS[i], OP_POSITION, true, ARM_MODEL);}
+  if (BOARD_ROLE == opencr_proto::ROLE_WHEEL) {
+    for (int i = 0; i < WHEEL_COUNT; ++i) {setupMotor(WHEEL_IDS[i], OP_VELOCITY, false, WHEEL_MODEL);}
+  } else {
+    for (int i = 0; i < ARM_COUNT; ++i) {setupMotor(ARM_IDS[i], OP_POSITION, true, ARM_MODEL);}
+  }
 #if GRIPPER_ID != 0
-  setupMotor(GRIPPER_ID, OP_POSITION, true, ARM_MODEL);
+  if (BOARD_ROLE == opencr_proto::ROLE_ARM) {setupMotor(GRIPPER_ID, OP_POSITION, true, ARM_MODEL);}
 #endif
   setupSync();
   readState();
