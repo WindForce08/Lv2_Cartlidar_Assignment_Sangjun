@@ -52,14 +52,15 @@ def generate_launch_description():
         DeclareLaunchArgument('use_teleop', default_value='true', description='조이스틱 (끄면 E-stop heartbeat 검사도 끔)'),
         DeclareLaunchArgument('use_perception', default_value='true', description='⑦ 카메라 3대 · 검출'),
         DeclareLaunchArgument('use_ekf', default_value='true', description='⑥ robot_localization ekf'),
-        DeclareLaunchArgument('port', default_value='/dev/opencr'),
+        DeclareLaunchArgument('ports', default_value='/dev/ttyACM0,/dev/ttyACM1',
+                              description='두 OpenCR 후보 포트 (역할은 프로토콜 응답으로 판별)'),
         DeclareLaunchArgument('skill_enabled', default_value='false',
                               description='정책 실행 — ONNX Runtime 빌드에서만 true (없으면 거절 → 미션 fallback)'),
         DeclareLaunchArgument('policies_file', default_value=PathJoinSubstitution([pol, 'config', 'policies.yaml'])),
 
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(PathJoinSubstitution([hw, 'launch', 'base_bringup.launch.py'])),
-            launch_arguments={'use_teleop': LaunchConfiguration('use_teleop'), 'port': LaunchConfiguration('port')}.items(),
+            launch_arguments={'use_teleop': LaunchConfiguration('use_teleop'), 'ports': LaunchConfiguration('ports')}.items(),
             condition=IfCondition(LaunchConfiguration('use_hardware'))),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(PathJoinSubstitution([per, 'launch', 'perception.launch.py'])),

@@ -12,8 +12,8 @@ using namespace opencr_proto;
 
 TEST(Protocol, Sizes)
 {
-  EXPECT_EQ(CMD_PAYLOAD, 54u);
-  EXPECT_EQ(STATE_PAYLOAD, 191u);
+  EXPECT_EQ(CMD_PAYLOAD, 55u);
+  EXPECT_EQ(STATE_PAYLOAD, 192u);
 }
 
 TEST(Protocol, CrcKnownValue)
@@ -26,6 +26,7 @@ TEST(Protocol, CrcKnownValue)
 TEST(Protocol, CmdRoundTrip)
 {
   Cmd c{};
+  c.role = ROLE_ARM;
   for (int i = 0; i < MAX_WHEELS; ++i) {c.wheel_vel[i] = 0.5f * i - 1.0f;}
   for (int i = 0; i < ARM_JOINTS; ++i) {c.arm_pos[i] = -0.3f * i;}
   c.gripper_pos = 0.012f;
@@ -52,6 +53,7 @@ TEST(Protocol, CmdRoundTrip)
 TEST(Protocol, StateResyncAfterNoiseAndBadCrc)
 {
   State s{};
+  s.role = ROLE_WHEEL;
   for (int i = 0; i < STATE_JOINTS; ++i) {s.pos[i] = 0.1f * i; s.vel[i] = -0.2f * i; s.effort[i] = 0.01f * i;}
   s.quat[0] = 1.0f;
   s.gyro[2] = 0.5f;

@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <iterator>
 #include <limits>
+#include <sstream>
 
 #include "hardware_interface/types/hardware_interface_type_values.hpp"
 #include "pluginlib/class_list_macros.hpp"
@@ -36,7 +38,7 @@ hi::CallbackReturn OpenCRHardware::on_init(const hi::HardwareComponentInterfaceP
     return CallbackReturn::ERROR;
   }
   const auto & hw = info_.hardware_parameters;
-  port_ = param_or(hw, "port", port_);
+  port_ = param_or(hw, "ports", param_or(hw, "port", port_));
   comm_timeout_s_ = std::stod(param_or(hw, "comm_timeout_s", "0.5"));
   first_state_timeout_s_ = std::stod(param_or(hw, "first_state_timeout_s", "2.0"));
   joy_required_ = param_or(hw, "joy_required", "true") == "true";
@@ -86,16 +88,33 @@ hi::CallbackReturn OpenCRHardware::on_init(const hi::HardwareComponentInterfaceP
   if (!info_.sensors.empty()) {
     imu_name_ = info_.sensors.front().name;
   }
-  RCLCPP_INFO(get_logger(), "OpenCRHardware: 관절 %zu개, IMU '%s', 포트 %s", joints_.size(),
+  RCLCPP_INFO(get_logger(), "OpenCRHardware: 관절 %zu개, IMU '%s', 후보 포트 %s", joints_.size(),
     imu_name_.c_str(), port_.c_str());
   return CallbackReturn::SUCCESS;
 }
 
 hi::CallbackReturn OpenCRHardware::on_configure(const rclcpp_lifecycle::State &)
 {
+  links_.clear();
+  std::istringstream input(port_);
+  std::string path;
   std::string err;
-  if (!serial_.open(port_, B115200, err)) {   // USB CDC 는 보드레이트 무관
-    RCLCPP_ERROR(get_logger(), "포트 열기 실패: %s", err.c_str());
+  while (std::getline(input, path, ',')) {
+    const auto first = path.find_first_not_of(" \t");
+    const auto last = path.find_last_not_of(" \t");
+    if (first == std::string::npos) {continue;}
+    path = path.substr(first, last - first + 1);
+    auto link = std::make_unique<BoardLink>(path);
+    if (!link->serial.open(path, B115200, err)) {
+      RCLCPP_ERROR(get_logger(), "후보 포트 열기 실패: %s", err.c_str());
+      links_.clear();
+      return CallbackReturn::ERROR;
+    }
+    links_.push_back(std::move(link));
+  }
+  if (links_.size() != 2) {
+    RCLCPP_ERROR(get_logger(), "역할 판별을 위해 후보 포트를 정확히 두 개 지정해야 합니다: %s", port_.c_str());
+    links_.clear();
     return CallbackReturn::ERROR;
   }
   setup_ros_io();
@@ -160,11 +179,14 @@ void OpenCRHardware::publish_diagnostics(bool force)
   const bool link = link_ok_.load();
   const float bat = battery_v_.load();
   add("link", link ? DiagnosticStatus::OK : DiagnosticStatus::ERROR, link ? "정상" : "STATE 무수신",
-    {{"bad_frames", std::to_string(bad_frames_.load())}, {"port", port_}});
-  const bool motor_bad = err & (opencr_proto::ERR_MOTOR_HW | opencr_proto::ERR_SYNCREAD | opencr_proto::ERR_MOTOR_CONFIG);
+    {{"bad_frames", std::to_string(bad_frames_.load())}, {"ports", port_}});
+  const bool motor_bad = err & (opencr_proto::ERR_MOTOR_HW | opencr_proto::ERR_SYNCREAD |
+      opencr_proto::ERR_MOTOR_CONFIG | opencr_proto::ERR_ROLE_MISMATCH);
   add("motors", motor_bad ? DiagnosticStatus::ERROR : DiagnosticStatus::OK,
     (err & opencr_proto::ERR_MOTOR_CONFIG) ? "부팅 점검 실패 (응답 · 모델 · Homing Offset)" :
-    (err & opencr_proto::ERR_MOTOR_HW) ? "모터 Hardware Error" : (err & opencr_proto::ERR_SYNCREAD) ? "SyncRead 응답 부족" : "정상",
+    (err & opencr_proto::ERR_MOTOR_HW) ? "모터 Hardware Error" :
+    (err & opencr_proto::ERR_ROLE_MISMATCH) ? "CMD 역할 불일치" :
+    (err & opencr_proto::ERR_SYNCREAD) ? "SyncRead 응답 부족" : "정상",
     {{"error_bits", std::to_string(err)}, {"fw_version", std::to_string(fw_version_.load())}});
   uint8_t bl = DiagnosticStatus::OK;
   if (link && bat < battery_error_v_) {bl = DiagnosticStatus::ERROR;} else if (link && bat < battery_warn_v_) {bl = DiagnosticStatus::WARN;}
@@ -187,39 +209,90 @@ hi::CallbackReturn OpenCRHardware::on_cleanup(const rclcpp_lifecycle::State &)
   joy_sub_.reset();
   estop_timer_.reset();
   diag_timer_.reset();
-  serial_.close();
+  links_.clear();
   return CallbackReturn::SUCCESS;
 }
 
 bool OpenCRHardware::poll_serial()
 {
   uint8_t buf[512];
-  for (int k = 0; k < 16; ++k) {   // 한 주기에 최대 8 KB
-    const ssize_t n = serial_.read_some(buf, sizeof(buf));
-    if (n < 0) {return false;}
-    if (n == 0) {break;}
-    for (ssize_t i = 0; i < n; ++i) {
-      if (parser_.push(buf[i]) && parser_.type() == opencr_proto::TYPE_STATE) {
-        opencr_proto::State s;
-        if (opencr_proto::decode_state(parser_.payload(), parser_.length(), s)) {
-          latest_ = s;
-          have_state_ = true;
-          last_state_time_ = steady_.now();
+  bool io_ok = true;
+  for (auto & link : links_) {
+    for (int k = 0; k < 16; ++k) {   // 각 포트에서 한 주기에 최대 8 KB
+      const ssize_t n = link->serial.read_some(buf, sizeof(buf));
+      if (n < 0) {io_ok = false; break;}
+      if (n == 0) {break;}
+      for (ssize_t i = 0; i < n; ++i) {
+        if (link->parser.push(buf[i]) && link->parser.type() == opencr_proto::TYPE_STATE) {
+          opencr_proto::State s;
+          if (opencr_proto::decode_state(link->parser.payload(), link->parser.length(), s)) {
+            link->state = s;
+            link->have_state = true;
+            link->last_state_time = steady_.now();
+          }
         }
       }
     }
   }
-  return true;
+  refresh_aggregate_state();
+  uint32_t bad = 0;
+  for (const auto & link : links_) {bad += link->parser.bad_frames();}
+  bad_frames_.store(bad);
+  return io_ok;
+}
+
+bool OpenCRHardware::roles_ready() const
+{
+  int wheels = 0, arms = 0;
+  for (const auto & link : links_) {
+    if (!link->have_state) {continue;}
+    if (link->state.fw_version != opencr_proto::PROTOCOL_VERSION) {return false;}
+    if (link->state.role == opencr_proto::ROLE_WHEEL) {++wheels;}
+    else if (link->state.role == opencr_proto::ROLE_ARM) {++arms;}
+  }
+  return wheels == 1 && arms == 1;
+}
+
+void OpenCRHardware::refresh_aggregate_state()
+{
+  opencr_proto::State merged{};
+  bool wheel = false, arm = false;
+  for (const auto & link : links_) {
+    if (!link->have_state) {continue;}
+    const auto & s = link->state;
+    if (s.role == opencr_proto::ROLE_WHEEL) {
+      wheel = true;
+      for (int i = 0; i < opencr_proto::MAX_WHEELS; ++i) {
+        merged.pos[i] = s.pos[i]; merged.vel[i] = s.vel[i]; merged.effort[i] = s.effort[i];
+      }
+      std::copy(std::begin(s.quat), std::end(s.quat), std::begin(merged.quat));
+      std::copy(std::begin(s.gyro), std::end(s.gyro), std::begin(merged.gyro));
+      std::copy(std::begin(s.accel), std::end(s.accel), std::begin(merged.accel));
+      merged.battery_v = s.battery_v;
+    } else if (s.role == opencr_proto::ROLE_ARM) {
+      arm = true;
+      for (int i = 0; i < opencr_proto::ARM_JOINTS; ++i) {
+        const int k = opencr_proto::MAX_WHEELS + i;
+        merged.pos[k] = s.pos[k]; merged.vel[k] = s.vel[k]; merged.effort[k] = s.effort[k];
+      }
+    }
+    merged.error |= s.error;
+    if (s.fw_version != opencr_proto::PROTOCOL_VERSION) {merged.fw_version = s.fw_version;}
+  }
+  have_state_ = wheel && arm;
+  if (have_state_) {merged.fw_version = opencr_proto::PROTOCOL_VERSION;}
+  latest_ = merged;
 }
 
 bool OpenCRHardware::wait_first_state(double timeout_s)
 {
-  have_state_ = false;
   const auto t0 = steady_.now();
   while ((steady_.now() - t0).seconds() < timeout_s) {
-    if (!send_cmd(false)) {return false;}   // 토크 OFF 상태로 CMD 를 보내 STATE 를 받음
     if (!poll_serial()) {return false;}
-    if (have_state_) {return true;}
+    if (roles_ready()) {
+      have_state_ = true;
+      return send_cmd(false);   // 역할이 확인된 두 보드에 토크 OFF 명령
+    }
     rclcpp::sleep_for(std::chrono::milliseconds(10));
   }
   return false;
@@ -227,21 +300,19 @@ bool OpenCRHardware::wait_first_state(double timeout_s)
 
 hi::CallbackReturn OpenCRHardware::on_activate(const rclcpp_lifecycle::State &)
 {
-  if (!serial_.is_open()) {
-    std::string err;
-    if (!serial_.open(port_, B115200, err)) {
-      RCLCPP_ERROR(get_logger(), "포트 열기 실패: %s", err.c_str());
-      return CallbackReturn::ERROR;
-    }
+  bool any_open = false;
+  for (const auto & link : links_) {any_open = any_open || link->serial.is_open();}
+  if (!any_open && on_configure(rclcpp_lifecycle::State()) != CallbackReturn::SUCCESS) {
+    return CallbackReturn::ERROR;
   }
   if (!wait_first_state(first_state_timeout_s_)) {
-    RCLCPP_ERROR(get_logger(), "%.1f s 안에 OpenCR STATE 를 받지 못함", first_state_timeout_s_);
+    RCLCPP_ERROR(get_logger(), "%.1f s 안에 WHEEL·ARM 역할 STATE를 모두 받지 못함", first_state_timeout_s_);
     return CallbackReturn::ERROR;
   }
   // 펌웨어 버전 확인 — 다르면 패킷 해석이 어긋나므로 명령을 보내지 않음
   if (latest_.fw_version != opencr_proto::PROTOCOL_VERSION) {
-    RCLCPP_ERROR(get_logger(), "펌웨어 프로토콜 버전 %u ≠ 호스트 %u — opencr_firmware 를 다시 올리세요",
-      latest_.fw_version, opencr_proto::PROTOCOL_VERSION);
+    RCLCPP_ERROR(get_logger(), "두 보드 모두 프로토콜 v%u이어야 합니다 — 역할별 펌웨어를 다시 올리세요",
+      opencr_proto::PROTOCOL_VERSION);
     return CallbackReturn::ERROR;
   }
   if (latest_.error & opencr_proto::ERR_MOTOR_CONFIG) {
@@ -327,16 +398,20 @@ void OpenCRHardware::update_estop()
 return_type OpenCRHardware::read(const rclcpp::Time &, const rclcpp::Duration &)
 {
   const bool io_ok = poll_serial();
-  const bool fresh = have_state_ && (steady_.now() - last_state_time_).seconds() <= comm_timeout_s_;
-  link_ok_.store(io_ok && fresh);
-  bad_frames_.store(parser_.bad_frames());
-  update_estop();
-  if (!io_ok) {
-    RCLCPP_ERROR(get_logger(), "시리얼 읽기 오류 (장치 분리?)");
-    return return_type::ERROR;
+  const auto now = steady_.now();
+  bool wheel_fresh = false, arm_fresh = false;
+  for (const auto & link : links_) {
+    if (!link->have_state || (now - link->last_state_time).seconds() > comm_timeout_s_) {continue;}
+    if (link->state.role == opencr_proto::ROLE_WHEEL) {wheel_fresh = true;}
+    else if (link->state.role == opencr_proto::ROLE_ARM) {arm_fresh = true;}
   }
-  if (!fresh) {
-    RCLCPP_ERROR(get_logger(), "%.2f s 동안 OpenCR STATE 없음 — 통신 끊김", comm_timeout_s_);
+  const bool fresh = wheel_fresh && arm_fresh;
+  link_ok_.store(io_ok && fresh);
+  update_estop();
+  if (!io_ok || !fresh) {
+    // 한쪽 링크만 살아 있으면 그 보드에 정지 명령을 보내고, 끊긴 보드에는 펌웨어 타임아웃이 적용된다.
+    send_cmd(true);
+    RCLCPP_ERROR(get_logger(), "WHEEL·ARM OpenCR 중 하나 이상 링크 오류 (시리얼 분리 또는 상태 타임아웃)");
     return return_type::ERROR;
   }
   fw_error_.store(latest_.error);
@@ -344,10 +419,10 @@ return_type OpenCRHardware::read(const rclcpp::Time &, const rclcpp::Duration &)
   battery_v_.store(latest_.battery_v);
   if (latest_.error != last_error_) {
     if (latest_.error) {
-      RCLCPP_WARN(get_logger(), "OpenCR 오류 비트 0x%02X (SyncRead 누락 %d · 명령 타임아웃 %d · 물리 E-stop %d · 모터 HW %d)",
+      RCLCPP_WARN(get_logger(), "OpenCR 오류 비트 0x%02X (SyncRead 누락 %d · 명령 타임아웃 %d · 물리 E-stop %d · 모터 HW %d · 역할 불일치 %d)",
         latest_.error, !!(latest_.error & opencr_proto::ERR_SYNCREAD),
         !!(latest_.error & opencr_proto::ERR_CMD_TIMEOUT), !!(latest_.error & opencr_proto::ERR_HW_ESTOP),
-        !!(latest_.error & opencr_proto::ERR_MOTOR_HW));
+        !!(latest_.error & opencr_proto::ERR_MOTOR_HW), !!(latest_.error & opencr_proto::ERR_ROLE_MISMATCH));
     }
     last_error_ = latest_.error;
   }
@@ -357,32 +432,46 @@ return_type OpenCRHardware::read(const rclcpp::Time &, const rclcpp::Duration &)
 
 bool OpenCRHardware::send_cmd(bool torque_on)
 {
+  bool wheel_sent = false, arm_sent = false, ok = true;
+  for (const auto & link : links_) {
+    if (!link->have_state) {continue;}
+    const uint8_t role = link->state.role;
+    if (role != opencr_proto::ROLE_WHEEL && role != opencr_proto::ROLE_ARM) {continue;}
+    const bool sent = send_cmd_for_role(role, torque_on);
+    ok = sent && ok;
+    if (role == opencr_proto::ROLE_WHEEL) {wheel_sent = true;} else {arm_sent = true;}
+  }
+  return ok && wheel_sent && arm_sent;
+}
+
+bool OpenCRHardware::send_cmd_for_role(uint8_t role, bool torque_on)
+{
   opencr_proto::Cmd c{};
+  c.role = role;
   for (const auto & j : joints_) {
-    if (j.role == Role::WHEEL) {
+    if (role == opencr_proto::ROLE_WHEEL && j.role == Role::WHEEL) {
       const double v = get_command<double>(j.name + "/" + hi::HW_IF_VELOCITY);
       c.wheel_vel[j.slot] = std::isfinite(v) ? static_cast<float>(v) : 0.0f;
-    } else if (j.role == Role::ARM) {
+    } else if (role == opencr_proto::ROLE_ARM && j.role == Role::ARM) {
       const double p = get_command<double>(j.name + "/" + hi::HW_IF_POSITION);
-      // 명령이 아직 없으면(NaN) 현재 위치 유지
       c.arm_pos[j.slot] = static_cast<float>(std::isfinite(p) ? p : latest_.pos[opencr_proto::MAX_WHEELS + j.slot]);
-    } else {
+    } else if (role == opencr_proto::ROLE_ARM && j.role == Role::GRIPPER) {
       const double g = get_command<double>(j.name + "/" + hi::HW_IF_POSITION);
-      if (std::isfinite(g)) {
-        c.gripper_pos = static_cast<float>(g);
-        c.flags |= opencr_proto::FLAG_GRIPPER_VALID;
-      }
+      if (std::isfinite(g)) {c.gripper_pos = static_cast<float>(g); c.flags |= opencr_proto::FLAG_GRIPPER_VALID;}
     }
   }
   if (torque_on) {c.flags |= opencr_proto::FLAG_TORQUE_ON;}
-  if (estop_.load()) {   // 잠금식 E-stop → 펌웨어가 바퀴 0 · 팔 위치 유지 (토크 유지)
+  if (estop_.load() || !link_ok_.load()) {
     c.flags |= opencr_proto::FLAG_ESTOP;
     for (float & w : c.wheel_vel) {w = 0.0f;}
   }
   c.seq = seq_++;
   uint8_t frame[opencr_proto::MAX_FRAME];
   const size_t n = opencr_proto::encode_cmd(c, frame);
-  return serial_.write_all(frame, n);
+  for (const auto & link : links_) {
+    if (link->have_state && link->state.role == role) {return link->serial.write_all(frame, n);}
+  }
+  return false;
 }
 
 return_type OpenCRHardware::write(const rclcpp::Time &, const rclcpp::Duration &)

@@ -2,7 +2,7 @@
 // controller_manager(① ros2_control_node) 안에서 로드되어 100 Hz 로 read()/write() 가 불린다.
 //   command: 바퀴 velocity × N(≤6) · 팔 position × 6 · 그리퍼 position × 0/1
 //   state  : 관절 position · velocity · effort · IMU 10
-//   USB CDC /dev/opencr — CMD 0x01 송신 / STATE 0x81 수신 (opencr_protocol.hpp)
+//   USB CDC 후보 포트 2개 — CMD 0x01 송신 / STATE 0x81 수신, STATE.role로 보드 판별
 //   E-stop 은 이 플러그인 한 곳에서 판단 (잠금식, estop_latch.hpp):
 //     /joy 구독 (heartbeat · E-stop · 리셋 버튼) → /e_stop 발행 (TransientLocal, 10 Hz)
 //     /diagnostics 발행 (opencr/link · opencr/motors · opencr/battery · opencr/estop, 1 Hz + 오류 즉시)
@@ -12,7 +12,9 @@
 
 #include <atomic>
 #include <cstdint>
+#include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "diagnostic_msgs/msg/diagnostic_array.hpp"
@@ -52,9 +54,12 @@ private:
 
   bool poll_serial();
   bool wait_first_state(double timeout_s);
+  bool roles_ready() const;
+  void refresh_aggregate_state();
   void apply_state_to_interfaces();
   void set_state_if(const std::string & name, double v);
   bool send_cmd(bool torque_on);
+  bool send_cmd_for_role(uint8_t role, bool torque_on);
   void update_estop();             // read() 안에서 100 Hz
   void setup_ros_io();             // 하드웨어 컴포넌트 노드에 /joy · /e_stop · /diagnostics
   void publish_estop();
@@ -64,7 +69,8 @@ private:
   std::vector<JointMap> joints_;
   std::string imu_name_;
   // 파라미터 (URDF <hardware><param>)
-  std::string port_ = "/dev/opencr";
+  // 후보 포트는 역할을 미리 가정하지 않는다. 각 포트의 STATE.role로 WHEEL/ARM을 판별한다.
+  std::string port_ = "/dev/ttyACM0,/dev/ttyACM1";
   double comm_timeout_s_ = 0.5;
   double first_state_timeout_s_ = 2.0;
   bool joy_required_ = true;
@@ -74,11 +80,19 @@ private:
   double battery_warn_v_ = 11.1;
   double battery_error_v_ = 10.5;
 
-  SerialPort serial_;
-  opencr_proto::FrameParser parser_;
+  struct BoardLink
+  {
+    explicit BoardLink(std::string path_in) : path(std::move(path_in)) {}
+    std::string path;
+    SerialPort serial;
+    opencr_proto::FrameParser parser;
+    opencr_proto::State state{};
+    bool have_state = false;
+    rclcpp::Time last_state_time{0, 0, RCL_STEADY_TIME};
+  };
+  std::vector<std::unique_ptr<BoardLink>> links_;
   opencr_proto::State latest_{};
   bool have_state_ = false;
-  rclcpp::Time last_state_time_{0, 0, RCL_STEADY_TIME};
   rclcpp::Clock steady_{RCL_STEADY_TIME};
   uint8_t seq_ = 0;
   uint8_t last_error_ = 0;
