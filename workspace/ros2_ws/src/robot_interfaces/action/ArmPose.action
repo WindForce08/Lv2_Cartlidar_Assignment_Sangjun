@@ -1,0 +1,6 @@
+string name   # STOW / READY / PLACE / TAG_VIEW
+---
+bool success
+string message   # 실패 이유 (2026-10-22 추가 — mission status.reason 에 남김)
+---
+float32 progress

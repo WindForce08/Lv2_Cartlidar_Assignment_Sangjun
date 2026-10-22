@@ -1,0 +1,95 @@
+<?xml version="1.0"?>
+<!-- OpenCRHardware ros2_control 블록 (Firmware 팀).
+     바퀴 슬롯 = 펌웨어 config.h 의 WHEEL_IDS 순서 (왼쪽 앞→뒤, 오른쪽 앞→뒤).
+     팔 슬롯 0~5 = ARM_IDS 11~16 (joint1~5, gripper_roll). -->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro name="opencr_wheel" params="name slot">
+    <joint name="${name}">
+      <param name="role">wheel</param>
+      <param name="slot">${slot}</param>
+      <command_interface name="velocity"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+      <state_interface name="effort"/>
+    </joint>
+  </xacro:macro>
+
+  <xacro:macro name="opencr_arm_joint" params="name slot lower upper">
+    <joint name="${name}">
+      <param name="role">arm</param>
+      <param name="slot">${slot}</param>
+      <command_interface name="position">
+        <param name="min">${lower}</param>
+        <param name="max">${upper}</param>
+      </command_interface>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+      <state_interface name="effort"/>
+    </joint>
+  </xacro:macro>
+
+  <!-- wheel_count: 4 (기본, waffle_4wd) 또는 6 -->
+  <xacro:macro name="opencr_ros2_control" params="name:=OpenCRSystem port:=/dev/opencr wheel_count:=4 use_gripper:=false joy_required:=true">
+    <ros2_control name="${name}" type="system">
+      <hardware>
+        <plugin>opencr_hardware/OpenCRHardware</plugin>
+        <param name="port">${port}</param>
+        <param name="comm_timeout_s">0.5</param>
+        <param name="first_state_timeout_s">2.0</param>
+        <!-- 잠금식 E-stop: /joy heartbeat · 버튼 (조이스틱 모델에 맞춰 번호 확인 ★) -->
+        <param name="joy_required">${joy_required}</param>
+        <param name="joy_timeout_s">0.5</param>
+        <param name="estop_button">6</param>
+        <param name="reset_button">7</param>
+        <param name="battery_warn_v">11.1</param>
+        <param name="battery_error_v">10.5</param>
+      </hardware>
+
+      <xacro:if value="${wheel_count == 4}">
+        <xacro:opencr_wheel name="wheel_left_front_joint"  slot="0"/>
+        <xacro:opencr_wheel name="wheel_left_rear_joint"   slot="1"/>
+        <xacro:opencr_wheel name="wheel_right_front_joint" slot="2"/>
+        <xacro:opencr_wheel name="wheel_right_rear_joint"  slot="3"/>
+      </xacro:if>
+      <xacro:if value="${wheel_count == 6}">
+        <xacro:opencr_wheel name="wheel_left_front_joint"  slot="0"/>
+        <xacro:opencr_wheel name="wheel_left_mid_joint"    slot="1"/>
+        <xacro:opencr_wheel name="wheel_left_rear_joint"   slot="2"/>
+        <xacro:opencr_wheel name="wheel_right_front_joint" slot="3"/>
+        <xacro:opencr_wheel name="wheel_right_mid_joint"   slot="4"/>
+        <xacro:opencr_wheel name="wheel_right_rear_joint"  slot="5"/>
+      </xacro:if>
+
+      <!-- 관절 한계 (rad) — manipulator.yaml 의 joint_limits 와 맞춤 ★ 실측 -->
+      <xacro:opencr_arm_joint name="joint1"       slot="0" lower="-2.8" upper="2.8"/>
+      <xacro:opencr_arm_joint name="joint2"       slot="1" lower="-1.8" upper="1.6"/>
+      <xacro:opencr_arm_joint name="joint3"       slot="2" lower="-1.6" upper="1.5"/>
+      <xacro:opencr_arm_joint name="joint4"       slot="3" lower="-1.8" upper="2.0"/>
+      <xacro:opencr_arm_joint name="joint5"       slot="4" lower="-2.8" upper="2.8"/>
+      <xacro:opencr_arm_joint name="gripper_roll" slot="5" lower="-2.8" upper="2.8"/>
+
+      <xacro:if value="${use_gripper}">
+        <!-- 그리퍼 개폐 액추에이터 미정 — 정해지면 펌웨어 GRIPPER_ID 와 함께 켬 ★ -->
+        <joint name="gripper_joint">
+          <param name="role">gripper</param>
+          <command_interface name="position"/>
+          <state_interface name="position"/>
+        </joint>
+      </xacro:if>
+
+      <sensor name="imu">
+        <state_interface name="orientation.x"/>
+        <state_interface name="orientation.y"/>
+        <state_interface name="orientation.z"/>
+        <state_interface name="orientation.w"/>
+        <state_interface name="angular_velocity.x"/>
+        <state_interface name="angular_velocity.y"/>
+        <state_interface name="angular_velocity.z"/>
+        <state_interface name="linear_acceleration.x"/>
+        <state_interface name="linear_acceleration.y"/>
+        <state_interface name="linear_acceleration.z"/>
+      </sensor>
+    </ros2_control>
+  </xacro:macro>
+</robot>

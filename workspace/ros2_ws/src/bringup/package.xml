@@ -1,30 +1,24 @@
 <?xml version="1.0"?>
-<?xml-model href="http://download.ros.org/schema/package_format3.xsd"
-             schematypens="http://www.w3.org/2001/XMLSchema"?>
-
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-
   <name>bringup</name>
-  <version>0.0.0</version>
-
-  <description>Horus vision tracking bringup: camera, perception, center, control</description>
-
-  <maintainer email="jje5976@gmail.com">jje</maintainer>
-
-  <license>TODO: License declaration</license>
+  <version>0.2.0</version>
+  <description>퍽 운반 로봇 전체 실행: 하드웨어(①②) · 인식(⑦) · 판단 · 제어 · TFmini(⑧) · ekf(⑥)</description>
+  <maintainer email="kanichong@gmail.com">pa8</maintainer>
+  <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
-
-  <exec_depend>ament_index_python</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
-  <exec_depend>realsense2_camera</exec_depend>
+  <exec_depend>rclcpp_components</exec_depend>
+  <exec_depend>opencr_hardware</exec_depend>
   <exec_depend>perception</exec_depend>
-  <exec_depend>center</exec_depend>
   <exec_depend>control</exec_depend>
+  <exec_depend>center</exec_depend>
+  <exec_depend>robot_policy</exec_depend>
+  <exec_depend>robot_localization</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>
   </export>
-
 </package>

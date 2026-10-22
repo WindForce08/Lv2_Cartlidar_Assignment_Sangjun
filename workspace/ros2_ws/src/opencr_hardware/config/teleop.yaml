@@ -1,0 +1,28 @@
+joy_node:
+  ros__parameters:
+    autorepeat_rate: 20.0       # 버튼을 안 눌러도 20 Hz 발행 → OpenCRHardware heartbeat
+    deadzone: 0.05
+
+teleop_twist_joy_node:
+  ros__parameters:
+    publish_stamped_twist: true
+    require_enable_button: true
+    enable_button: 4            # 데드맨 (LB) ★ 조이스틱 모델
+    axis_linear: {x: 1}
+    scale_linear: {x: 0.2}
+    axis_angular: {yaw: 0}
+    scale_angular: {yaw: 1.0}
+
+# 시작 · 정지 버튼 → mission_node 서비스. E-stop · 리셋 버튼은 OpenCRHardware 가 /joy 에서 직접 읽음
+joy_teleop:
+  ros__parameters:
+    mission_start:
+      type: service
+      interface_type: std_srvs/srv/Trigger
+      service_name: /mission/start
+      buttons: [9]              # START ★
+    mission_stop:
+      type: service
+      interface_type: std_srvs/srv/Trigger
+      service_name: /mission/stop
+      buttons: [8]              # BACK ★

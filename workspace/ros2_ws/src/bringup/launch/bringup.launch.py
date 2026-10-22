@@ -1,104 +1,71 @@
-# 시연 실행: 카메라 드라이버 + 인지 + 판단 + 제어를 한 번에 띄움
+# 퍽 운반 로봇 전체 실행 (Jetson 프로세스 ① ② ⑥ ⑦ ⑧)
 #
-#   ros2 launch bringup bringup.launch.py
-#   ros2 launch bringup bringup.launch.py debug_image:=true             # PC 에서 오버레이 영상 확인
-#   ros2 launch bringup bringup.launch.py debug_mask:=true              # PC 에서 마스크 영상 확인
-#   ros2 launch bringup bringup.launch.py use_camera:=false             # bag 재생으로 시험
-#   ros2 launch bringup bringup.launch.py use_control:=false            # OpenCR 없이 시험
+#   ros2 launch bringup bringup.launch.py                        # 실물: 하드웨어 + 인식 + 판단 · 제어
+#   ros2 launch bringup bringup.launch.py use_hardware:=false    # OpenCR 없이 (판단 · 제어 · 인식만)
+#   ros2 launch bringup bringup.launch.py use_perception:=false  # 카메라 없이
+#   ros2 launch bringup bringup.launch.py skill_enabled:=true    # ONNX Runtime 빌드에서만 (정책 실행)
 #
-# rqt·bag 녹화처럼 이 launch 밖에서 켜는 도구는 FASTDDS_DEFAULT_PROFILES_FILE 을 직접 지정해야 함
-
-import os
-
-from ament_index_python.packages import get_package_share_directory
+# ① ros2_control_node · ② base_container : opencr_hardware/base_bringup.launch.py
+# ⑦ perception_container                  : perception/perception.launch.py
+# ⑧ control_container (component_container_mt) — MissionNode(center) · DriveNode · ManipulatorNode(control) · TFminiNode(perception)
+#    같은 프로세스 · intra-process 통신 · 노드마다 MutuallyExclusive 콜백 그룹 → 바퀴 · 팔 · 판단 콜백이 병렬
+# ⑥ ekf (use_ekf) — 바퀴 vx + IMU yaw rate
+# nav2 · slam_toolbox 는 기존 패키지 launch 로 따로 (nav2 체인 마지막 출력만 /cmd_vel_nav)
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
-from launch.actions import GroupAction
-from launch.actions import IncludeLaunchDescription
-from launch.actions import SetEnvironmentVariable
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch_ros.actions import ComposableNodeContainer, Node
+from launch_ros.descriptions import ComposableNode
 from launch_ros.parameter_descriptions import ParameterValue
+from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
+    hw = FindPackageShare('opencr_hardware')
+    per = FindPackageShare('perception')
+    ctl = FindPackageShare('control')
+    cen = FindPackageShare('center')
+    pol = FindPackageShare('robot_policy')
+    me = FindPackageShare('bringup')
+    ipc = [{'use_intra_process_comms': True}]
+    skill = {'skill.enabled': ParameterValue(LaunchConfiguration('skill_enabled'), value_type=bool),
+             'skill.policies_file': LaunchConfiguration('policies_file')}
 
-    config_dir = os.path.join(get_package_share_directory('bringup'), 'config')
-    camera_launch = os.path.join(
-        get_package_share_directory('realsense2_camera'), 'launch', 'rs_launch.py')
-
-    debug_image = LaunchConfiguration('debug_image')
-    debug_mask = LaunchConfiguration('debug_mask')
-    use_camera = LaunchConfiguration('use_camera')
-    use_control = LaunchConfiguration('use_control')
-    port = LaunchConfiguration('port')
+    control_container = ComposableNodeContainer(
+        name='control_container', namespace='', package='rclcpp_components',
+        executable='component_container_mt', output='screen',
+        composable_node_descriptions=[
+            ComposableNode(package='center', plugin='center::MissionNode', name='mission_node',
+                           parameters=[PathJoinSubstitution([cen, 'config', 'mission.yaml'])], extra_arguments=ipc),
+            ComposableNode(package='control', plugin='control::DriveNode', name='drive_node',
+                           parameters=[PathJoinSubstitution([ctl, 'config', 'drive.yaml']), skill], extra_arguments=ipc),
+            ComposableNode(package='control', plugin='control::ManipulatorNode', name='manipulator_node',
+                           parameters=[PathJoinSubstitution([ctl, 'config', 'manipulator.yaml']), skill], extra_arguments=ipc),
+            ComposableNode(package='perception', plugin='perception::TFminiNode', name='tfmini_node',
+                           parameters=[PathJoinSubstitution([per, 'config', 'tfmini.yaml'])], extra_arguments=ipc),
+        ])
 
     return LaunchDescription([
-        DeclareLaunchArgument(
-            'debug_image', default_value='false',
-            description='인지 오버레이 영상 /target/debug_image 발행'),
-        DeclareLaunchArgument(
-            'debug_mask', default_value='false',
-            description='인지 마스크 영상 /target/debug_mask 발행'),
-        DeclareLaunchArgument(
-            'use_camera', default_value='true',
-            description='카메라 드라이버 실행 (bag 재생 시 false)'),
-        DeclareLaunchArgument(
-            'use_control', default_value='true',
-            description='제어 노드 실행 (OpenCR 없이 시험 시 false)'),
-        DeclareLaunchArgument(
-            'port', default_value='/dev/opencr',
-            description='OpenCR 시리얼 포트'),
+        DeclareLaunchArgument('use_hardware', default_value='true', description='① ② OpenCR · 컨트롤러 · twist_mux · 조이스틱'),
+        DeclareLaunchArgument('use_teleop', default_value='true', description='조이스틱 (끄면 E-stop heartbeat 검사도 끔)'),
+        DeclareLaunchArgument('use_perception', default_value='true', description='⑦ 카메라 3대 · 검출'),
+        DeclareLaunchArgument('use_ekf', default_value='true', description='⑥ robot_localization ekf'),
+        DeclareLaunchArgument('port', default_value='/dev/opencr'),
+        DeclareLaunchArgument('skill_enabled', default_value='false',
+                              description='정책 실행 — ONNX Runtime 빌드에서만 true (없으면 거절 → 미션 fallback)'),
+        DeclareLaunchArgument('policies_file', default_value=PathJoinSubstitution([pol, 'config', 'policies.yaml'])),
 
-        # 640x480 영상 프레임 손실 방지, 아래 모든 노드에 적용 (반드시 노드보다 먼저)
-        SetEnvironmentVariable(
-            'FASTDDS_DEFAULT_PROFILES_FILE', os.path.join(config_dir, 'fastdds_shm_big.xml')),
-
-        # 1. 카메라 드라이버: color 640x480@30 + color 에 정렬된 depth (인지 거리 필터용)
-        #    forwarding=False: bringup 인자(debug_image 등)는 넘기지 않고 아래 4개만 전달
-        #    (넘기면 rs_launch.py 가 모르는 인자마다 'is not supported' 경고 출력)
-        GroupAction(
-            condition=IfCondition(use_camera),
-            scoped=True,
-            forwarding=False,
-            actions=[
-                IncludeLaunchDescription(
-                    PythonLaunchDescriptionSource(camera_launch),
-                    launch_arguments={
-                        'rgb_camera.color_profile': '640,480,30',
-                        'depth_module.depth_profile': '640,480,30',
-                        'enable_depth': 'true',
-                        'align_depth.enable': 'true',
-                    }.items()),
-            ]),
-
-        # 2. 인지: perception.yaml 은 perception 패키지에 설치된 기본 경로 사용
-        Node(
-            package='perception',
-            executable='perception_node',
-            name='perception_node',
-            output='screen',
-            parameters=[{
-                'publish_debug_image': ParameterValue(debug_image, value_type=bool),
-                'publish_debug_mask': ParameterValue(debug_mask, value_type=bool),
-            }]),
-
-        # 3. 판단: 상태 전이 + 모터 목표 계산
-        Node(
-            package='center',
-            executable='center_node',
-            name='center_node',
-            output='screen',
-            parameters=[os.path.join(config_dir, 'center.yaml')]),
-
-        # 4. 제어: OpenCR 시리얼
-        Node(
-            package='control',
-            executable='control_node',
-            name='control_node',
-            output='screen',
-            condition=IfCondition(use_control),
-            parameters=[{'port': port}]),
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(PathJoinSubstitution([hw, 'launch', 'base_bringup.launch.py'])),
+            launch_arguments={'use_teleop': LaunchConfiguration('use_teleop'), 'port': LaunchConfiguration('port')}.items(),
+            condition=IfCondition(LaunchConfiguration('use_hardware'))),
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(PathJoinSubstitution([per, 'launch', 'perception.launch.py'])),
+            condition=IfCondition(LaunchConfiguration('use_perception'))),
+        control_container,
+        Node(package='robot_localization', executable='ekf_node', name='ekf_filter_node', output='screen',
+             parameters=[PathJoinSubstitution([me, 'config', 'ekf.yaml'])],
+             condition=IfCondition(LaunchConfiguration('use_ekf'))),
     ])

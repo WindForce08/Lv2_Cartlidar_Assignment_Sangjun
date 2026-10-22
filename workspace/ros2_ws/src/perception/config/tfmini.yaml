@@ -1,0 +1,11 @@
+tfmini_node:
+  ros__parameters:
+    port: /dev/tfmini
+    baud: 115200
+    frame_id: tfmini_link
+    min_strength: 100
+    min_range: 0.1
+    max_range: 12.0
+    field_of_view: 0.063
+    stale_timeout_s: 0.2
+    publish_rate: 50.0

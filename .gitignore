@@ -36,3 +36,43 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+
+# C++ / CMake 빌드 산출물 (colcon 밖에서 빌드했을 때)
+compile_commands.json
+CMakeCache.txt
+CMakeFiles/
+Testing/
+.cache/
+*.o
+*.a
+*.so
+*.so.*
+
+# Arduino (opencr_firmware) 빌드 출력
+opencr_firmware/build/
+*.hex
+*.elf
+*.bin
+
+# 모델 · 학습 산출물 (용량 큼 — 공유 드라이브로 전달)
+*.engine
+*.trt
+*.onnx
+*.pt
+*.pth
+results/
+
+# 로그 · 기록
+*.log
+rosbag2_*/
+*.mcap
+core
+core.*
+
+# 에디터 · 병합 임시 파일
+*.swp
+*.swo
+*~
+*.orig
+*.rej
+.history/

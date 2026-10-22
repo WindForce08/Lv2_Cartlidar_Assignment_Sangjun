@@ -1,0 +1,76 @@
+<?xml version="1.0"?>
+<!-- 퍽 운반 로봇 URDF (Firmware 팀) — TF 트리 · ros2_control.
+     링크 위치 · 관절 원점은 값이 확정되지 않아 ★ 표시한 자리값이다 (Perception 팀이 센서 장착 위치 제공).
+     형상(visual/collision)은 넣지 않았다. waffle_4wd 메시를 쓰려면 base_link 에 visual 을 추가한다. -->
+<robot name="puckbot" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:arg name="wheel_count" default="4"/>
+  <xacro:arg name="use_gripper" default="false"/>
+  <xacro:arg name="port" default="/dev/opencr"/>
+  <xacro:arg name="joy_required" default="true"/>
+  <xacro:include filename="$(find opencr_hardware)/urdf/opencr.ros2_control.xacro"/>
+
+  <xacro:property name="wheel_count" value="$(arg wheel_count)"/>
+  <xacro:property name="wheel_y" value="0.1585"/>     <!-- 바퀴 중심 |y| (증속벨트 바깥 15 mm 이동 후) ★ -->
+  <xacro:property name="wheel_x" value="0.0925"/>     <!-- 앞바퀴 x (뒤 = 0.025 - 0.0925) -->
+  <xacro:property name="wheel_z" value="0.02625"/>
+
+  <link name="base_link"/>
+
+  <xacro:macro name="wheel" params="name x y">
+    <link name="${name}_link"/>
+    <joint name="${name}_joint" type="continuous">
+      <parent link="base_link"/>
+      <child link="${name}_link"/>
+      <origin xyz="${x} ${y} ${wheel_z}" rpy="-1.5708 0 0"/>
+      <axis xyz="0 0 1"/>
+    </joint>
+  </xacro:macro>
+  <xacro:wheel name="wheel_left_front"  x="${wheel_x}"  y="${wheel_y}"/>
+  <xacro:wheel name="wheel_left_rear"   x="${0.025 - wheel_x}" y="${wheel_y}"/>
+  <xacro:wheel name="wheel_right_front" x="${wheel_x}"  y="${-wheel_y}"/>
+  <xacro:wheel name="wheel_right_rear"  x="${0.025 - wheel_x}" y="${-wheel_y}"/>
+  <xacro:if value="${wheel_count == 6}">
+    <xacro:wheel name="wheel_left_mid"  x="0.0125" y="${wheel_y}"/>
+    <xacro:wheel name="wheel_right_mid" x="0.0125" y="${-wheel_y}"/>
+  </xacro:if>
+
+  <!-- 센서 (정적) ★ 장착 위치 -->
+  <xacro:macro name="fixed_link" params="name parent xyz rpy">
+    <link name="${name}"/>
+    <joint name="${name}_joint" type="fixed">
+      <parent link="${parent}"/>
+      <child link="${name}"/>
+      <origin xyz="${xyz}" rpy="${rpy}"/>
+    </joint>
+  </xacro:macro>
+  <xacro:fixed_link name="imu_link"          parent="base_link" xyz="0 0 0.068" rpy="0 0 0"/>
+  <xacro:fixed_link name="laser_front"       parent="base_link" xyz="0.15 0 0.08" rpy="0 0 0"/>
+  <xacro:fixed_link name="laser_rear"        parent="base_link" xyz="-0.15 0 0.08" rpy="0 0 3.14159"/>
+  <xacro:fixed_link name="camera_front_link" parent="base_link" xyz="0.16 0 0.13" rpy="0 0.35 0"/>
+  <xacro:fixed_link name="camera_rear_link"  parent="base_link" xyz="-0.16 0 0.13" rpy="0 0.35 3.14159"/>
+  <xacro:fixed_link name="arm_base_link"     parent="base_link" xyz="0.087 0 0.111" rpy="0 0 0"/>
+
+  <!-- 팔 (joint1 요 · joint2~4 피치 · joint5 손목 롤 · gripper_roll) — 길이는 manipulator.yaml 과 같게 ★ -->
+  <xacro:macro name="arm_joint" params="name parent child xyz axis lower upper">
+    <link name="${child}"/>
+    <joint name="${name}" type="revolute">
+      <parent link="${parent}"/>
+      <child link="${child}"/>
+      <origin xyz="${xyz}" rpy="0 0 0"/>
+      <axis xyz="${axis}"/>
+      <limit lower="${lower}" upper="${upper}" effort="4.1" velocity="4.8"/>
+    </joint>
+  </xacro:macro>
+  <xacro:arm_joint name="joint1" parent="arm_base_link" child="link1" xyz="0 0 0.077" axis="0 0 1" lower="-2.8" upper="2.8"/>
+  <xacro:arm_joint name="joint2" parent="link1" child="link2" xyz="0 0 0" axis="0 1 0" lower="-1.8" upper="1.6"/>
+  <xacro:arm_joint name="joint3" parent="link2" child="link3" xyz="0.024 0 0.128" axis="0 1 0" lower="-1.6" upper="1.5"/>
+  <xacro:arm_joint name="joint4" parent="link3" child="link4" xyz="0.124 0 0" axis="0 1 0" lower="-1.8" upper="2.0"/>
+  <xacro:arm_joint name="joint5" parent="link4" child="link5" xyz="0.04 0 0" axis="1 0 0" lower="-2.8" upper="2.8"/>
+  <xacro:arm_joint name="gripper_roll" parent="link5" child="gripper_roll_link" xyz="0.041 0 0" axis="1 0 0" lower="-2.8" upper="2.8"/>
+  <xacro:fixed_link name="arm_camera_link" parent="gripper_roll_link" xyz="0.02 0 0.035" rpy="0 0 0"/>
+  <xacro:fixed_link name="tfmini_link"     parent="gripper_roll_link" xyz="0.02 0 -0.035" rpy="0 0 0"/>
+  <xacro:fixed_link name="tool_link"       parent="gripper_roll_link" xyz="0.086 0 0" rpy="0 0 0"/>
+
+  <xacro:opencr_ros2_control port="$(arg port)" wheel_count="${wheel_count}" use_gripper="$(arg use_gripper)"
+                             joy_required="$(arg joy_required)"/>
+</robot>

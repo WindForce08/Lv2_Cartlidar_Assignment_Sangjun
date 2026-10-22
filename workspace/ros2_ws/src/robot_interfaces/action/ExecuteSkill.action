@@ -1,0 +1,8 @@
+# drive_node · manipulator_node — 강화학습 정책 실행 (policies.yaml 이름)
+string policy
+float32 timeout   # s
+---
+bool success
+string message
+---
+float32 progress

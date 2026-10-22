@@ -1,0 +1,10 @@
+# 비트 플래그 — 여러 모드 동시. 0 이면 전부 정지
+uint8 OFF=0
+uint8 SEARCH_FRONT=1   # 전방 D435 물체 탐색
+uint8 ARM_ALIGN=2      # Arducam 정렬 오차
+uint8 READ_TAG=4       # Arducam AprilTag
+uint8 SEARCH_REAR=8    # 후방 D435 물체 탐색
+uint8 mode             # 예: SEARCH_FRONT | ARM_ALIGN = 3
+---
+bool success
+string message

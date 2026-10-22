@@ -1,0 +1,7 @@
+# Arducam B0200 광각 내부 파라미터 · 왜곡 계수 (camera_calibration 체커보드 결과를 옮겨 적음) ★
+# 0 이면 왜곡 보정을 건너뜀. 값은 아래 해상도(arm_cam.width × height)에서 구한 것이어야 함.
+perception_node:
+  ros__parameters:
+    arm_cam:
+      camera_matrix: [0.0, 0.0, 0.0,  0.0, 0.0, 0.0,  0.0, 0.0, 1.0]   # fx 0 cx / 0 fy cy / 0 0 1
+      dist_coeffs: [0.0, 0.0, 0.0, 0.0, 0.0]                          # k1 k2 p1 p2 k3

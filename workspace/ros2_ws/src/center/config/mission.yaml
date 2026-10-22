@@ -1,0 +1,46 @@
+# mission_node — 미션표 (mission_table.yaml 역할). 노드 시작 시 모든 단계를 검증 → 오타는 실행 전에 실패
+mission_node:
+  ros__parameters:
+    locations:
+      names: [home, station_A]
+      home: [0.0, 0.0, 0.0]        # = slam_toolbox map_start_pose
+      station_A: [1.0, 0.0, 0.0]   # ★
+    missions:
+      tag_ids: [7, 12]
+      tag_7: ["navigate station_A",                              # 주행 + 팔 STOW (병렬)
+              "search",                                          # SEARCH_FRONT | SEARCH_REAR, 못 찾으면 45° 씩 최대 4번
+              "approach 0.15",                                   # STOW 로 D435 접근 → READY → Arducam · TFmini 정밀 0.15 m
+              "skill manipulator pick_cup_v1 fallback=pick",
+              "navigate home"]
+      tag_12: ["skill drive slalom_v1 40 mode=SEARCH_FRONT fallback=navigate:station_A",
+               "pose STOW",
+               "navigate home"]
+    tag:
+      wait_s: 2.0
+      rotate_step_deg: 30.0
+      max_rotations: 11
+    search:
+      wait_s: 2.0
+      rotate_step_deg: 45.0        # 앞뒤 D435 가 각 ~87° → 4번이면 한 바퀴
+      max_rotations: 4
+      face_tolerance_deg: 10.0     # 이보다 옆이면 물체 쪽으로 spin
+      confirm_s: 2.0
+    approach:
+      ready_reach: 0.15            # READY 팔 끝이 범퍼보다 앞으로 나온 거리 ★ 1주차 실측
+      margin: 0.10
+      coarse_min: 0.30             # 먼 거리 = max(ready_reach + 거리 + margin, coarse_min) — drive align.coarse_min 과 같게
+      tolerance: 0.01
+      coarse_tolerance: 0.02
+    max_retries: 2
+    retry_delay_s: 1.0
+    stale_s: 0.3                   # 300 ms 규칙
+    diagnostics:
+      name_prefix: "opencr/"
+      timeout: 0.0                 # opencr 진단 발행 확인 뒤 3.0 으로
+    timeout:
+      tag_s: 90.0
+      navigate_s: 120.0
+      search_s: 60.0
+      approach_s: 90.0
+      pick_s: 60.0
+      pose_s: 20.0

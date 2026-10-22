@@ -1,0 +1,54 @@
+perception_node:
+  ros__parameters:
+    publish_rate: 15.0          # 활성 모드에서 15 Hz 이상 (ARM_ALIGN 필수)
+    frame_max_age_s: 0.3        # 300 ms 규칙 — 이보다 오래된 프레임은 쓰지 않음
+    d435:
+      front_serial: ""          # ★ rs-enumerate-devices 로 확인 (두 대면 둘 다 필수)
+      rear_serial: ""
+      width: 640
+      height: 480
+      fps: 15
+      depth_min: 0.15
+      depth_max: 4.0
+      depth_window: 3           # 깊이 중앙값 창 반폭 (7×7)
+      white_balance: 4600.0     # K 고정 (≤0 = 자동) — 색 검출 안정
+      exposure: 0.0             # µs (≤0 = 자동) ★ 조명 보고 고정
+    arm_cam:
+      device: /dev/arm_cam
+      width: 1280
+      height: 720
+      fps: 30
+      detect_width: 640         # ARM_ALIGN 검출 해상도 (줄여서 SEARCH_FRONT | ARM_ALIGN 15 Hz 확보)
+    detector:
+      type: auto                # auto | tensorrt | color
+      engine_path: ""           # ★ 예: /home/jetson/models/puck_yolov8n.engine
+      score_threshold: 0.3      # 검출기 1차 문턱 (최종 선택은 target.min_confidence)
+      nms_threshold: 0.45
+      target_class: -1
+      target_color: any
+      min_area_ratio: 0.002
+      blur_ksize: 5             # 가우시안 블러 (0 = 끔)
+      morph_kernel: 5           # open · close 커널 (px)
+      min_fill_ratio: 0.5       # 컨투어 / bbox — 낮으면 조각 · 무늬
+      hsv:                      # [H(0~179), S, V] ★ 현장 조명에서 다시 맞춤
+        red:   {lower: [0, 90, 60],    upper: [10, 255, 255]}
+        red2:  {lower: [170, 90, 60],  upper: [179, 255, 255]}
+        green: {lower: [40, 90, 60],   upper: [85, 255, 255]}
+        blue:  {lower: [98, 190, 25],  upper: [118, 255, 230]}   # 이전 실습 검증값
+    target:                     # 물체 하나만 따라가기
+      exclude_min: [-0.30, -0.25, -0.10]   # base_link 상자 (차체 footprint + 그리퍼 작업 영역) ★
+      exclude_max: [ 0.35,  0.25,  0.60]
+      min_confidence: 0.5
+      gate: 0.3                 # 고른 뒤 같은 물체로 보는 거리 (odom, m)
+      lost_timeout: 1.0         # 이만큼 안 보이면 다시 고름
+      size_min_m: 0.015         # 뎁스로 본 짧은 변 하한 (퍽 30 mm) — 0 = 끔
+      size_max_m: 0.09          # 긴 변 상한 (퍽 60 mm)
+    tag:
+      family: tag36h11          # ★ 추정
+      size: 0.10                # ★ 태그 한 변 (m) — 자세 추정에 필요
+    frames:
+      base: base_link
+      odom: odom
+      front: camera_front_link
+      rear: camera_rear_link
+      arm: arm_camera_link

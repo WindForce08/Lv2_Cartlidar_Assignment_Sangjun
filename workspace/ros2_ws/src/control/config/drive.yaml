@@ -1,0 +1,40 @@
+drive_node:
+  ros__parameters:
+    nav2_action: navigate_to_pose
+    spin_action: spin
+    stale_s: 0.3                   # result · /arm_range · /scan · odom 300 ms 규칙
+    navigate:
+      xy_goal_tolerance: 0.25      # 이 안의 목표는 nav2 spin 으로 (nav2 와 같게)
+      spin_time_allowance: 15.0
+    base:
+      front_offset: 0.20           # base_link → 범퍼 앞면 x ★
+    align:
+      rate_hz: 20.0
+      kp_yaw: 1.2                  # 정밀: rad/s per 정규화 가로 오차
+      kp_lin: 1.0
+      max_angular: 0.6
+      max_linear: 0.08
+      lateral_tolerance: 0.04
+      settle_cycles: 10
+      coarse_kp_yaw: 1.5           # 먼 거리
+      coarse_kp_lin: 0.8
+      coarse_max_speed: 0.15
+      coarse_max_angular: 0.8
+      coarse_yaw_tolerance: 0.05
+      coarse_min: 0.30             # 먼 거리 모드에서 이보다 작은 목표는 거부
+      mode_wait_s: 0.5             # goal 뒤 첫 새 result 를 기다리는 시간 (모드 결정)
+      lost_timeout_s: 0.5
+      timeout_s: 30.0
+      min_target_distance: 0.10
+      default_tolerance: 0.01
+    scan:
+      required: true               # 먼 거리 접근은 /scan 없으면 중지
+      half_angle: 0.349            # ±20°
+      front_margin: 0.10           # 물체보다 0.1 m 이상 가까운 점 → 정지
+      rear_stop: 0.30
+    skill:
+      enabled: false               # robot_policy(ONNX Runtime) 연결 전까지 false → goal 거절 → mission fallback
+      policies_file: ""            # 예: /home/jetson/robot_ws/install/robot_policy/share/robot_policy/config/policies.yaml
+      max_linear: 0.3
+      max_angular: 1.5
+      scan_bins: 360
