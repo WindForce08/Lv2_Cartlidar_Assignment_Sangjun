@@ -1,0 +1,26 @@
+# policies.yaml (학습 담당이 ONNX 와 함께 제공) — CPU 추론 (ONNX Runtime)
+# 벡터 배치: observation 순서대로, required 항목 = [값...], 선택 항목 = [값..., valid] (valid 1 = 유효, 0 = fill 사용)
+# fill = 학습(시뮬레이션)에서 안 보일 때 넣은 값과 같게. obs_dim 이 ONNX 입력 차원과 다르면 로드 실패
+# 선택: offset · scale (정규화 (x - offset) * scale), action_low · action_high (clamp)
+pick_cup_v1:
+  model: models/pick_cup_v1.onnx
+  rate_hz: 20
+  obs_dim: 12                    # joint_pos 6 + arm_offset (3 + valid 1) + arm_range (1 + valid 1)
+  observation:
+    - {name: joint_pos, size: 6, required: true}
+    - {name: arm_offset, size: 3, required: false, fill: [0.0, 0.0, 0.0]}
+    - {name: arm_range, size: 1, required: false, fill: [12.0]}   # 안 보임 = 최대 거리 (0 은 "아주 가까움"이라 금지)
+  action: joint_target(6)        # rad, 관절 한계로 clamp
+
+slalom_v1:
+  model: models/slalom_v1.onnx
+  rate_hz: 20
+  obs_dim: 367                   # scan 360 + odom_twist 3 + object_pose_base (3 + valid 1)
+  observation:
+    - {name: scan, size: 360, required: true}
+    - {name: odom_twist, size: 3, required: true}
+    - {name: object_pose_base, size: 3, required: false, fill: [0.0, 0.0, 0.0]}
+  action: base_twist(2)          # vx (m/s), wz (rad/s)
+  finish_on_timeout: true        # 단계의 timeout(초) 동안 주행하면 성공
+  action_low: [-0.3, -1.5]
+  action_high: [0.3, 1.5]

@@ -1,0 +1,9 @@
+# drive_node — 모드는 goal 수신 뒤 첫 새 result 의 ARM_ALIGN 비트로 정하고 끝까지 유지
+float32 target_distance   # m — 정밀(ARM_ALIGN): TFmini 기준 >= 0.10 / 먼 거리: 범퍼 기준 (D435)
+float32 tolerance
+---
+bool success
+string message
+---
+float32 lateral_error
+float32 distance

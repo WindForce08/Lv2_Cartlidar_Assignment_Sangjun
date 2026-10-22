@@ -1,0 +1,11 @@
+geometry_msgs/PoseStamped target   # 비우면 정밀 정렬 결과 → object_pose → 기억한 위치 순
+---
+bool success
+bool grasped                       # 그리퍼 결과(stalled = 잡음)로 판정
+string message
+---
+uint8 PLAN=0
+uint8 APPROACH=1
+uint8 GRASP=2
+uint8 LIFT=3
+uint8 stage

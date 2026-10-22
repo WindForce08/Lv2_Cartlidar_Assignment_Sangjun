@@ -1,0 +1,206 @@
+<title>퍽 로봇 노드 구현 검토</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* 레이아웃: 기술 검토 보고서 — 좁은 본문 열, 표는 각자 가로 스크롤, 상태는 칩으로 */
+:root{
+  --bg:#F5F6F4; --sheet:#FFFFFF; --ink:#1B2226; --muted:#5A666C; --rule:#D8DDDB; --chip:#ECEFEE;
+  --accent:#C2410C; --accent-soft:#FBE9DF; --ok:#2F7A4B; --ok-soft:#E1F1E7; --warn:#A16207; --warn-soft:#FBF0D5; --info:#285E8A; --info-soft:#E2ECF5;
+  --f-body:"IBM Plex Sans KR","Noto Sans KR","Apple SD Gothic Neo",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#12171A; --sheet:#192024; --ink:#E4E9EA; --muted:#97A3A8; --rule:#2E383D; --chip:#222B30;
+  --accent:#F08A4B; --accent-soft:#3A2416; --ok:#6CC28C; --ok-soft:#173023; --warn:#E3B34F; --warn-soft:#33290F; --info:#7DB3DD; --info-soft:#16283A; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#12171A; --sheet:#192024; --ink:#E4E9EA; --muted:#97A3A8; --rule:#2E383D; --chip:#222B30;
+  --accent:#F08A4B; --accent-soft:#3A2416; --ok:#6CC28C; --ok-soft:#173023; --warn:#E3B34F; --warn-soft:#33290F; --info:#7DB3DD; --info-soft:#16283A; color-scheme:dark}
+
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.7}
+.wrap{max-width:1000px;margin:0 auto;padding-inline:16px;padding-block:32px 72px}
+h1{font-size:30px;line-height:1.25;margin:0 0 8px;font-weight:700;letter-spacing:-.01em;text-wrap:balance}
+h2{font-size:20px;line-height:1.35;margin:52px 0 6px;font-weight:700;text-wrap:balance;display:flex;gap:10px;align-items:baseline}
+h2 .n{font-family:var(--f-mono);font-size:13px;color:var(--accent);font-weight:500}
+h3{font-size:15.5px;margin:0 0 4px;font-weight:600}
+p{margin:6px 0;max-width:70ch}
+.lede{color:var(--muted);max-width:70ch}
+code,.mono{font-family:var(--f-mono);font-size:.88em}
+code{background:var(--chip);padding:1px 5px;border-radius:4px;overflow-wrap:anywhere}
+
+.meta{display:flex;flex-wrap:wrap;gap:6px 22px;margin-top:18px;padding-top:14px;border-top:1px solid var(--rule);font-size:13.5px}
+.meta div{display:flex;gap:8px}.meta b{color:var(--muted);font-weight:500}
+
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-top:22px}
+.fact{background:var(--sheet);border:1px solid var(--rule);padding:14px 16px;min-width:0}
+.fact .v{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.2}
+.fact .k{font-size:13px;color:var(--muted)}
+.fact.ok .v{color:var(--ok)}.fact.warn .v{color:var(--warn)}
+
+.tbl{overflow-x:auto;background:var(--sheet);border:1px solid var(--rule);margin-top:14px}
+table{border-collapse:collapse;width:100%;min-width:780px;font-size:13.5px;line-height:1.55}
+th,td{text-align:left;vertical-align:top;padding:9px 12px;border-bottom:1px solid var(--rule)}
+th{background:var(--chip);font-weight:600;white-space:nowrap;font-size:13px}
+tr:last-child td{border-bottom:0}
+td:first-child{font-weight:600;white-space:nowrap}
+td.old{color:var(--muted)}
+tr.done td:first-child::after{content:"확정";margin-left:8px}
+
+.chip{display:inline-block;font-size:11.5px;font-weight:600;padding:1px 9px;border-radius:999px;white-space:nowrap;vertical-align:1px}
+.chip.ok{background:var(--ok-soft);color:var(--ok)}
+.chip.warn{background:var(--warn-soft);color:var(--warn)}
+.chip.info{background:var(--info-soft);color:var(--info)}
+
+.points{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:12px 22px;margin-top:16px}
+.point{border-top:2px solid var(--ink);padding-top:10px;min-width:0}
+.point p{font-size:14px;color:var(--ink)}
+.point .why{color:var(--muted);font-size:13.5px}
+
+.decide{display:grid;gap:10px;margin-top:16px}
+.dec{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:4px 14px;align-items:start;background:var(--sheet);border:1px solid var(--rule);padding:14px 16px}
+.dec .num{font-family:var(--f-mono);font-size:13px;color:var(--muted);padding-top:2px}
+.dec p{font-size:14px;margin:4px 0 0}
+.dec.open{border-left:3px solid var(--warn)}
+@media (max-width:560px){.dec{grid-template-columns:minmax(0,1fr)}.dec .num{display:none}}
+
+ol.flow{list-style:none;counter-reset:f;padding:0;margin:14px 0 0;display:grid;gap:0}
+ol.flow li{counter-increment:f;display:grid;grid-template-columns:34px minmax(0,1fr);gap:10px;padding:8px 0;border-bottom:1px dashed var(--rule)}
+ol.flow li::before{content:counter(f);font-family:var(--f-mono);font-size:12px;color:var(--accent);border:1px solid var(--accent);width:24px;height:24px;border-radius:50%;display:grid;place-items:center;margin-top:1px}
+ol.flow li span{color:var(--muted);font-size:13.5px}
+
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:16px;margin-top:14px}
+.box{background:var(--sheet);border:1px solid var(--rule);padding:14px 16px;min-width:0}
+.box ul{margin:6px 0 0;padding-left:18px;font-size:14px}.box li{margin:3px 0}
+.box.alert{border-color:var(--warn)}
+
+ul.todo{list-style:none;padding:0;margin:14px 0 0;columns:2 320px;column-gap:28px}
+ul.todo li{break-inside:avoid;padding:6px 0 6px 26px;position:relative;font-size:14px;border-bottom:1px solid var(--rule)}
+ul.todo li::before{content:"";position:absolute;left:2px;top:12px;width:12px;height:12px;border:1.5px solid var(--muted);border-radius:3px}
+ul.todo li b{font-weight:600}
+
+footer{margin-top:56px;padding-top:14px;border-top:1px solid var(--rule);font-size:13px;color:var(--muted)}
+a{color:var(--info)} a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style>
+
+<div class="wrap">
+<header>
+  <h1>퍽 로봇 노드 구현 검토</h1>
+  <p class="lede"><code>robot_nodes.html</code>(노드 설계 · 통신 규약)을 기준으로 이전 소스(v8 다이어그램 + v1.2 상태 관리)와 비교하고, 더 안정적이고 효율적인 쪽으로 Perception · Controller · Firmware 코드를 다시 구현한 결과입니다.</p>
+  <div class="meta">
+    <div><b>작성</b><span class="mono">2026-10-22</span></div>
+    <div><b>환경</b><span>ROS 2 Lyrical · C++ rclcpp component</span></div>
+    <div><b>바퀴</b><span>4륜 확정 (XM430 ID 1~4)</span></div>
+    <div><b>코드</b><span class="mono">structure_design/robot_ws</span></div>
+  </div>
+  <div class="facts">
+    <div class="fact ok"><div class="v">48 / 48</div><div class="k">단위 시험 통과 (5개 패키지)</div></div>
+    <div class="fact ok"><div class="v">2 / 2</div><div class="k">통합 시나리오 통과 (정상 미션 · E-stop 재개)</div></div>
+    <div class="fact"><div class="v">2</div><div class="k">이번에 확정 (4륜 · ArmPose message)</div></div>
+    <div class="fact warn"><div class="v">2</div><div class="k">팀 결정이 남은 항목</div></div>
+  </div>
+</header>
+
+<h2><span class="n">1</span>무엇이 달랐고 어떻게 맞췄나</h2>
+<p class="lede">왼쪽부터 기준 문서, 이전 소스, 이번 구현입니다.</p>
+<div class="tbl"><table>
+<thead><tr><th>영역</th><th>robot_nodes.html</th><th>이전 소스 (v8)</th><th>이번 구현</th></tr></thead>
+<tbody>
+<tr><td>인식 모드</td><td>비트 플래그 OFF · SEARCH_FRONT 1 · ARM_ALIGN 2 · READ_TAG 4 · SEARCH_REAR 8</td><td class="old">값 하나 (0 / 1 / 2)</td><td>비트 플래그. 켜진 비트의 카메라만 열고, OFF 면 mode=0 result 를 한 번 보내 받는 쪽을 초기화</td></tr>
+<tr><td>object_pose</td><td>PoseStamped, base_link 기준, 물체 하나만</td><td class="old">카메라 링크 기준 Pose</td><td>TF 로 base_link 변환. 차체 · 그리퍼 영역 제외, 신뢰도 기준, 가장 가까운 것, odom 0.3 m 안만 같은 물체, 1 s 놓치면 다시 고름</td></tr>
+<tr><td>AprilTag</td><td>READ_TAG → tag_id · tag_pose</td><td class="old">없음</td><td>OpenCV 내장 aruco tag36h11 + solvePnP(IPPE_SQUARE) — 추가 라이브러리 없음</td></tr>
+<tr><td>촬영 시각 · 300 ms</td><td>stamp = 촬영 시각(ROS 시계), 받는 쪽 300 ms 지나면 버림</td><td class="old">일부만</td><td>D435 global time → ROS 시계, Arducam 은 grab 직후. 주행 · 팔 · 미션 모두 stamp 로 300 ms 확인</td></tr>
+<tr><td>미션</td><td>태그 → 미션표 (navigate · search · approach · pick · pose · skill), fallback, PAUSED 재개</td><td class="old">고정 순서 상태머신</td><td>미션표 문법 해석기, 단계별 phase, 태그 30° 회전 탐색, search 45° 회전 · 물체 쪽 spin · 전방 재확인</td></tr>
+<tr><td>접근</td><td>2단계: STOW · D435 먼 거리(범퍼 기준) → READY → Arducam · TFmini 정밀</td><td class="old">READY 와 정렬을 동시에</td><td>2단계. 주행 노드가 goal 뒤 첫 result 로 모드를 정해 끝까지 고정, 먼 거리는 /scan 전 · 후방 감시</td></tr>
+<tr><td>제자리 회전</td><td>같은 위치 목표 → nav2 spin</td><td class="old">없음</td><td>xy_goal_tolerance(0.25 m) 안의 목표를 spin(target_yaw) 으로 변환</td></tr>
+<tr><td>pick</td><td>목표 우선순위 ① 정밀 정렬 ② 새 object_pose ③ odom 기억, 직선 전진, grasped</td><td class="old">TFmini 거리 하나</td><td>세 단계 우선순위, SEARCH_FRONT 동안 odom 기억(OFF 에서 삭제), 마지막 유효 거리로 직선 전진(경유점 4), stalled → grasped</td></tr>
+<tr><td>강화학습</td><td>robot_policy (ONNX Runtime CPU) · execute_skill · policies.yaml</td><td class="old">없음</td><td><code>robot_policy</code> 패키지 + 주행 · 팔 execute_skill. 꺼져 있으면 거절 → 미션이 fallback</td></tr>
+<tr><td>E-stop</td><td>opencr_hardware 한 곳, 잠금식 (조이스틱 0.5 s · 버튼 · 물리 스위치), 리셋 버튼으로만</td><td class="old">/e_stop 구독만, 팔은 별도 래치 + 리셋 서비스</td><td>플러그인이 판단해 /e_stop 10 Hz 발행. 팔은 /e_stop 을 그대로 따름 (별도 리셋 없앰)</td></tr>
+<tr><td>진단</td><td>/diagnostics opencr/link · motors · battery · estop</td><td class="old">없음</td><td>1 Hz + 오류 즉시. 미션은 opencr/ 항목만 보고 ERROR 면 PAUSED</td></tr>
+<tr><td>배터리</td><td>STATE 에 배터리 전압</td><td class="old">없음</td><td>STATE 186 → 190 B, 펌웨어 <code>getPowerInVoltage()</code></td></tr>
+<tr><td>출력 토픽</td><td>/cmd_vel_drive (정렬 · 스킬 공용, twist_mux 50 · 0.25 s)</td><td class="old">/cmd_vel_align</td><td>/cmd_vel_drive</td></tr>
+<tr><td>ekf</td><td>전진 속도는 바퀴, 회전은 IMU 만</td><td class="old">바퀴 회전 속도도 사용</td><td>바퀴는 vx 만, 회전은 IMU (4륜 스키드도 같은 이유)</td></tr>
+<tr><td>바퀴 <span class="chip ok">확정</span></td><td>6륜 XM430-W350 ID 1~6</td><td class="old">파라미터 (기본 4)</td><td>4륜 ID 1~4. 패킷은 6자리를 유지하고 남는 2자리는 0</td></tr>
+<tr><td>ArmPose 결과 <span class="chip ok">확정</span></td><td><code>success</code> 만</td><td class="old"><code>success</code> · <code>message</code></td><td><code>success</code> · <code>message</code>. 미션 상태의 reason 에 실패 이유가 남음</td></tr>
+</tbody></table></div>
+
+<h2><span class="n">2</span>문서보다 안정 · 효율을 위해 더한 것</h2>
+<div class="points">
+  <div class="point"><h3>E-stop 해제를 한 번으로</h3><p>팔의 별도 래치 · 리셋 서비스를 없애고 opencr_hardware 의 잠금식 /e_stop 하나만 따릅니다.</p><p class="why">리셋을 두 군데서 해야 하던 운용 실수를 막습니다. 관절 · 속도 한계와 공구 높이로 거는 팔의 HOLD 는 그대로입니다.</p></div>
+  <div class="point"><h3>하드웨어 플러그인에서 토픽 처리 (미결 #1 해결)</h3><p>Lyrical 은 하드웨어 컴포넌트마다 노드를 줍니다. /joy · /e_stop · /diagnostics 를 그 노드에서 처리하고 100 Hz read · write 와는 atomic 값으로만 주고받습니다.</p><p class="why">실시간 루프에서 메모리 할당 · 발행이 없고, safety_node 를 따로 둘 필요가 없습니다.</p></div>
+  <div class="point"><h3>켤 때는 잠긴 상태</h3><p>전원을 켠 뒤 리셋 버튼을 눌러야 움직입니다. 조이스틱 없는 벤치 시험은 <code>joy_required:=false</code>.</p></div>
+  <div class="point"><h3>AprilTag 는 OpenCV 내장</h3><p>apriltag 라이브러리 없이 aruco 의 tag36h11 사전으로 읽습니다. OpenCV 4.6 · 4.7+ 모두 빌드됩니다.</p></div>
+  <div class="point"><h3>정렬 검출만 640 폭으로</h3><p>SEARCH_FRONT | ARM_ALIGN 에서 검출 두 번을 15 Hz 이상 돌리려고 Arducam 검출은 줄인 영상으로 합니다.</p><p class="why">오차는 정규화 값이라 해상도와 무관합니다. 태그 읽기는 원본 해상도.</p></div>
+  <div class="point"><h3>미션표를 시작 때 전부 검사</h3><p>모르는 장소 · 자세 · 대상, 숫자 모드, 0.10 m 미만 정밀 거리, 스킬 안의 스킬 fallback 은 노드 시작 단계에서 실패합니다.</p><p class="why">경기 도중에 오타가 드러나지 않습니다.</p></div>
+  <div class="point"><h3>pick 재시도 무한 반복 방지</h3><p>pick 실패로 직전 search 부터 다시 할 때, 실패했던 단계를 넘어선 뒤에만 재시도 횟수를 초기화합니다.</p></div>
+  <div class="point"><h3>늦게 온 응답 무시</h3><p>미션이 단계 안 phase 를 바꿀 때 세대 번호를 올려, 취소 · 재시도 · 재개 뒤에 도착한 이전 응답으로 단계가 넘어가지 않게 합니다.</p></div>
+  <div class="point"><h3>후방 카메라가 없을 때</h3><p>SEARCH_REAR 가 거절되면 실패로 보지 않고 전방만으로 탐색을 계속합니다.</p></div>
+  <div class="point"><h3>직선 전진 값 확인</h3><p>마지막 TFmini 거리로 다시 구한 집기 위치가 원래와 5 cm 넘게 다르면 잘못 잰 값으로 보고 버립니다.</p></div>
+</div>
+
+<h2><span class="n">3</span>결정 사항</h2>
+<p class="lede">통신 정의는 동결 상태라, 아래 항목은 <code>docs/interfaces.md</code> 변경으로 처리합니다.</p>
+<div class="decide">
+  <div class="dec open"><span class="num">#1</span><div><h3>스킬 성공 조건</h3><p>문서에는 "타임아웃이면 0 속도 후 abort" 만 있어, 정해진 시간 동안 하는 주행(slalom 등)도 항상 실패로 끝납니다. policies.yaml 에 <code>finish_on_timeout</code> 을 넣어 두었습니다 (기본 false = 문서대로). 장기적으로는 정책별 성공 · 종료 조건을 명세에 넣는 것을 제안합니다.</p></div><span class="chip warn">결정 필요</span></div>
+  <div class="dec"><span class="num">#2</span><div><h3>ArmPose 결과에 실패 이유</h3><p><code>string message</code> 를 추가했습니다. 미션은 pose · pick · align · skill 의 message 를 상태 reason 에 붙입니다. 예: <code>read_tag 실패: pose TAG_VIEW 실패: 관절 상태 없음</code></p></div><span class="chip ok">반영</span></div>
+  <div class="dec open"><span class="num">#3</span><div><h3>/arm/skill_state · /arm/safety_state</h3><p>문서 토픽표에 없는 모니터링 토픽입니다. 표에 넣을지 뺄지 정해야 합니다. 지금은 모니터링용으로 남겨 두었습니다.</p></div><span class="chip warn">결정 필요</span></div>
+  <div class="dec"><span class="num">#4</span><div><h3>그리퍼가 정해지기 전의 grasped</h3><p>그리퍼가 없으면 잡았는지 판단할 수 없어 미션이 계속 재시도합니다. 벤치 시험용으로 <code>gripper.assume_grasped_without_gripper: true</code> 를 두었고, 그리퍼가 정해지면 false 로 바꿉니다.</p></div><span class="chip info">임시 설정</span></div>
+  <div class="dec"><span class="num">#5</span><div><h3>바퀴 수</h3><p>4륜으로 확정했습니다 (기본값 그대로). robot_nodes.html 의 6륜 표기(하드웨어 표, ID 1~6, velocity ×6)는 문서 쪽을 고쳐야 합니다.</p></div><span class="chip ok">확정</span></div>
+</div>
+
+<h2><span class="n">4</span>검증</h2>
+<p class="lede">이 PC (x86_64, ROS 2 Lyrical) 에는 RealSense · TensorRT · ONNX Runtime · controller_manager 가 없어, 해당 부분은 선택 빌드로 빠진 상태에서 시험했습니다.</p>
+<div class="cols">
+  <div class="box"><h3>단위 시험 48개 통과</h3><ul>
+    <li>USB 패킷 · CRC · 펌웨어 사본 일치</li>
+    <li>가상 시리얼로 펌웨어를 흉내 낸 하드웨어 플러그인 루프백</li>
+    <li>E-stop 잠금 판단, TFmini, 색 검출, 대상 추적, AprilTag 검출 · 자세</li>
+    <li>정책 명세 · 관측 배치 · fill · 행동 clamp</li>
+    <li>미션 · 스킬 · 안전 상태머신, 미션표 문법, IK, 정렬 제어, /scan 판정</li>
+  </ul></div>
+  <div class="box"><h3>실행 확인</h3><ul>
+    <li>인식 노드: 모드 비트 조합 수락 · 거부, OFF 처리</li>
+    <li>⑧ control_container: launch 로 노드 4개 로드</li>
+    <li>실패 이유 전달: 팔 자세 실패가 미션 상태 reason 에 남음</li>
+  </ul></div>
+  <div class="box alert"><h3>확인하지 못한 것</h3><ul>
+    <li>펌웨어 보드 컴파일 (Arduino 도구 없음 — 스텁으로 문법만 검사)</li>
+    <li>RealSense · TensorRT · ONNX Runtime 경로 (Jetson 에서 처음 빌드)</li>
+    <li>실물 로봇 주행 · 팔 동작</li>
+  </ul></div>
+</div>
+
+<h3 style="margin-top:28px">통합 시험 — 정상 미션</h3>
+<p class="lede">실제 미션 · 주행 · 팔 노드에 간이 시뮬레이터(로봇 이동 적분 · TF · nav2 · 팔 컨트롤러 · 인식 · TFmini · /scan)를 붙여 돌린 순서입니다.</p>
+<ol class="flow">
+  <li><div>태그가 안 보여 30° 씩 두 번 회전 → tag 7 읽음 <span>· 미션표 단계 5개</span></div></li>
+  <li><div>station_A 로 이동하면서 팔 STOW</div></li>
+  <li><div>search: 옆쪽 물체 발견 → 29° spin 으로 전방이 향하게 → 전방 D435 로 다시 확인</div></li>
+  <li><div>먼 거리 정렬 범퍼 기준 0.40 m <span>· max(READY 돌출 0.15 + 0.15 + 0.1, 0.3)</span></div></li>
+  <li><div>READY → 정밀 정렬 TFmini 0.15 m</div></li>
+  <li><div>스킬 pick_cup_v1 거절(정책 꺼짐) → fallback pick <span>· 목표 출처 ① 정밀 정렬 결과</span></div></li>
+  <li><div>home 복귀 → DONE</div></li>
+</ol>
+<h3 style="margin-top:22px">통합 시험 — E-stop 재개</h3>
+<ol class="flow">
+  <li><div>approach 도중 /e_stop → 진행 중 goal 모두 취소 → PAUSED</div></li>
+  <li><div>잠긴 동안 시작 버튼 → "시작 불가: E-stop" 으로 거절</div></li>
+  <li><div>해제 뒤 시작 버튼 → "재개: approach 0.15" → 미션표 끝까지 → DONE</div></li>
+</ol>
+
+<h2><span class="n">5</span>실물에서 맞출 값</h2>
+<ul class="todo">
+  <li><b>READY 팔 끝 돌출</b> <code>approach.ready_reach</code></li>
+  <li><b>base_link → 범퍼</b> <code>base.front_offset</code></li>
+  <li><b>차체 · 그리퍼 제외 영역</b> <code>target.exclude_min/max</code></li>
+  <li><b>tfmini_link · arm_camera_link TF</b> — pick ① 정확도</li>
+  <li><b>Arducam 보정값 · 태그 실제 크기</b></li>
+  <li><b>STOW · READY · PLACE · TAG_VIEW 관절각</b> — STOW · TAG_VIEW 는 차체 안</li>
+  <li><b>조이스틱 버튼 번호</b> — E-stop · 리셋 · 시작 · 정지</li>
+  <li><b>물리 E-stop 스위치 핀</b></li>
+  <li><b>진단 무수신 시간</b> — 발행 확인 뒤 <code>diagnostics.timeout: 3.0</code></li>
+  <li><b>부하</b> — SEARCH_FRONT | ARM_ALIGN 에서 /perception/result 15 Hz 이상</li>
+  <li><b>RL 스트리밍 떨림</b> <code>skill.stream_horizon_s</code></li>
+  <li><b>그리퍼 개폐 액추에이터</b> — 정해지면 grasped 판정 켬</li>
+</ul>
+
+<footer>코드 · 상세: <code>robot_ws/docs/review_robot_nodes.md</code>, 통신 정의: <code>robot_ws/docs/interfaces.md</code>. 이전 소스 백업: <code>robot_ws_backup/src_v8_*.tgz</code>.</footer>
+</div>

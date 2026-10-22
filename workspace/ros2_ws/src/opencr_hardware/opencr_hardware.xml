@@ -1,0 +1,7 @@
+<library path="opencr_hardware">
+  <class name="opencr_hardware/OpenCRHardware"
+         type="opencr_hardware::OpenCRHardware"
+         base_class_type="hardware_interface::SystemInterface">
+    <description>OpenCR 보드 (Dynamixel 바퀴 · 팔 · IMU) — USB CDC 100 Hz</description>
+  </class>
+</library>

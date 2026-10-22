@@ -1,0 +1,6 @@
+# Arducam → /dev/arm_cam, TFmini USB-UART → /dev/tfmini, LiDAR → /dev/lidar_front · /dev/lidar_rear
+# ★ idVendor/idProduct/serial 은 `udevadm info -a -n /dev/videoN` · `/dev/ttyUSBN` 으로 확인해 바꿈
+SUBSYSTEM=="video4linux", ATTRS{idVendor}=="0c45", ATTRS{idProduct}=="6366", ATTR{index}=="0", SYMLINK+="arm_cam", MODE="0666"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", ATTRS{serial}=="TFMINI_SERIAL", SYMLINK+="tfmini", MODE="0666"
+SUBSYSTEM=="tty", ATTRS{serial}=="LIDAR_FRONT_SERIAL", SYMLINK+="lidar_front", MODE="0666"
+SUBSYSTEM=="tty", ATTRS{serial}=="LIDAR_REAR_SERIAL", SYMLINK+="lidar_rear", MODE="0666"

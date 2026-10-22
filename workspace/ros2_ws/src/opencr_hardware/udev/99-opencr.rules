@@ -1,0 +1,2 @@
+# OpenCR → /dev/opencr  (sudo cp 99-opencr.rules /etc/udev/rules.d/ && sudo udevadm control --reload && sudo udevadm trigger)
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="5740", SYMLINK+="opencr", MODE="0666", ENV{ID_MM_DEVICE_IGNORE}="1"

@@ -1,0 +1,62 @@
+manipulator_node:
+  ros__parameters:
+    joint_names: [joint1, joint2, joint3, joint4, joint5, gripper_roll]
+    arm:                        # ArmIK — robot.urdf.xacro 와 같은 값 ★ 실측
+      d1: 0.077
+      l2x: 0.024
+      l2z: 0.128
+      l3: 0.124
+      l_tool: 0.167
+    joint_limits:
+      lower: [-2.8, -1.8, -1.6, -1.8, -2.8, -2.8]
+      upper: [ 2.8,  1.6,  1.5,  2.0,  2.8,  2.8]
+    poses:                      # 관절각 (rad) ★ 주행 중 팔이 차체 밖으로 나가지 않는지 확인
+      STOW:  [0.0, -1.05, 0.35, 0.70, 0.0, 0.0]
+      READY: [0.0, -0.20, 0.30, 1.10, 0.0, 0.0]
+      PLACE: [0.0,  0.30, 0.10, 1.00, 0.0, 0.0]
+      TAG_VIEW: [0.0, -0.60, 0.20, 0.40, 0.0, 0.0]   # Arducam 이 태그를 보는 자세 — 차체 footprint 안 (그 자세로 회전) ★
+    motion:
+      max_joint_velocity: 1.0
+      approach_velocity_scale: 0.4
+      min_move_time: 0.6
+      verify_tolerance: 0.05
+      pose_timeout_s: 15.0
+      pick_timeout_s: 45.0
+      final_approach_points: 4   # 마지막 직선 전진 경유점 수
+    frames:
+      arm_base: arm_base_link
+      base: base_link
+      odom: odom                # 물체 위치 기억 기준
+      range: tfmini_link        # ★ 실측 TF (pick ① 정확도)
+    pick:
+      tool_pitch: -1.5708       # 위에서 아래로 집기
+      approach_distance: 0.05
+      grasp_depth: 0.01
+      lift_height: 0.06
+      correction_iterations: 3
+      correction_tolerance: 0.03
+      correction_gain: 0.8
+      correction_settle_s: 0.3
+      cam_hfov: 1.20            # Arducam B0200 광각 ★
+      cam_vfov: 0.75
+      image_x_to_tangential: -1.0   # 화면 오른쪽 → 팔 기준 접선 방향 부호 ★ 장착 방향
+      image_y_to_radial: -1.0       # 화면 아래 → 반경 방향 부호 ★
+    gripper:
+      enabled: false            # 개폐 액추에이터 미정 ★
+      joint: gripper_joint
+      open_position: 0.02
+      close_position: 0.0
+      assume_grasped_without_gripper: true   # 그리퍼 미정 동안 grasped=true 로 보고 (벤치 시험용)
+    safety:
+      joint_state_timeout_s: 0.5
+      limit_margin: 0.05
+      max_joint_velocity: 3.0
+      min_tool_z: -0.115        # arm_base_link 기준 공구 끝 최저 높이 (바닥 위) ★
+    arm_controller_action: /arm_controller/follow_joint_trajectory
+    gripper_action: /gripper_controller/gripper_cmd
+    stale_s: 0.3
+    skill:
+      enabled: false            # robot_policy 연결 전까지 false → goal 거절 → mission 이 IK pick 으로 대체
+      policies_file: ""
+      stream_topic: /arm_controller/joint_trajectory
+      stream_horizon_s: 0.1     # 떨리면 늘림 (미결: 실물 시험)
