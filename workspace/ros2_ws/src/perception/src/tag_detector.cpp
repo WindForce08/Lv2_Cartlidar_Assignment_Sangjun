@@ -29,6 +29,42 @@ TagDetector::TagDetector(const std::string & family, double tag_size_m)
   else {ok_ = false;}
 }
 
+namespace
+{
+// 태그 z 축(면에서 바깥)이 카메라 쪽을 향하는지. t 는 카메라 → 태그 중심
+bool facing(const cv::Vec3d & rvec, const cv::Vec3d & tvec)
+{
+  cv::Matx33d R;
+  cv::Rodrigues(rvec, R);
+  return R(0, 2) * tvec[0] + R(1, 2) * tvec[1] + R(2, 2) * tvec[2] < 0.0;
+}
+
+// IPPE_SQUARE 두 해 중 카메라를 향하는 것 가운데 재투영 오차가 작은 것.
+// 태그를 거의 정면에서 보면 IPPE 가 뒷면을 보는 해(법선이 카메라 반대)만 내는 일이 있어(2026-10-23 모의 시험,
+// 0° 에서 퍽 중심이 면 반대쪽으로 계산됨) 그때는 반복법으로 다시 푼다
+bool solve_facing(const std::vector<cv::Point3f> & obj, const std::vector<cv::Point2f> & img, const cv::Mat & K,
+  const cv::Mat & D, cv::Vec3d & rvec, cv::Vec3d & tvec)
+{
+  std::vector<cv::Mat> rs, ts;
+  cv::Mat err;
+  const int n = cv::solvePnPGeneric(obj, img, K, D, rs, ts, false, cv::SOLVEPNP_IPPE_SQUARE, cv::noArray(), cv::noArray(), err);
+  err.convertTo(err, CV_64F);   // 입력 점이 float 이면 CV_32F 로 나온다
+  int best = -1;
+  for (int k = 0; k < n; ++k) {
+    const cv::Vec3d r(rs[k]), t(ts[k]);
+    if (!facing(r, t)) {continue;}
+    if (best < 0 || err.at<double>(k) < err.at<double>(best)) {best = k;}
+  }
+  if (best >= 0) {
+    rvec = cv::Vec3d(rs[best]);
+    tvec = cv::Vec3d(ts[best]);
+    return true;
+  }
+  if (!cv::solvePnP(obj, img, K, D, rvec, tvec, false, cv::SOLVEPNP_ITERATIVE)) {return false;}
+  return facing(rvec, tvec);
+}
+}  // namespace
+
 std::vector<TagDetection> TagDetector::detect(const cv::Mat & bgr, const cv::Mat & K, const cv::Mat & D) const
 {
   std::vector<TagDetection> out;
@@ -57,8 +93,7 @@ std::vector<TagDetection> TagDetector::detect(const cv::Mat & bgr, const cv::Mat
     t.area = std::fabs(cv::contourArea(corners[i]));
     t.corners = corners[i];
     if (!K.empty()) {
-      t.pose_valid = cv::solvePnP(obj, corners[i], K, D.empty() ? cv::Mat::zeros(1, 5, CV_64F) : D, t.rvec, t.tvec,
-          false, cv::SOLVEPNP_IPPE_SQUARE);
+      t.pose_valid = solve_facing(obj, corners[i], K, D.empty() ? cv::Mat::zeros(1, 5, CV_64F) : D, t.rvec, t.tvec);
     }
     out.push_back(t);
   }
