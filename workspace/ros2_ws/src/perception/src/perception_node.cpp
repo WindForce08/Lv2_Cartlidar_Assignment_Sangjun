@@ -3,7 +3,8 @@
 //   UVC 드라이버(Arducam)가 같은 토픽 이름으로 발행한다. 그래서 실물과 시뮬레이션이 같은 코드로 돈다.
 //   드라이버를 같은 컨테이너에 넣으면 intra-process 로 영상을 복사 없이 받는다.
 //
-//   /perception/set_mode (서비스): 비트 SEARCH_FRONT 1 · ARM_ALIGN 2 · READ_TAG 4 · SEARCH_REAR 8, 0 = 전부 정지
+//   /perception/set_mode (서비스): 비트 SEARCH_FRONT 1 · ARM_ALIGN 2 · READ_TAG 4 · SEARCH_REAR 8 · READ_MARKER 16 ·
+//      READ_SIGNAL 32, 0 = 전부 정지
 //      켜진 비트의 카메라 토픽만 구독한다. OFF 를 받으면 대상 추적을 초기화하고 mode=0 result 를 한 번 발행한다
 //      (받는 쪽 초기화 신호).
 //   /perception/result (토픽): publish_rate 마다 확인해, 새 영상이 하나라도 들어왔을 때만 발행한다
@@ -18,7 +19,13 @@
 //      같은 퍽(merge_dist 안)이면 태그로 읽은 것을 남긴다. 새 영상이 없는 카메라는 그 영상으로 낸 결과를 다시 쓴다
 //   /perception/task_marker (토픽, TaskMarker): READ_MARKER 가 켜져 있으면 앞 · 뒤 D435 (팔 카메라가 켜져 있으면 그것도)
 //      에서 장소 태그(marker.family · ids)를 찾아 가장 크게 보이는 것 하나. 없으면 found = false
+//   /perception/signal (토픽, SignalSequence): READ_SIGNAL 이 켜져 있으면 앞 · 뒤 D435 의 컬러 프레임을 모두(빠짐 없이)
+//      처리 주기마다 차례로 본다: 켜진 등 후보(signal_light.hpp) → 깊이로 크기 · 높이 거름 → 같은 자리 점멸로 신호등 고정
+//      → 프레임 상태 → 점멸 순서 세기(signal_sequence.hpp). READ_SIGNAL 을 끄면 센 것을 지운다
+//   /perception/check_dice (서비스, CheckDice): 가장 최근 /perception/pucks 목록으로 선반 위 3×3 주사위 판정(dice_check.hpp)
 #include <algorithm>
+#include <atomic>
+#include <deque>
 #include <chrono>
 #include <cmath>
 #include <memory>
@@ -35,15 +42,20 @@
 #include "rclcpp_components/register_node_macro.hpp"
 #include "robot_interfaces/msg/perception_result.hpp"
 #include "robot_interfaces/msg/puck_array.hpp"
+#include "robot_interfaces/msg/signal_sequence.hpp"
 #include "robot_interfaces/msg/task_marker.hpp"
 #include "robot_interfaces/names.hpp"
+#include "robot_interfaces/srv/check_dice.hpp"
 #include "robot_interfaces/srv/set_perception_mode.hpp"
 #include "sensor_msgs/msg/camera_info.hpp"
 #include "sensor_msgs/msg/image.hpp"
 #include "perception/detector.hpp"
+#include "perception/dice_check.hpp"
 #include "perception/frame_gate.hpp"
 #include "perception/geometry.hpp"
 #include "perception/puck_estimator.hpp"
+#include "perception/signal_light.hpp"
+#include "perception/signal_sequence.hpp"
 #include "perception/tag_detector.hpp"
 #include "perception/target_tracker.hpp"
 #include "perception/tf_helper.hpp"
@@ -60,6 +72,8 @@ using Result = robot_interfaces::msg::PerceptionResult;
 using Puck = robot_interfaces::msg::Puck;
 using PuckArray = robot_interfaces::msg::PuckArray;
 using TaskMarker = robot_interfaces::msg::TaskMarker;
+using SignalMsg = robot_interfaces::msg::SignalSequence;
+using CheckDice = robot_interfaces::srv::CheckDice;
 using Image = sensor_msgs::msg::Image;
 using CameraInfo = sensor_msgs::msg::CameraInfo;
 
@@ -105,6 +119,7 @@ struct DepthCamera
   bool restarted = false;
   std::vector<Puck> pucks;                                      // used_ns 영상으로 낸 결과 (처리 그룹에서만 씀)
   std::optional<MarkerHit> marker;
+  std::deque<Image::ConstSharedPtr> signal_q;                   // READ_SIGNAL: 아직 처리하지 않은 컬러 프레임
 
   rclcpp::Subscription<Image>::SharedPtr color_sub, depth_sub;
   rclcpp::Subscription<CameraInfo>::SharedPtr info_sub;
@@ -224,6 +239,42 @@ public:
     puck_geom_.min_votes = static_cast<int>(declare_parameter("puck.min_votes", puck_geom_.min_votes));
     merge_dist_ = declare_parameter("puck.merge_dist", 0.04);
 
+    LightBlobConfig & lb = light_cfg_;
+    lb.v_min = static_cast<int>(declare_parameter("signal.v_min", lb.v_min));
+    lb.s_min = static_cast<int>(declare_parameter("signal.s_min", lb.s_min));
+    lb.red_h_max = static_cast<int>(declare_parameter("signal.red_h_max", lb.red_h_max));
+    lb.red2_h_min = static_cast<int>(declare_parameter("signal.red2_h_min", lb.red2_h_min));
+    lb.yellow_h_min = static_cast<int>(declare_parameter("signal.yellow_h_min", lb.yellow_h_min));
+    lb.yellow_h_max = static_cast<int>(declare_parameter("signal.yellow_h_max", lb.yellow_h_max));
+    lb.green_h_min = static_cast<int>(declare_parameter("signal.green_h_min", lb.green_h_min));
+    lb.green_h_max = static_cast<int>(declare_parameter("signal.green_h_max", lb.green_h_max));
+    lb.min_area_px = static_cast<int>(declare_parameter("signal.min_area_px", lb.min_area_px));
+    seg_w_ = declare_parameter("signal.segment_width_m", 0.0396);
+    seg_h_ = declare_parameter("signal.segment_height_m", 0.0349);
+    area_ratio_min_ = declare_parameter("signal.area_ratio_min", 0.15);
+    area_ratio_max_ = declare_parameter("signal.area_ratio_max", 2.5);
+    light_z_min_ = declare_parameter("signal.height_min_m", 0.05);
+    light_z_max_ = declare_parameter("signal.height_max_m", 0.20);
+    signal_q_max_ = static_cast<size_t>(declare_parameter("signal.queue_frames", 30));
+    LocatorConfig lc;
+    lc.lock_dist = declare_parameter("signal.lock_dist_m", lc.lock_dist);
+    lc.lock_blinks = static_cast<int>(declare_parameter("signal.lock_blinks", lc.lock_blinks));
+    lc.min_off_frames = static_cast<int>(declare_parameter("signal.min_off_frames", lc.min_off_frames));
+    lc.forget_s = declare_parameter("signal.forget_s", lc.forget_s);
+    locator_ = SignalLightLocator(lc);
+    SignalConfig sc;
+    sc.blinks_per_cycle = static_cast<int>(declare_parameter("signal.blinks_per_cycle", sc.blinks_per_cycle));
+    sc.term_ratio = declare_parameter("signal.term_ratio", sc.term_ratio);
+    sc.term_margin_frames = declare_parameter("signal.term_margin_frames", sc.term_margin_frames);
+    sc.on_ratio = declare_parameter("signal.on_ratio", sc.on_ratio);
+    sc.merge_ratio = declare_parameter("signal.merge_ratio", sc.merge_ratio);
+    sc.max_gap = declare_parameter("signal.max_gap_s", sc.max_gap);
+    sc.confirm_cycles = static_cast<int>(declare_parameter("signal.confirm_cycles", sc.confirm_cycles));
+    sequence_ = SignalSequenceTracker(sc);
+    dice_tolerance_ = declare_parameter("dice.tolerance_m", 0.015);
+    dice_margin_ = declare_parameter("dice.region_margin_m", 0.04);
+    dice_max_age_ = declare_parameter("dice.max_age_s", 1.0);
+
     const double rate = declare_parameter("publish_rate", 15.0);
     frame_max_age_ = declare_parameter("frame_max_age_s", 0.3);
     base_frame_ = declare_parameter("frames.base", std::string("base_link"));
@@ -246,6 +297,10 @@ public:
     pub_ = create_publisher<Result>(names::PERCEPTION_RESULT, qos::result());
     puck_pub_ = create_publisher<PuckArray>(names::PERCEPTION_PUCKS, qos::result());
     marker_pub_ = create_publisher<TaskMarker>(names::PERCEPTION_TASK_MARKER, qos::result());
+    signal_pub_ = create_publisher<SignalMsg>(names::PERCEPTION_SIGNAL, qos::result());
+    dice_srv_ = create_service<CheckDice>(names::PERCEPTION_CHECK_DICE,
+        [this](CheckDice::Request::SharedPtr req, CheckDice::Response::SharedPtr res) {on_check_dice(*req, *res);},
+        rclcpp::ServicesQoS(), ctl_cbg_);
     srv_ = create_service<SetMode>(names::PERCEPTION_SET_MODE,
         [this](SetMode::Request::SharedPtr req, SetMode::Response::SharedPtr res) {on_set_mode(*req, *res);},
         rclcpp::ServicesQoS(), ctl_cbg_);
@@ -256,11 +311,12 @@ private:
   static constexpr uint8_t SEARCH_BITS = SetMode::Request::SEARCH_FRONT | SetMode::Request::SEARCH_REAR;
   static constexpr uint8_t ARM_BITS = SetMode::Request::ARM_ALIGN | SetMode::Request::READ_TAG;
   static constexpr uint8_t MARKER_BIT = SetMode::Request::READ_MARKER;
+  static constexpr uint8_t SIGNAL_BIT = SetMode::Request::READ_SIGNAL;
 
   // ------------------------------ set_mode ------------------------------
   void on_set_mode(const SetMode::Request & req, SetMode::Response & res)
   {
-    if (req.mode & ~(SEARCH_BITS | ARM_BITS | MARKER_BIT)) {res.success = false; res.message = "모르는 모드 비트"; return;}
+    if (req.mode & ~(SEARCH_BITS | ARM_BITS | MARKER_BIT | SIGNAL_BIT)) {res.success = false; res.message = "모르는 모드 비트"; return;}
     if ((req.mode & SetMode::Request::SEARCH_FRONT) && front_.color_topic.empty()) {
       res.success = false; res.message = "전방 카메라 토픽 미설정"; return;
     }
@@ -273,6 +329,13 @@ private:
 
     const uint8_t old = mode_;
     mode_ = req.mode;
+    if ((old ^ req.mode) & SIGNAL_BIT) {   // 켜거나 끌 때 센 것을 지운다
+      locator_.reset();
+      sequence_.reset();
+      signal_last_t_ = -1;
+      for (auto * c : {&front_, &rear_}) {std::lock_guard<std::mutex> lk(c->m); c->signal_q.clear();}
+    }
+    signal_on_ = req.mode & SIGNAL_BIT;
     update_subscriptions();
     for (auto * c : {&front_, &rear_}) {std::lock_guard<std::mutex> lk(c->m); c->used_ns = -1;}   // 새 모드로 지금 영상을 다시 처리
     {std::lock_guard<std::mutex> lk(arm_.m); arm_.used_ns = -1;}
@@ -291,8 +354,8 @@ private:
 
   void update_subscriptions()
   {
-    set_depth_subscribed(front_, mode_ & (front_.bit | MARKER_BIT));
-    set_depth_subscribed(rear_, mode_ & (rear_.bit | MARKER_BIT));
+    set_depth_subscribed(front_, mode_ & (front_.bit | MARKER_BIT | SIGNAL_BIT));
+    set_depth_subscribed(rear_, mode_ & (rear_.bit | MARKER_BIT | SIGNAL_BIT));
     set_mono_subscribed(arm_, mode_ & ARM_BITS);
   }
 
@@ -320,6 +383,7 @@ private:
       c.used_ns = -1;
       c.pucks.clear();
       c.marker.reset();
+      c.signal_q.clear();
       RCLCPP_INFO(get_logger(), "%s 카메라 구독 끝", c.name.c_str());
     }
   }
@@ -367,8 +431,12 @@ private:
     std::lock_guard<std::mutex> lk(c.m);
     const GateResult g = gate_frame(c, m);
     if (g == GateResult::Duplicate) {return;}
-    if (g == GateResult::Restart) {c.depth.clear();}   // 재시작 전 시각의 깊이와 짝짓지 않게
+    if (g == GateResult::Restart) {c.depth.clear(); c.signal_q.clear();}   // 재시작 전 시각의 깊이와 짝짓지 않게
     c.color = m;
+    if (signal_on_) {   // 신호등은 점멸이 짧을 수 있어 처리 주기와 상관없이 모든 프레임을 본다
+      c.signal_q.push_back(m);
+      while (c.signal_q.size() > signal_q_max_) {c.signal_q.pop_front();}
+    }
   }
 
   void on_mono_image(MonoCamera & c, const Image::ConstSharedPtr & m)
@@ -602,6 +670,8 @@ private:
     if (mode == SetMode::Request::OFF) {return;}
     const rclcpp::Time now_t = now();
     const bool want_marker = mode & MARKER_BIT;
+    if (mode & SIGNAL_BIT) {process_signal();}
+    if (!(mode & ~SIGNAL_BIT)) {return;}
     Result r;
     r.mode = mode;
     StampSet res_st, puck_st, mark_st;
@@ -691,6 +761,7 @@ private:
       pub_->publish(r);
     }
     if (puck_st.oldest && puck_st.fresh) {publish_pucks(puck_lists, *puck_st.oldest);}
+    if (!puck_st.oldest) {last_pucks_.reset();}
     if (mark_st.oldest && mark_st.fresh) {
       const MarkerHit * best = nullptr;
       for (const auto * m : markers) {if (!best || m->area > best->area) {best = m;}}
@@ -738,6 +809,186 @@ private:
       }
     }
     puck_pub_->publish(msg);
+    last_pucks_ = msg;
+  }
+
+  // ------------------------------ 신호등 ------------------------------
+  // 두 카메라에 쌓인 프레임을 촬영 시각 순서로 처리한다. 이미 본 시각보다 이른 프레임은 버린다
+  void process_signal()
+  {
+    struct Frame
+    {
+      DepthCamera * cam;
+      Image::ConstSharedPtr color, depth;
+      CameraInfo::ConstSharedPtr info;
+    };
+    std::vector<Frame> frames;
+    for (auto * c : {&front_, &rear_}) {
+      std::lock_guard<std::mutex> lk(c->m);
+      for (const auto & m : c->signal_q) {
+        Frame f{c, m, nullptr, c->info};
+        if (auto d = c->depth.nearest(stamp_ns(m->header.stamp), depth_tol_ns_)) {f.depth = d->second;}
+        frames.push_back(f);
+      }
+      c->signal_q.clear();
+    }
+    std::sort(frames.begin(), frames.end(), [](const Frame & a, const Frame & b) {
+        return stamp_ns(a.color->header.stamp) < stamp_ns(b.color->header.stamp);});
+    bool any = false, visible = false;
+    rclcpp::Time last_stamp;
+    for (const auto & f : frames) {
+      const rclcpp::Time stamp(f.color->header.stamp, get_clock()->get_clock_type());
+      const double t = stamp.seconds();
+      if (t <= signal_last_t_ || !f.info) {continue;}
+      signal_last_t_ = t;
+      cv_bridge::CvImageConstPtr color;
+      try {
+        color = cv_bridge::toCvShare(f.color, "bgr8");
+      } catch (const cv_bridge::Exception & e) {
+        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "%s 영상 변환 실패: %s", f.cam->name.c_str(), e.what());
+        continue;
+      }
+      const PinholeK K{f.info->k[0], f.info->k[4], f.info->k[2], f.info->k[5]};
+      const std::string frame = f.cam->frame_id.empty() ? f.color->header.frame_id : f.cam->frame_id;
+      const std::vector<LightObs> obs = light_observations(color->image, f.depth, K, frame, stamp);
+      // 신호등 자리가 이 프레임 화면 안인지: odom → 카메라 광학 좌표로 옮겨 투영
+      const auto T_co = lookup_at(frame, odom_frame_, stamp);
+      const int w = color->image.cols, h = color->image.rows;
+      auto in_view = [&](const Vec3 & p) {
+        if (!T_co) {return false;}
+        const tf2::Vector3 q = *T_co * tf2::Vector3(p.x, p.y, p.z);
+        if (q.z() < depth_min_ || q.z() > depth_max_) {return false;}
+        const double u = K.fx * q.x() / q.z() + K.ppx, v = K.fy * q.y() / q.z() + K.ppy;
+        return u >= 2 && v >= 2 && u < w - 2 && v < h - 2;
+      };
+      const auto state = locator_.update(t, obs, in_view);
+      any = true;
+      last_stamp = stamp;
+      if (state) {
+        sequence_.update(t, *state);
+        last_light_ = *state;
+        visible = true;
+        signal_cam_ = f.cam == &front_ ? Puck::CAMERA_FRONT : Puck::CAMERA_REAR;
+      }
+    }
+    if (!any) {return;}
+    const SignalResult & sr = sequence_.result();
+    SignalMsg msg;
+    msg.header.stamp = last_stamp;
+    msg.header.frame_id = base_frame_;
+    // 신호등을 고정하기 전은 SEARCHING, 고정 뒤 아직 점멸을 못 셌으면 COUNTING (값은 SignalResult 와 같음)
+    msg.status = SignalMsg::SEARCHING;
+    if (locator_.locked()) {
+      msg.status = sr.status == SignalResult::SEARCHING ? SignalMsg::COUNTING : static_cast<uint8_t>(sr.status);
+    }
+    msg.sequence = sr.sequence;
+    msg.red = static_cast<uint8_t>(sr.red);
+    msg.yellow = static_cast<uint8_t>(sr.yellow);
+    msg.green = static_cast<uint8_t>(sr.green);
+    msg.cycles = static_cast<uint8_t>(sr.cycles);
+    msg.light = static_cast<uint8_t>(last_light_);
+    msg.light_visible = visible;
+    if (locator_.locked()) {
+      if (const auto T_bo = lookup_at(base_frame_, odom_frame_, last_stamp)) {
+        const Vec3 o = locator_.position();
+        const tf2::Vector3 b = *T_bo * tf2::Vector3(o.x, o.y, o.z);
+        msg.position.x = b.x();
+        msg.position.y = b.y();
+        msg.position.z = b.z();
+        msg.position_valid = true;
+      }
+    }
+    msg.t_on = static_cast<float>(sr.t_on);
+    msg.t_off = static_cast<float>(sr.t_off);
+    msg.t_term = static_cast<float>(sr.t_term);
+    msg.camera = signal_cam_;
+    signal_pub_->publish(msg);
+  }
+
+  // 켜진 등 후보 → 깊이로 크기(등 한 칸) · 높이(바닥에서 등까지) 거른 odom 위치. 깊이가 없으면 후보 없음
+  std::vector<LightObs> light_observations(const cv::Mat & bgr, const Image::ConstSharedPtr & depth_msg,
+    const PinholeK & K, const std::string & frame, const rclcpp::Time & stamp)
+  {
+    std::vector<LightObs> out;
+    if (!depth_msg) {return out;}
+    const double scale = depth_scale_for_encoding(depth_msg->encoding);
+    if (scale <= 0.0 || depth_msg->width != static_cast<uint32_t>(bgr.cols) ||
+      depth_msg->height != static_cast<uint32_t>(bgr.rows))
+    {
+      return out;
+    }
+    cv_bridge::CvImageConstPtr depth;
+    try {
+      depth = cv_bridge::toCvShare(depth_msg);
+    } catch (const cv_bridge::Exception &) {
+      return out;
+    }
+    for (const auto & b : detect_light_blobs(bgr, light_cfg_)) {
+      const cv::Point ctr(static_cast<int>(std::lround(b.center.x)), static_cast<int>(std::lround(b.center.y)));
+      const double z = median_depth(depth->image, ctr, 2, scale, depth_min_, depth_max_);
+      if (!std::isfinite(z)) {continue;}
+      const double expect = (seg_w_ * K.fx / z) * (seg_h_ * K.fy / z);
+      if (b.area < area_ratio_min_ * expect || b.area > area_ratio_max_ * expect) {continue;}
+      LightObs o;
+      Vec3 base;
+      if (!to_base_odom(deproject(K, ctr.x, ctr.y, z), frame, stamp, base, o.pos)) {continue;}
+      if (base.z < light_z_min_ || base.z > light_z_max_) {continue;}
+      o.color = b.color;
+      o.area = b.area;
+      out.push_back(o);
+    }
+    return out;
+  }
+
+  // ------------------------------ 주사위 확인 ------------------------------
+  void on_check_dice(const CheckDice::Request & req, CheckDice::Response & res)
+  {
+    res.observed = false;
+    res.passed = false;
+    if (!last_pucks_) {res.message = "최근 퍽 목록 없음 (SEARCH_* 또는 READ_TAG 를 켜고 선반을 본 뒤 부름)"; return;}
+    const rclcpp::Time stamp(last_pucks_->header.stamp, get_clock()->get_clock_type());
+    if ((now() - stamp).seconds() > dice_max_age_) {res.message = "퍽 목록이 오래됨"; return;}
+    tf2::Transform T;   // 칸 좌표 → base_link
+    T.setIdentity();
+    const std::string frame = req.header.frame_id.empty() ? base_frame_ : req.header.frame_id;
+    if (frame != base_frame_) {
+      const auto t = lookup_at(base_frame_, frame, stamp);
+      if (!t) {res.message = "TF " + frame + " → " + base_frame_ + " 없음"; return;}
+      T = *t;
+    }
+    DiceRequest q;
+    q.yellow_shape = req.yellow_shape;
+    q.tolerance = req.tolerance > 0 ? req.tolerance : dice_tolerance_;
+    double x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9, z0 = 1e9, z1 = -1e9;
+    for (int i = 0; i < 9; ++i) {
+      const tf2::Vector3 c = T * tf2::Vector3(req.cells[i].x, req.cells[i].y, req.cells[i].z);
+      q.cells[i].x = c.x();
+      q.cells[i].y = c.y();
+      q.cells[i].expect = req.expect[i];
+      x0 = std::min(x0, c.x()); x1 = std::max(x1, c.x());
+      y0 = std::min(y0, c.y()); y1 = std::max(y1, c.y());
+      z0 = std::min(z0, c.z()); z1 = std::max(z1, c.z());
+    }
+    // 선반 위 퍽만: 칸 범위 + region_margin, 높이는 선반 윗면 아래 2 cm ~ 위 10 cm (바닥 퍽 · 집게 속 퍽 제외)
+    std::vector<SeenPuck> seen;
+    for (const auto & p : last_pucks_->pucks) {
+      const auto & o = p.pose.position;
+      if (o.x < x0 - dice_margin_ || o.x > x1 + dice_margin_ || o.y < y0 - dice_margin_ || o.y > y1 + dice_margin_) {continue;}
+      if (o.z < z0 - 0.02 || o.z > z1 + 0.10) {continue;}
+      seen.push_back({o.x, o.y, p.color, p.shape});
+    }
+    const DiceResult r = check_dice(q, seen);
+    res.observed = true;
+    res.passed = r.passed;
+    for (int i = 0; i < 9; ++i) {
+      res.error[i] = r.cells[i].error;
+      res.count[i] = static_cast<uint8_t>(r.cells[i].count);
+      res.offset[i] = static_cast<float>(r.cells[i].offset);
+      res.color[i] = r.cells[i].color;
+      res.shape[i] = r.cells[i].shape;
+    }
+    res.wrong.assign(r.wrong.begin(), r.wrong.end());
+    res.message = r.passed ? "통과" : "틀린 칸 " + std::to_string(r.wrong.size()) + "개";
   }
 
   void process_arm(const Image::ConstSharedPtr & img, const CameraInfo::ConstSharedPtr & info, uint8_t mode, Result & r)
@@ -857,12 +1108,28 @@ private:
   cv::Mat map1_, map2_, newK_;
   cv::Size map_size_;
 
+  // 신호등 · 주사위
+  LightBlobConfig light_cfg_;
+  double seg_w_ = 0.0396, seg_h_ = 0.0349, area_ratio_min_ = 0.15, area_ratio_max_ = 2.5;
+  double light_z_min_ = 0.05, light_z_max_ = 0.20;
+  size_t signal_q_max_ = 30;
+  SignalLightLocator locator_;
+  SignalSequenceTracker sequence_;
+  double signal_last_t_ = -1;
+  Light last_light_ = Light::Off;
+  uint8_t signal_cam_ = Puck::CAMERA_FRONT;
+  std::atomic<bool> signal_on_{false};   // 영상 콜백(cam_cbg_)이 읽는다
+  std::optional<PuckArray> last_pucks_;
+  double dice_tolerance_ = 0.015, dice_margin_ = 0.04, dice_max_age_ = 1.0;
+
   std::unique_ptr<TfHelper> tf_;
   rclcpp::CallbackGroup::SharedPtr cam_cbg_, ctl_cbg_;
   rclcpp::Publisher<Result>::SharedPtr pub_;
   rclcpp::Publisher<PuckArray>::SharedPtr puck_pub_;
   rclcpp::Publisher<TaskMarker>::SharedPtr marker_pub_;
+  rclcpp::Publisher<SignalMsg>::SharedPtr signal_pub_;
   rclcpp::Service<SetMode>::SharedPtr srv_;
+  rclcpp::Service<CheckDice>::SharedPtr dice_srv_;
   rclcpp::TimerBase::SharedPtr timer_;
 };
 
