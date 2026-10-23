@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
-# 인지 노드 모의 시험 M1~M5 실행 (PC, Isaac Sim 없이). 결과: <결과 폴더>/mock_check_result.json
-#   scripts/run_mock_check.sh <URDF 파일> <결과 폴더> [perception install setup.bash]
+# 인지 노드 모의 시험 실행 (PC, Isaac Sim 없이). 결과: <결과 폴더>/*_result.json
+#   scripts/run_mock_check.sh <URDF 파일> <결과 폴더> [perception install setup.bash] [시험 스크립트]
+#   시험 스크립트: mock_check.py (M1~M5, 기본) · mock_check_pucks.py (퍽 · 마커 P1~P5)
 # 다른 장비·세션 토픽과 섞이지 않게 ROS_DOMAIN_ID=87, 같은 PC 안 통신으로만 돈다.
 # 끝나면(Ctrl+C 포함) 띄운 robot_state_publisher · perception 컨테이너를 모두 끈다.
 set -u
 URDF=${1:?사용: run_mock_check.sh <URDF> <결과 폴더> [setup.bash]}
 OUT=${2:?결과 폴더}
 SETUP=${3:-}
+CHECK=${4:-mock_check.py}
 HERE=$(cd "$(dirname "$0")" && pwd)
 mkdir -p "$OUT"
-[ -e "$OUT/mock_check_result.json" ] && { echo "이미 결과가 있음: $OUT (다른 폴더 사용)"; exit 1; }
+[ -n "$(ls -A "$OUT")" ] && { echo "빈 폴더가 아님: $OUT (다른 폴더 사용)"; exit 1; }
 
 export ROS_DOMAIN_ID=87 ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST
 export RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
@@ -41,4 +43,4 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 sleep 4
-python3 "$HERE/mock_check.py" --urdf "$URDF" --out "$OUT" 2>&1 | tee "$OUT/mock_check.out"
+python3 "$HERE/$CHECK" --urdf "$URDF" --out "$OUT" 2>&1 | tee "$OUT/${CHECK%.py}.out"
