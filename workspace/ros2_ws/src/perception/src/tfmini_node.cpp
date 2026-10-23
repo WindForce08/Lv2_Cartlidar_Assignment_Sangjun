@@ -1,6 +1,10 @@
-// TFminiNode (Perception 팀 작성 · ⑧ control_container 에서 실행)
-//   /dev/tfmini 115200 bps 를 읽기 스레드에서 파싱 → ~50 Hz 로 sensor_msgs/Range /arm_range 발행
-//   신호세기 < 100 · 0.1~12 m 밖 · 0.2 s 이상 새 프레임 없음 → range = +inf (무효)
+// TFminiNode (perception_container)
+//   TFmini Plus(1층 정면 바닥, 앞쪽 거리)는 UART 로만 값을 내고 Lyrical 에 ROS 드라이버가 없어 시리얼을 직접 읽는다.
+//   /dev/tfmini 115200 bps 를 읽기 스레드에서 파싱 → range_topic(기본 /tfmini/range) 으로 sensor_msgs/Range 발행
+//   - 새 측정이 있을 때만 발행한다 (publish_rate 로 묶음, 같은 측정을 두 번 내지 않음). stamp = 프레임을 받은 시각
+//   - 신호세기 < min_strength · 측정 범위 밖 → range = +inf (무효)
+//   - stale_timeout_s 동안 새 프레임이 없으면 +inf 를 publish_rate 로 계속 낸다 (받는 쪽 obstacle_stop 이 끊김을 알 수 있게.
+//     아예 침묵하면 받는 쪽은 stale_s 뒤에 정지한다)
 #include <fcntl.h>
 #include <termios.h>
 #include <unistd.h>
@@ -14,15 +18,12 @@
 #include <thread>
 
 #include "rclcpp/rclcpp.hpp"
-#include "robot_interfaces/names.hpp"
 #include "rclcpp_components/register_node_macro.hpp"
 #include "perception/tfmini_parser.hpp"
 #include "sensor_msgs/msg/range.hpp"
 
 namespace perception
 {
-namespace names = robot_interfaces::names;
-namespace qos = robot_interfaces::qos;
 using namespace std::chrono_literals;
 
 class TFminiNode : public rclcpp::Node
@@ -41,7 +42,8 @@ public:
     stale_s_ = declare_parameter("stale_timeout_s", 0.2);
     const double rate = declare_parameter("publish_rate", 50.0);
 
-    pub_ = create_publisher<sensor_msgs::msg::Range>(names::ARM_RANGE, rclcpp::SensorDataQoS());
+    pub_ = create_publisher<sensor_msgs::msg::Range>(declare_parameter("range_topic", std::string("/tfmini/range")),
+        rclcpp::SensorDataQoS());
     cbg_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
     timer_ = create_wall_timer(std::chrono::duration<double>(1.0 / rate), [this]() {publish();}, cbg_);
     reader_ = std::thread([this]() {read_loop();});   // 무거운 작업(시리얼)은 별도 스레드
@@ -114,7 +116,9 @@ private:
           std::lock_guard<std::mutex> lk(mtx_);
           latest_ = s;
           latest_time_ = std::chrono::steady_clock::now();
+          latest_stamp_ = now();
           have_ = true;
+          fresh_ = true;
         }
       }
     }
@@ -123,7 +127,6 @@ private:
   void publish()
   {
     sensor_msgs::msg::Range m;
-    m.header.stamp = now();
     m.header.frame_id = frame_id_;
     m.radiation_type = sensor_msgs::msg::Range::INFRARED;
     m.field_of_view = static_cast<float>(fov_);
@@ -133,10 +136,15 @@ private:
     {
       std::lock_guard<std::mutex> lk(mtx_);
       const double age = std::chrono::duration<double>(std::chrono::steady_clock::now() - latest_time_).count();
-      if (have_ && age <= stale_s_ &&
-        tfmini_valid(latest_, static_cast<uint16_t>(min_strength_), min_range_, max_range_))
-      {
-        m.range = static_cast<float>(latest_.distance_m);
+      if (have_ && age <= stale_s_) {
+        if (!fresh_) {return;}   // 지난번에 낸 측정 → 다시 내지 않음
+        fresh_ = false;
+        m.header.stamp = latest_stamp_;
+        if (tfmini_valid(latest_, static_cast<uint16_t>(min_strength_), min_range_, max_range_)) {
+          m.range = static_cast<float>(latest_.distance_m);
+        }
+      } else {
+        m.header.stamp = now();   // 끊김: 무효 값을 계속 낸다
       }
     }
     pub_->publish(m);
@@ -151,7 +159,9 @@ private:
   std::mutex mtx_;
   TfminiSample latest_;
   std::chrono::steady_clock::time_point latest_time_{};
+  rclcpp::Time latest_stamp_;
   bool have_ = false;
+  bool fresh_ = false;
   rclcpp::CallbackGroup::SharedPtr cbg_;
   rclcpp::Publisher<sensor_msgs::msg::Range>::SharedPtr pub_;
   rclcpp::TimerBase::SharedPtr timer_;
