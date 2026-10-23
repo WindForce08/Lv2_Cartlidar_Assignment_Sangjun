@@ -56,7 +56,21 @@ perception_node:
       size_max_m: 0.09          # ★ 긴 변 상한
     tag:
       family: tag36h11          # ★
-      size: 0.10                # ★ 태그 한 변 [m]
+      size: 0.018               # ★ 태그 한 변 [m] (검은 테두리 바깥). 퍽 태그 가정값
+    puck:                       # 태그 → 퍽 (include/perception/puck_estimator.hpp). 퍽 30 × 30 × 60 mm
+      half_width: 0.015         # [m] 짧은 변 / 2 (원기둥 반지름)
+      half_length: 0.030        # [m] 긴 변 / 2
+      ring_in: 0.0125           # [m] 색을 보는 띠: 태그 흰 여백(0.0225 / 2) 바깥 · 면(0.015) 안 ★ 실물 스티커 크기로 다시 정함
+      ring_out: 0.0145
+      ring2_in: 0.016           # [m] 띠에 색이 없을 때(면 전체가 스티커) 한 번 더 보는 바깥 띠
+      ring2_out: 0.020
+      axis_probe: 0.022         # [m] 긴 축 확인 지점 (옆면 긴 축 방향은 면 안, 짧은 축 방향은 면 밖)
+      min_votes: 6              # 색을 정할 최소 화소 수
+      merge_dist: 0.04          # [m] D435 퍽이 태그 퍽과 이보다 가까우면 같은 퍽으로 보고 뺀다
+    marker:                     # 과제 Aruco 마커 (READ_MARKER)
+      family: DICT_4X4_50       # ★ 가정
+      size: 0.10                # ★ 검은 테두리 바깥 한 변 [m], 가정
+      # ids: [10, 11, 12]       # 이 번호만 씀. 빼면 모든 번호 (빈 목록은 yaml 에서 타입을 알 수 없어 쓰지 않음)
     frames:
       base: base_link
       odom: odom

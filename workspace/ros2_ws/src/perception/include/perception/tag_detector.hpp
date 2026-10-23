@@ -15,6 +15,7 @@ struct TagDetection
 {
   int id = -1;
   double area = 0;            // 화소 넓이 (가장 크게 보이는 태그 고르기)
+  std::vector<cv::Point2f> corners;   // 왼쪽 위 · 오른쪽 위 · 오른쪽 아래 · 왼쪽 아래 (화소)
   bool pose_valid = false;
   cv::Vec3d rvec, tvec;       // 광학 좌표, m
 };
@@ -23,6 +24,7 @@ class TagDetector
 {
 public:
   // family: "tag36h11" (기본) · "tag25h9" · "tag16h5"
+  //         Aruco(과제 마커): "DICT_4X4_50" · "DICT_4X4_100" · "DICT_5X5_50" · "DICT_6X6_50"
   TagDetector(const std::string & family, double tag_size_m);
   bool ok() const {return ok_;}
   // K · D 가 비어 있으면 자세 추정 없이 id 만
@@ -32,6 +34,7 @@ private:
   int dict_id_ = 0;
   double size_ = 0.1;
   bool ok_ = false;
+  bool aruco_ = false;
 };
 
 }  // namespace perception

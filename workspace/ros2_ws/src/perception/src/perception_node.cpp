@@ -13,6 +13,12 @@
 //   SEARCH_* : 검출 → 정렬 깊이 중앙값 → 컬러 광학 좌표 3D → TF 로 base_link · odom → TargetTracker → object_pose
 //   ARM_ALIGN: camera_info 로 왜곡 보정한 영상을 detect_width 로 줄여 검출 → 화면 중심 대비 arm_offset
 //   READ_TAG : 왜곡 보정 원본에서 AprilTag → tag_id · tag_pose (Arducam 광학 프레임 기준, x 오른쪽 · y 아래 · z 앞)
+//   /perception/pucks (토픽, PuckArray): SEARCH_* 또는 READ_TAG 가 켜져 있으면 result 와 같은 주기로 발행한다
+//      Arducam 태그 → 번호 · 색 · 중심 · 긴 축(puck_estimator.hpp), D435 색 검출 → 색 · 중심(번호 -1)
+//      같은 퍽(merge_dist 안)이면 태그로 읽은 것을 남긴다. 새 영상이 없는 카메라는 그 영상으로 낸 결과를 다시 쓴다
+//   /perception/task_marker (토픽, TaskMarker): READ_MARKER 가 켜져 있으면 앞 · 뒤 D435 (팔 카메라가 켜져 있으면 그것도)
+//      에서 Aruco 마커를 찾아 가장 크게 보이는 것 하나. 없으면 found = false
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <memory>
@@ -28,6 +34,8 @@
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_components/register_node_macro.hpp"
 #include "robot_interfaces/msg/perception_result.hpp"
+#include "robot_interfaces/msg/puck_array.hpp"
+#include "robot_interfaces/msg/task_marker.hpp"
 #include "robot_interfaces/names.hpp"
 #include "robot_interfaces/srv/set_perception_mode.hpp"
 #include "sensor_msgs/msg/camera_info.hpp"
@@ -35,6 +43,7 @@
 #include "perception/detector.hpp"
 #include "perception/frame_gate.hpp"
 #include "perception/geometry.hpp"
+#include "perception/puck_estimator.hpp"
 #include "perception/tag_detector.hpp"
 #include "perception/target_tracker.hpp"
 #include "perception/tf_helper.hpp"
@@ -48,6 +57,9 @@ namespace qos = robot_interfaces::qos;
 using namespace std::chrono_literals;
 using SetMode = robot_interfaces::srv::SetPerceptionMode;
 using Result = robot_interfaces::msg::PerceptionResult;
+using Puck = robot_interfaces::msg::Puck;
+using PuckArray = robot_interfaces::msg::PuckArray;
+using TaskMarker = robot_interfaces::msg::TaskMarker;
 using Image = sensor_msgs::msg::Image;
 using CameraInfo = sensor_msgs::msg::CameraInfo;
 
@@ -57,6 +69,24 @@ int64_t stamp_ns(const builtin_interfaces::msg::Time & t)
 {
   return static_cast<int64_t>(t.sec) * 1'000'000'000LL + t.nanosec;
 }
+
+// 결과 하나에 쓴 영상들: 가장 오래된 촬영 시각과 새 영상이 있었는지
+struct StampSet
+{
+  std::optional<rclcpp::Time> oldest;
+  bool fresh = false;
+  void note(const rclcpp::Time & t, bool f)
+  {
+    if (!oldest || t < *oldest) {oldest = t;}
+    fresh = fresh || f;
+  }
+};
+
+struct MarkerHit
+{
+  TaskMarker msg;
+  double area = 0;
+};
 }  // namespace
 
 // 깊이 카메라 하나 (D435). 컬러 + 컬러에 맞춘 깊이 + 컬러 camera_info
@@ -73,6 +103,8 @@ struct DepthCamera
   CameraInfo::ConstSharedPtr info;
   StampGate gate;
   bool restarted = false;
+  std::vector<Puck> pucks;                                      // used_ns 영상으로 낸 결과 (처리 그룹에서만 씀)
+  std::optional<MarkerHit> marker;
 
   rclcpp::Subscription<Image>::SharedPtr color_sub, depth_sub;
   rclcpp::Subscription<CameraInfo>::SharedPtr info_sub;
@@ -91,6 +123,8 @@ struct MonoCamera
   CameraInfo::ConstSharedPtr info;
   StampGate gate;
   bool restarted = false;
+  std::vector<Puck> pucks;
+  std::optional<MarkerHit> marker;
 
   rclcpp::Subscription<Image>::SharedPtr image_sub;
   rclcpp::Subscription<CameraInfo>::SharedPtr info_sub;
@@ -153,6 +187,7 @@ public:
       }
     }
     target_class_ = dc.target_class;
+    hsv_ = dc.hsv;
 
     TrackerConfig tc;
     auto ex_min = declare_parameter("target.exclude_min", std::vector<double>{tc.exclude_min.x, tc.exclude_min.y, tc.exclude_min.z});
@@ -163,11 +198,26 @@ public:
     tc.gate = declare_parameter("target.gate", tc.gate);
     tc.lost_timeout = declare_parameter("target.lost_timeout", tc.lost_timeout);
     tracker_ = TargetTracker(tc);
+    min_confidence_ = tc.min_confidence;
     size_min_m_ = declare_parameter("target.size_min_m", 0.015);
     size_max_m_ = declare_parameter("target.size_max_m", 0.09);
 
     tag_ = std::make_unique<TagDetector>(declare_parameter("tag.family", std::string("tag36h11")),
         declare_parameter("tag.size", 0.10));
+    marker_ = std::make_unique<TagDetector>(declare_parameter("marker.family", std::string("DICT_4X4_50")),
+        declare_parameter("marker.size", 0.10));
+    for (auto id : declare_parameter<std::vector<int64_t>>("marker.ids", std::vector<int64_t>{})) {
+      marker_ids_.push_back(static_cast<int>(id));
+    }
+    puck_geom_.half_width = declare_parameter("puck.half_width", puck_geom_.half_width);
+    puck_geom_.half_length = declare_parameter("puck.half_length", puck_geom_.half_length);
+    puck_geom_.ring_in = declare_parameter("puck.ring_in", puck_geom_.ring_in);
+    puck_geom_.ring_out = declare_parameter("puck.ring_out", puck_geom_.ring_out);
+    puck_geom_.ring2_in = declare_parameter("puck.ring2_in", puck_geom_.ring2_in);
+    puck_geom_.ring2_out = declare_parameter("puck.ring2_out", puck_geom_.ring2_out);
+    puck_geom_.axis_probe = declare_parameter("puck.axis_probe", puck_geom_.axis_probe);
+    puck_geom_.min_votes = static_cast<int>(declare_parameter("puck.min_votes", puck_geom_.min_votes));
+    merge_dist_ = declare_parameter("puck.merge_dist", 0.04);
 
     const double rate = declare_parameter("publish_rate", 15.0);
     frame_max_age_ = declare_parameter("frame_max_age_s", 0.3);
@@ -180,8 +230,8 @@ public:
       RCLCPP_FATAL(get_logger(), "검출기 생성 실패: %s", info.c_str());
       throw std::runtime_error("detector");
     }
-    RCLCPP_INFO(get_logger(), "검출기: %s %s · 태그 %s", detector_->name().c_str(), info.c_str(),
-      tag_->ok() ? "사용 가능" : "패밀리 오류");
+    RCLCPP_INFO(get_logger(), "검출기: %s %s · 태그 %s · 마커 %s", detector_->name().c_str(), info.c_str(),
+      tag_->ok() ? "사용 가능" : "패밀리 오류", marker_->ok() ? "사용 가능" : "사전 이름 오류");
 
     tf_ = std::make_unique<TfHelper>(*this);
 
@@ -189,6 +239,8 @@ public:
     cam_cbg_ = create_callback_group(rclcpp::CallbackGroupType::Reentrant);
     ctl_cbg_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
     pub_ = create_publisher<Result>(names::PERCEPTION_RESULT, qos::result());
+    puck_pub_ = create_publisher<PuckArray>(names::PERCEPTION_PUCKS, qos::result());
+    marker_pub_ = create_publisher<TaskMarker>(names::PERCEPTION_TASK_MARKER, qos::result());
     srv_ = create_service<SetMode>(names::PERCEPTION_SET_MODE,
         [this](SetMode::Request::SharedPtr req, SetMode::Response::SharedPtr res) {on_set_mode(*req, *res);},
         rclcpp::ServicesQoS(), ctl_cbg_);
@@ -198,11 +250,12 @@ public:
 private:
   static constexpr uint8_t SEARCH_BITS = SetMode::Request::SEARCH_FRONT | SetMode::Request::SEARCH_REAR;
   static constexpr uint8_t ARM_BITS = SetMode::Request::ARM_ALIGN | SetMode::Request::READ_TAG;
+  static constexpr uint8_t MARKER_BIT = SetMode::Request::READ_MARKER;
 
   // ------------------------------ set_mode ------------------------------
   void on_set_mode(const SetMode::Request & req, SetMode::Response & res)
   {
-    if (req.mode & ~(SEARCH_BITS | ARM_BITS)) {res.success = false; res.message = "모르는 모드 비트"; return;}
+    if (req.mode & ~(SEARCH_BITS | ARM_BITS | MARKER_BIT)) {res.success = false; res.message = "모르는 모드 비트"; return;}
     if ((req.mode & SetMode::Request::SEARCH_FRONT) && front_.color_topic.empty()) {
       res.success = false; res.message = "전방 카메라 토픽 미설정"; return;
     }
@@ -211,10 +264,13 @@ private:
     }
     if ((req.mode & ARM_BITS) && arm_.image_topic.empty()) {res.success = false; res.message = "팔 카메라 토픽 미설정"; return;}
     if ((req.mode & SetMode::Request::READ_TAG) && !tag_->ok()) {res.success = false; res.message = "태그 패밀리 오류"; return;}
+    if ((req.mode & MARKER_BIT) && !marker_->ok()) {res.success = false; res.message = "마커 사전 이름 오류"; return;}
 
     const uint8_t old = mode_;
     mode_ = req.mode;
     update_subscriptions();
+    for (auto * c : {&front_, &rear_}) {std::lock_guard<std::mutex> lk(c->m); c->used_ns = -1;}   // 새 모드로 지금 영상을 다시 처리
+    {std::lock_guard<std::mutex> lk(arm_.m); arm_.used_ns = -1;}
     if (req.mode == SetMode::Request::OFF) {
       tracker_.reset();
       Result r;   // 받는 쪽 초기화 신호 (manipulator 기억 삭제)
@@ -230,8 +286,8 @@ private:
 
   void update_subscriptions()
   {
-    set_depth_subscribed(front_, mode_ & front_.bit);
-    set_depth_subscribed(rear_, mode_ & rear_.bit);
+    set_depth_subscribed(front_, mode_ & (front_.bit | MARKER_BIT));
+    set_depth_subscribed(rear_, mode_ & (rear_.bit | MARKER_BIT));
     set_mono_subscribed(arm_, mode_ & ARM_BITS);
   }
 
@@ -257,6 +313,8 @@ private:
       c.depth.clear();
       c.gate.reset();
       c.used_ns = -1;
+      c.pucks.clear();
+      c.marker.reset();
       RCLCPP_INFO(get_logger(), "%s 카메라 구독 끝", c.name.c_str());
     }
   }
@@ -279,6 +337,8 @@ private:
       c.image.reset();
       c.gate.reset();
       c.used_ns = -1;
+      c.pucks.clear();
+      c.marker.reset();
       RCLCPP_INFO(get_logger(), "%s 카메라 구독 끝", c.name.c_str());
     }
   }
@@ -363,7 +423,8 @@ private:
     return s;
   }
 
-  void collect(DepthCamera & c, const DepthSnapshot & s, int cam_idx, std::vector<Candidate> & out)
+  // 검출 → 3D 후보(추적용) · 퍽(색 · 중심, 번호 없음). 퍽 중심은 보이는 겉면에서 시선 방향으로 half_width 더 들어간 점
+  void collect(DepthCamera & c, const DepthSnapshot & s, const cv::Mat & color, uint8_t cam_idx, std::vector<Candidate> & out)
   {
     if (!s.depth || !s.info) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "%s: %s 없음 — 3D 위치를 낼 수 없음",
@@ -380,18 +441,17 @@ private:
         c.name.c_str(), s.depth->width, s.depth->height, s.color->width, s.color->height);
       return;
     }
-    cv_bridge::CvImageConstPtr color, depth;
+    cv_bridge::CvImageConstPtr depth;
     try {
-      color = cv_bridge::toCvShare(s.color, "bgr8");
       depth = cv_bridge::toCvShare(s.depth);
     } catch (const cv_bridge::Exception & e) {
-      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "%s 영상 변환 실패: %s", c.name.c_str(), e.what());
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "%s 깊이 변환 실패: %s", c.name.c_str(), e.what());
       return;
     }
     const PinholeK K{s.info->k[0], s.info->k[4], s.info->k[2], s.info->k[5]};
     const std::string frame = c.frame_id.empty() ? s.color->header.frame_id : c.frame_id;
     const rclcpp::Time stamp(s.color->header.stamp, get_clock()->get_clock_type());
-    for (const auto & d : detector_->detect(color->image)) {
+    for (const auto & d : detector_->detect(color)) {
       if (target_class_ >= 0 && d.class_id != target_class_) {continue;}
       const cv::Point ctr(static_cast<int>(d.box.x + d.box.width / 2), static_cast<int>(d.box.y + d.box.height / 2));
       const double z = median_depth(depth->image, ctr, depth_win_, scale, depth_min_, depth_max_);
@@ -400,8 +460,135 @@ private:
       Candidate k;
       k.confidence = d.score;
       k.camera = cam_idx;
-      if (to_base_odom(deproject(K, ctr.x, ctr.y, z), frame, stamp, k.base, k.odom)) {out.push_back(k);}
+      const cv::Point3d sp = deproject(K, ctr.x, ctr.y, z);
+      if (!to_base_odom(sp, frame, stamp, k.base, k.odom)) {continue;}
+      out.push_back(k);
+      const double n = cv::norm(sp);
+      const cv::Point3d cp = sp * ((n + puck_geom_.half_width) / n);
+      const tf2::Vector3 b = *tf_->fixed(base_frame_, frame) * tf2::Vector3(cp.x, cp.y, cp.z);   // to_base_odom 이 이미 찾아 둠
+      Puck p;
+      p.tag_id = -1;
+      p.color = (d.class_id >= 0 && d.class_id < 3) ? static_cast<uint8_t>(d.class_id + 1) : Puck::COLOR_UNKNOWN;
+      p.shape = Puck::SHAPE_UNKNOWN;
+      p.pose.position.x = b.x();
+      p.pose.position.y = b.y();
+      p.pose.position.z = b.z();
+      p.pose.orientation.w = 1.0;
+      p.confidence = d.score;
+      p.camera = cam_idx;
+      c.pucks.push_back(p);
     }
+  }
+
+  // 움직이는 카메라(팔) 변환 target ← source, 촬영 시각 기준. 그 시각 변환이 없으면 가장 최근 것
+  std::optional<tf2::Transform> lookup_at(const std::string & target, const std::string & source, const rclcpp::Time & stamp)
+  {
+    try {
+      auto & buf = tf_->buffer();
+      const tf2::TimePoint tp = tf2_ros::fromRclcpp(stamp);
+      const auto m = buf.canTransform(target, source, tp) ? buf.lookupTransform(target, source, tp) :
+        buf.lookupTransform(target, source, tf2::TimePointZero);
+      tf2::Transform t;
+      tf2::fromMsg(m.transform, t);
+      return t;
+    } catch (const tf2::TransformException & e) {
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "TF %s→%s 없음: %s", source.c_str(), target.c_str(), e.what());
+      return std::nullopt;
+    }
+  }
+
+  static tf2::Matrix3x3 to_tf(const cv::Matx33d & R)
+  {
+    return tf2::Matrix3x3(R(0, 0), R(0, 1), R(0, 2), R(1, 0), R(1, 1), R(1, 2), R(2, 0), R(2, 1), R(2, 2));
+  }
+
+  // Arducam 태그 → 퍽. 같은 번호가 여러 면에 보이면 가장 크게 보이는 면 하나
+  std::vector<Puck> pucks_from_tags(const std::vector<TagDetection> & tags, const cv::Mat & bgr, const cv::Mat & K,
+    const tf2::Transform & T)
+  {
+    std::vector<const TagDetection *> order;
+    for (const auto & t : tags) {if (t.pose_valid) {order.push_back(&t);}}
+    std::sort(order.begin(), order.end(), [](auto * a, auto * b) {return a->area > b->area;});
+    std::vector<Puck> out;
+    std::vector<int> seen;
+    for (const auto * t : order) {
+      if (std::find(seen.begin(), seen.end(), t->id) != seen.end()) {continue;}
+      seen.push_back(t->id);
+      const PuckEstimate e = estimate_puck(bgr, K, *t, hsv_, puck_geom_);
+      Puck p;
+      p.tag_id = t->id;
+      p.color = e.color_cls >= 0 ? static_cast<uint8_t>(e.color_cls + 1) : Puck::COLOR_UNKNOWN;
+      p.shape = Puck::SHAPE_UNKNOWN;
+      const tf2::Vector3 c = T * tf2::Vector3(e.center[0], e.center[1], e.center[2]);
+      p.pose.position.x = c.x();
+      p.pose.position.y = c.y();
+      p.pose.position.z = c.z();
+      p.pose.orientation.w = 1.0;
+      if (e.orientation_valid) {
+        tf2::Matrix3x3 Rb = T.getBasis() * to_tf(e.axes);
+        const tf2::Vector3 z = Rb.getColumn(2);
+        // 긴 축 부호: 서 있으면 위로, 누워 있으면 base_link x+ (옆으로 누우면 y+) 쪽
+        const bool flip = std::abs(z.z()) > 0.5 ? z.z() < 0 : (std::abs(z.x()) >= std::abs(z.y()) ? z.x() < 0 : z.y() < 0);
+        if (flip) {Rb = Rb * tf2::Matrix3x3(1, 0, 0, 0, -1, 0, 0, 0, -1);}
+        p.orientation_valid = true;
+        p.standing = Rb.getColumn(2).z() > std::cos(M_PI / 6);
+        tf2::Quaternion q;
+        Rb.getRotation(q);
+        p.pose.orientation = tf2::toMsg(q);
+      }
+      p.confidence = static_cast<float>(e.confidence);
+      p.camera = Puck::CAMERA_ARM;
+      out.push_back(p);
+    }
+    return out;
+  }
+
+  // Aruco 검출 중 가장 크게 보이는 것 → base_link 기준 마커
+  std::optional<MarkerHit> best_marker(const std::vector<TagDetection> & dets, const tf2::Transform & T,
+    const builtin_interfaces::msg::Time & stamp, uint8_t cam)
+  {
+    const TagDetection * best = nullptr;
+    for (const auto & d : dets) {
+      if (!d.pose_valid) {continue;}
+      if (!marker_ids_.empty() && std::find(marker_ids_.begin(), marker_ids_.end(), d.id) == marker_ids_.end()) {continue;}
+      if (!best || d.area > best->area) {best = &d;}
+    }
+    if (!best) {return std::nullopt;}
+    cv::Matx33d R;
+    cv::Rodrigues(best->rvec, R);
+    const tf2::Vector3 c = T * tf2::Vector3(best->tvec[0], best->tvec[1], best->tvec[2]);
+    tf2::Quaternion q;
+    (T.getBasis() * to_tf(R)).getRotation(q);
+    MarkerHit h;
+    h.area = best->area;
+    h.msg.header.stamp = stamp;
+    h.msg.header.frame_id = base_frame_;
+    h.msg.found = true;
+    h.msg.marker_id = best->id;
+    h.msg.pose.position.x = c.x();
+    h.msg.pose.position.y = c.y();
+    h.msg.pose.position.z = c.z();
+    h.msg.pose.orientation = tf2::toMsg(q);
+    h.msg.distance = static_cast<float>(cv::norm(best->tvec));
+    h.msg.camera = cam;
+    return h;
+  }
+
+  // D435 컬러(보정 전 원본)에서 마커. 왜곡 계수는 camera_info 값
+  std::optional<MarkerHit> marker_on_depth_cam(DepthCamera & c, const DepthSnapshot & s, const cv::Mat & color, uint8_t cam)
+  {
+    if (!s.info || s.info->k[0] <= 0.0) {
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "%s: camera_info 없음 — 마커 자세를 낼 수 없음", c.name.c_str());
+      return std::nullopt;
+    }
+    cv::Mat K(3, 3, CV_64F);
+    for (int i = 0; i < 9; ++i) {K.at<double>(i / 3, i % 3) = s.info->k[i];}
+    cv::Mat D(1, static_cast<int>(s.info->d.size()), CV_64F);
+    for (size_t i = 0; i < s.info->d.size(); ++i) {D.at<double>(0, static_cast<int>(i)) = s.info->d[i];}
+    const std::string frame = c.frame_id.empty() ? s.color->header.frame_id : c.frame_id;
+    const auto T = tf_->fixed(base_frame_, frame);
+    if (!T) {return std::nullopt;}
+    return best_marker(marker_->detect(color, K, s.info->d.empty() ? cv::Mat() : D), *T, s.color->header.stamp, cam);
   }
 
   void process()
@@ -409,39 +596,52 @@ private:
     const uint8_t mode = mode_;
     if (mode == SetMode::Request::OFF) {return;}
     const rclcpp::Time now_t = now();
+    const bool want_marker = mode & MARKER_BIT;
     Result r;
     r.mode = mode;
-    std::optional<rclcpp::Time> oldest;
-    bool any_fresh = false;
-    auto note = [&](const builtin_interfaces::msg::Time & st, bool fresh) {
-      const rclcpp::Time t(st, now_t.get_clock_type());
-      if (!oldest || t < *oldest) {oldest = t;}
-      any_fresh = any_fresh || fresh;
-    };
+    StampSet res_st, puck_st, mark_st;
+    std::vector<const std::vector<Puck> *> puck_lists;     // 이번 결과에 쓰는 카메라별 퍽 (팔이 맨 앞)
+    std::vector<const MarkerHit *> markers;
 
-    if (mode & SEARCH_BITS) {
-      std::vector<Candidate> cands;
-      bool have = false;
-      for (auto * c : {&front_, &rear_}) {
-        if (!(mode & c->bit)) {continue;}
-        if (auto s = take(*c, now_t)) {
-          note(s->color->header.stamp, s->fresh);
-          have = true;
-          if (s->fresh) {collect(*c, *s, c == &front_ ? 0 : 1, cands);}
+    std::vector<Candidate> cands;   // 추적에는 새 영상의 후보만 쓴다
+    bool search_have = false;
+    std::vector<DepthCamera *> depth_used;
+    for (auto * c : {&front_, &rear_}) {
+      const bool search = mode & c->bit;
+      if (!search && !want_marker) {continue;}
+      auto s = take(*c, now_t);
+      if (!s) {continue;}
+      const rclcpp::Time st(s->color->header.stamp, now_t.get_clock_type());
+      if (search) {res_st.note(st, s->fresh); puck_st.note(st, s->fresh); search_have = true;}
+      if (want_marker) {mark_st.note(st, s->fresh);}
+      if (s->fresh) {   // 새 영상만 처리. 같은 영상이면 그 영상으로 낸 퍽 · 마커를 다시 쓴다
+        c->pucks.clear();
+        c->marker.reset();
+        cv_bridge::CvImageConstPtr color;
+        try {
+          color = cv_bridge::toCvShare(s->color, "bgr8");
+        } catch (const cv_bridge::Exception & e) {
+          RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "%s 영상 변환 실패: %s", c->name.c_str(), e.what());
+          continue;
         }
+        const uint8_t idx = c == &front_ ? Puck::CAMERA_FRONT : Puck::CAMERA_REAR;
+        if (search) {collect(*c, *s, color->image, idx, cands);}
+        if (want_marker) {c->marker = marker_on_depth_cam(*c, *s, color->image, idx);}
       }
-      if (restart_seen_) {tracker_.reset(); restart_seen_ = false;}
-      if (have && any_fresh) {
-        if (auto t = tracker_.update(cands, oldest->seconds())) {
-          r.object_found = true;
-          r.object_pose.header.frame_id = base_frame_;
-          r.object_pose.header.stamp = *oldest;
-          r.object_pose.pose.position.x = t->base.x;
-          r.object_pose.pose.position.y = t->base.y;
-          r.object_pose.pose.position.z = t->base.z;
-          r.object_pose.pose.orientation.w = 1.0;
-          r.confidence = static_cast<float>(t->confidence);
-        }
+      if (search) {puck_lists.push_back(&c->pucks);}
+      if (want_marker && c->marker) {markers.push_back(&*c->marker);}
+    }
+    if (restart_seen_) {tracker_.reset(); restart_seen_ = false;}
+    if (search_have && res_st.fresh) {
+      if (auto t = tracker_.update(cands, res_st.oldest->seconds())) {
+        r.object_found = true;
+        r.object_pose.header.frame_id = base_frame_;
+        r.object_pose.header.stamp = *res_st.oldest;
+        r.object_pose.pose.position.x = t->base.x;
+        r.object_pose.pose.position.y = t->base.y;
+        r.object_pose.pose.position.z = t->base.z;
+        r.object_pose.pose.orientation.w = 1.0;
+        r.confidence = static_cast<float>(t->confidence);
       }
     }
 
@@ -461,19 +661,78 @@ private:
         }
       }
       if (img) {
-        note(img->header.stamp, fresh);
-        if (fresh) {process_arm(img, info, mode, r);}
+        const rclcpp::Time st(img->header.stamp, now_t.get_clock_type());
+        res_st.note(st, fresh);
+        if (mode & SetMode::Request::READ_TAG) {puck_st.note(st, fresh);}
+        if (want_marker) {mark_st.note(st, fresh);}
+        if (fresh) {
+          arm_.pucks.clear();
+          arm_.marker.reset();
+          process_arm(img, info, mode, r);
+        }
+        if (mode & SetMode::Request::READ_TAG) {puck_lists.insert(puck_lists.begin(), &arm_.pucks);}
+        if (want_marker && arm_.marker) {markers.push_back(&*arm_.marker);}
       }
     }
 
-    if (!oldest) {   // 쓸 수 있는 영상이 하나도 없음 → 발행하지 않음 (받는 쪽은 300 ms 규칙으로 "모름")
+    if (!res_st.oldest && !puck_st.oldest && !mark_st.oldest) {   // 쓸 수 있는 영상이 하나도 없음 → 발행하지 않음
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000, "CAMERA_STALL: 모드 0x%02x 에 쓸 수 있는 영상 없음", mode);
       return;
     }
-    if (!any_fresh) {return;}   // 새 영상이 없으면 같은 결과를 다시 내지 않는다
-    r.header.stamp = *oldest;
-    r.header.frame_id = base_frame_;
-    pub_->publish(r);
+    // 새 영상이 없으면 같은 결과를 다시 내지 않는다
+    if (res_st.oldest && res_st.fresh) {
+      r.header.stamp = *res_st.oldest;
+      r.header.frame_id = base_frame_;
+      pub_->publish(r);
+    }
+    if (puck_st.oldest && puck_st.fresh) {publish_pucks(puck_lists, *puck_st.oldest);}
+    if (mark_st.oldest && mark_st.fresh) {
+      const MarkerHit * best = nullptr;
+      for (const auto * m : markers) {if (!best || m->area > best->area) {best = m;}}
+      TaskMarker msg;
+      if (best) {
+        msg = best->msg;
+      } else {
+        msg.header.stamp = *mark_st.oldest;
+        msg.header.frame_id = base_frame_;
+        msg.found = false;
+        msg.marker_id = -1;
+        msg.pose.orientation.w = 1.0;
+      }
+      marker_pub_->publish(msg);
+    }
+  }
+
+  // 태그로 읽은 퍽(팔)을 먼저 넣고, D435 퍽은 그 merge_dist 안이면 뺀다. 수평 거리 순 정렬, 집을 후보 고르기
+  void publish_pucks(const std::vector<const std::vector<Puck> *> & lists, const rclcpp::Time & stamp)
+  {
+    PuckArray msg;
+    msg.header.stamp = stamp;
+    msg.header.frame_id = base_frame_;
+    for (const auto * l : lists) {
+      for (const auto & p : *l) {
+        bool dup = false;
+        for (const auto & q : msg.pucks) {
+          if (q.tag_id < 0 || p.tag_id >= 0) {continue;}
+          const double dx = p.pose.position.x - q.pose.position.x, dy = p.pose.position.y - q.pose.position.y,
+            dz = p.pose.position.z - q.pose.position.z;
+          dup = dup || std::sqrt(dx * dx + dy * dy + dz * dz) < merge_dist_;
+        }
+        if (!dup) {msg.pucks.push_back(p);}
+      }
+    }
+    auto hd = [](const Puck & p) {return std::hypot(p.pose.position.x, p.pose.position.y);};
+    std::stable_sort(msg.pucks.begin(), msg.pucks.end(), [&](const Puck & a, const Puck & b) {return hd(a) < hd(b);});
+    msg.target_index = -1;
+    for (size_t i = 0; i < msg.pucks.size(); ++i) {
+      const auto & p = msg.pucks[i];
+      const Vec3 v{p.pose.position.x, p.pose.position.y, p.pose.position.z};
+      if ((p.tag_id >= 0 || p.confidence >= min_confidence_) && !tracker_.excluded(v)) {
+        msg.target_index = static_cast<int32_t>(i);
+        break;
+      }
+    }
+    puck_pub_->publish(msg);
   }
 
   void process_arm(const Image::ConstSharedPtr & img, const CameraInfo::ConstSharedPtr & info, uint8_t mode, Result & r)
@@ -502,26 +761,36 @@ private:
         if (!r.object_found) {r.confidence = dets[b].score;}
       }
     }
+    const std::string frame = arm_.frame_id.empty() ? img->header.frame_id : arm_.frame_id;
+    std::optional<tf2::Transform> T;   // 팔은 움직이므로 촬영 시각 변환. 자세가 없으면(camera_info 없음) 찾지 않는다
+    const bool want_marker = mode & MARKER_BIT;
+    if (!newK_.empty() && ((mode & SetMode::Request::READ_TAG) || want_marker)) {
+      T = lookup_at(base_frame_, frame, rclcpp::Time(img->header.stamp, get_clock()->get_clock_type()));
+    }
     if (mode & SetMode::Request::READ_TAG) {
       const auto tags = tag_->detect(u, newK_, cv::Mat());
       const TagDetection * best = nullptr;
       for (const auto & t : tags) {if (!best || t.area > best->area) {best = &t;}}
-      if (!best) {return;}
-      r.tag_found = true;
-      r.tag_id = best->id;
-      r.tag_pose.header.frame_id = arm_.frame_id.empty() ? img->header.frame_id : arm_.frame_id;
-      r.tag_pose.header.stamp = img->header.stamp;
-      if (best->pose_valid) {   // 광학 좌표 그대로 (x 오른쪽 · y 아래 · z 앞)
-        cv::Matx33d R;
-        cv::Rodrigues(best->rvec, R);
-        tf2::Matrix3x3 m(R(0, 0), R(0, 1), R(0, 2), R(1, 0), R(1, 1), R(1, 2), R(2, 0), R(2, 1), R(2, 2));
-        tf2::Quaternion q;
-        m.getRotation(q);
-        r.tag_pose.pose.position.x = best->tvec[0];
-        r.tag_pose.pose.position.y = best->tvec[1];
-        r.tag_pose.pose.position.z = best->tvec[2];
-        r.tag_pose.pose.orientation = tf2::toMsg(q);
+      if (best) {
+        r.tag_found = true;
+        r.tag_id = best->id;
+        r.tag_pose.header.frame_id = frame;
+        r.tag_pose.header.stamp = img->header.stamp;
+        if (best->pose_valid) {   // 광학 좌표 그대로 (x 오른쪽 · y 아래 · z 앞)
+          cv::Matx33d R;
+          cv::Rodrigues(best->rvec, R);
+          tf2::Quaternion q;
+          to_tf(R).getRotation(q);
+          r.tag_pose.pose.position.x = best->tvec[0];
+          r.tag_pose.pose.position.y = best->tvec[1];
+          r.tag_pose.pose.position.z = best->tvec[2];
+          r.tag_pose.pose.orientation = tf2::toMsg(q);
+        }
       }
+      if (T) {arm_.pucks = pucks_from_tags(tags, u, newK_, *T);}
+    }
+    if (want_marker && T) {
+      arm_.marker = best_marker(marker_->detect(u, newK_, cv::Mat()), *T, img->header.stamp, Puck::CAMERA_ARM);
     }
   }
 
@@ -565,7 +834,11 @@ private:
   rclcpp::QoS image_qos_{rclcpp::KeepLast(2)};
 
   std::unique_ptr<Detector> detector_;
-  std::unique_ptr<TagDetector> tag_;
+  std::unique_ptr<TagDetector> tag_, marker_;
+  std::vector<int> marker_ids_;
+  std::vector<HsvRange> hsv_;
+  PuckGeometry puck_geom_;
+  double merge_dist_ = 0.04, min_confidence_ = 0.5;
   TargetTracker tracker_;
   uint8_t mode_ = SetMode::Request::OFF;   // ctl_cbg_ 에서만 읽고 쓴다
   bool restart_seen_ = false;
@@ -578,6 +851,8 @@ private:
   std::unique_ptr<TfHelper> tf_;
   rclcpp::CallbackGroup::SharedPtr cam_cbg_, ctl_cbg_;
   rclcpp::Publisher<Result>::SharedPtr pub_;
+  rclcpp::Publisher<PuckArray>::SharedPtr puck_pub_;
+  rclcpp::Publisher<TaskMarker>::SharedPtr marker_pub_;
   rclcpp::Service<SetMode>::SharedPtr srv_;
   rclcpp::TimerBase::SharedPtr timer_;
 };

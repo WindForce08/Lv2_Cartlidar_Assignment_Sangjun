@@ -22,6 +22,10 @@ TagDetector::TagDetector(const std::string & family, double tag_size_m)
   if (family == "tag36h11") {dict_id_ = cv::aruco::DICT_APRILTAG_36h11;}
   else if (family == "tag25h9") {dict_id_ = cv::aruco::DICT_APRILTAG_25h9;}
   else if (family == "tag16h5") {dict_id_ = cv::aruco::DICT_APRILTAG_16h5;}
+  else if (family == "DICT_4X4_50") {dict_id_ = cv::aruco::DICT_4X4_50; aruco_ = true;}
+  else if (family == "DICT_4X4_100") {dict_id_ = cv::aruco::DICT_4X4_100; aruco_ = true;}
+  else if (family == "DICT_5X5_50") {dict_id_ = cv::aruco::DICT_5X5_50; aruco_ = true;}
+  else if (family == "DICT_6X6_50") {dict_id_ = cv::aruco::DICT_6X6_50; aruco_ = true;}
   else {ok_ = false;}
 }
 
@@ -35,12 +39,12 @@ std::vector<TagDetection> TagDetector::detect(const cv::Mat & bgr, const cv::Mat
   std::vector<std::vector<cv::Point2f>> corners, rejected;
 #if ROBOT_ARUCO_NEW
   cv::aruco::DetectorParameters p;
-  p.cornerRefinementMethod = cv::aruco::CORNER_REFINE_APRILTAG;
+  p.cornerRefinementMethod = aruco_ ? cv::aruco::CORNER_REFINE_SUBPIX : cv::aruco::CORNER_REFINE_APRILTAG;
   cv::aruco::ArucoDetector det(cv::aruco::getPredefinedDictionary(dict_id_), p);
   det.detectMarkers(gray, corners, ids, rejected);
 #else
   auto p = cv::aruco::DetectorParameters::create();
-  p->cornerRefinementMethod = cv::aruco::CORNER_REFINE_APRILTAG;
+  p->cornerRefinementMethod = aruco_ ? cv::aruco::CORNER_REFINE_SUBPIX : cv::aruco::CORNER_REFINE_APRILTAG;
   cv::aruco::detectMarkers(gray, cv::aruco::getPredefinedDictionary(dict_id_), corners, ids, p, rejected);
 #endif
   const double h = size_ / 2.0;
@@ -51,6 +55,7 @@ std::vector<TagDetection> TagDetector::detect(const cv::Mat & bgr, const cv::Mat
     TagDetection t;
     t.id = ids[i];
     t.area = std::fabs(cv::contourArea(corners[i]));
+    t.corners = corners[i];
     if (!K.empty()) {
       t.pose_valid = cv::solvePnP(obj, corners[i], K, D.empty() ? cv::Mat::zeros(1, 5, CV_64F) : D, t.rvec, t.tvec,
           false, cv::SOLVEPNP_IPPE_SQUARE);
