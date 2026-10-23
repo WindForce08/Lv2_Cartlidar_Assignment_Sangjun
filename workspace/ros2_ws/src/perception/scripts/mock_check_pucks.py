@@ -2,13 +2,15 @@
 """퍽 · 과제 마커 모의 시험 P1~P5 (Isaac Sim 없이 합성 영상을 발행해 판정한다. 실물 시험 아님)
 
 먼저 띄울 것 (같은 ROS_DOMAIN_ID, use_sim_time:=true): robot_state_publisher · perception.launch.py
-보통은 run_mock_check.sh <URDF> <결과 폴더> <setup.bash> mock_check_pucks.py 로 실행한다.
+보통은 run_mock_check.sh <URDF> <결과 폴더> <setup.bash> mock_check_pucks.py <설정 폴더> 로 실행한다.
+설정 폴더는 config/ 복사본에서 perception.yaml 의 image_qos 를 reliable 로 바꾼 것(1080p 영상이 프로세스
+사이 best effort 로는 버려짐 — 아래 Mock 주석).
 
 합성 영상: 직육면체 · 원기둥 퍽(30 × 30 × 60 mm, 원기둥 지름 30)을 회색 선반(0.20 × 0.20 × 0.08 m) 위에 두고
 광선 추적으로 그린다. 태그는 tag36h11 검은 테두리 바깥 0.018 m + 흰 여백 1칸, 직육면체는 6면 가운데,
 원기둥은 옆 4곳(휘어진 스티커) + 위 · 아래(면 전체 스티커) — 가상 과제 월드와 같은 가정.
 조명: 밝음 1.0, 어두움 0.625 (현장 사진 낮조명off / 낮조명on 평균 밝기 85 / 136).
-팔 카메라: 640 × 480, fx = fy = 500 (Arducam 실제 내부값은 아직 모름 — 가정). 카메라 자세는 이 스크립트가
+팔 카메라: Arducam B0201 1920 × 1080, 대각 120° 의 핀홀 근사(f ≈ 636 px, 왜곡 없음). 카메라 자세는 이 스크립트가
 /tf 로 base_link → mock_arm_optical 을 영상 stamp 마다 발행한다(팔 관절과 무관하게 자세를 정하려고).
 앞 D435: 컬러 640 × 480, 내부값은 실물(시리얼 261822072247) 값, 자세는 URDF.
 
@@ -44,7 +46,10 @@ from robot_interfaces.srv import SetPerceptionMode
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mock_check import link_in_base, sec_of, stamp_of  # noqa: E402
 
-ARM = dict(w=640, h=480, fx=500.0, fy=500.0, cx=320.0, cy=240.0, frame='mock_arm_optical')
+# Arducam B0201(IMX291): 1920 × 1080, 대각 화각 120° → 핀홀 근사 f = (대각 2203 px / 2) / tan 60° ≈ 636 px.
+#   실제 광각 렌즈 왜곡은 넣지 않음(실물은 camera_info 로 왜곡 보정한 뒤 같은 계산)
+ARM_F = math.hypot(1920, 1080) / 2 / math.tan(math.radians(60))
+ARM = dict(w=1920, h=1080, fx=ARM_F, fy=ARM_F, cx=960.0, cy=540.0, frame='mock_arm_optical')
 FRONT = dict(w=640, h=480, fx=605.850769042969, fy=605.679870605469, cx=324.365814208984, cy=245.139175415039,
              frame='top_camera_front_color_optical_frame')
 TAG = 0.018                       # 검은 테두리 바깥
@@ -317,10 +322,13 @@ class Mock(Node):
         self.last_wall = time.monotonic()
         self.lock = threading.Lock()
         self.clock_pub = self.create_publisher(Clock, '/clock', 10)
-        self.arm_img = self.create_publisher(Image, '/arm_camera/image_raw', qos_profile_sensor_data)
-        self.arm_info = self.create_publisher(CameraInfo, '/arm_camera/camera_info', qos_profile_sensor_data)
-        self.front_img = self.create_publisher(Image, '/top_camera_front/color/image_raw', qos_profile_sensor_data)
-        self.front_info = self.create_publisher(CameraInfo, '/top_camera_front/color/camera_info', qos_profile_sensor_data)
+        # 영상 발행은 reliable (best effort · reliable 구독 모두와 연결). 1080p rgb8 한 장(6.2 MB)이 UDP 수신 버퍼
+        # 상한(이 PC net.core.rmem_max 4 MB)보다 커서 best effort 로는 프로세스 사이에서 거의 다 버려진다
+        img_qos = QoSProfile(depth=2, reliability=ReliabilityPolicy.RELIABLE)
+        self.arm_img = self.create_publisher(Image, '/arm_camera/image_raw', img_qos)
+        self.arm_info = self.create_publisher(CameraInfo, '/arm_camera/camera_info', img_qos)
+        self.front_img = self.create_publisher(Image, '/top_camera_front/color/image_raw', img_qos)
+        self.front_info = self.create_publisher(CameraInfo, '/top_camera_front/color/camera_info', img_qos)
         self.tfb = TransformBroadcaster(self)
         q = QoSProfile(depth=50, reliability=ReliabilityPolicy.RELIABLE)
         self.pucks, self.markers = [], []
@@ -428,7 +436,8 @@ def main():
     img_dir = os.path.join(args.out, 'images')
     os.makedirs(img_dir, exist_ok=True)
     for c in pcs + mcs:
-        cv2.imwrite(os.path.join(img_dir, c['name'] + '.png'), cv2.cvtColor(c['rgb'], cv2.COLOR_RGB2BGR))
+        small = cv2.resize(c['rgb'], (c['rgb'].shape[1] // 2, c['rgb'].shape[0] // 2), interpolation=cv2.INTER_AREA)
+        cv2.imwrite(os.path.join(img_dir, c['name'] + '.jpg'), cv2.cvtColor(small, cv2.COLOR_RGB2BGR))   # 확인용 반 크기
 
     rclpy.init()
     n = Mock()
@@ -443,11 +452,13 @@ def main():
     report['set_mode_read_tag'] = [res.success, res.message]
     rows = []
     all_stamps = set()
+    n.pucks.clear()
+    for c in pcs:   # 결과가 늦게 와도 놓치지 않게, 모두 보낸 뒤 stamp 로 나눠 판정한다
+        c['stamps'] = run_frames(n, lambda t, c=c: n.publish_arm(c['rgb'], c['T'], t), period=0.25)   # 1080p 전송 시간
+        all_stamps.update(c['stamps'])
+    n.spin_for(2.0)
     for c in pcs:
-        n.pucks.clear()
-        stamps = run_frames(n, lambda t, c=c: n.publish_arm(c['rgb'], c['T'], t))
-        n.spin_for(0.15)
-        all_stamps.update(stamps)
+        stamps = c['stamps']
         msgs = [m for _, m in n.pucks if round(sec_of(m.header.stamp), 6) in stamps]
         ids_ok, wrong_ids, pos_err, ang_err, stand_ok, color_ok = [], [], [], [], [], []
         exp_c, exp_ax = np.array(c['center']), np.array(c['axis'])
@@ -503,7 +514,7 @@ def main():
     after_p = [round(w - stop, 3) for w, _ in n.pucks if w > stop]
     fixed = n.now_sim()
     n.publish_arm(c['rgb'], c['T'], fixed)
-    n.spin_for(0.3)
+    n.spin_for(1.0)
     first = len(n.pucks)
     for _ in range(10):
         n.publish_arm(c['rgb'], c['T'], fixed)
@@ -516,11 +527,13 @@ def main():
     report['set_mode_read_marker'] = [res.success, res.message]
     mrows = []
     mstamps = set()
+    n.markers.clear()
     for c in mcs:
-        n.markers.clear()
-        stamps = run_frames(n, lambda t, c=c: n.publish_front(c['rgb'], t))
-        n.spin_for(0.15)
-        mstamps.update(stamps)
+        c['stamps'] = run_frames(n, lambda t, c=c: n.publish_front(c['rgb'], t))
+        mstamps.update(c['stamps'])
+    n.spin_for(2.0)
+    for c in mcs:
+        stamps = c['stamps']
         msgs = [m for _, m in n.markers if round(sec_of(m.header.stamp), 6) in stamps]
         errs, ok = [], []
         for m in msgs:
@@ -548,7 +561,7 @@ def main():
     after_m = [round(w - stop, 3) for w, _ in n.markers if w > stop]
     fixed = n.now_sim()
     n.publish_front(c['rgb'], fixed)
-    n.spin_for(0.3)
+    n.spin_for(1.0)
     first = len(n.markers)
     for _ in range(10):
         n.publish_front(c['rgb'], fixed)
