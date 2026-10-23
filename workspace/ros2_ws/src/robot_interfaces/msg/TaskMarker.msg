@@ -1,4 +1,4 @@
-# perception_node → mission  (Reliable, depth 1). 과제 Aruco 마커
+# perception_node → mission  (Reliable, depth 1). 장소 태그 L1~L3 (tag36h11 ID 12~14, 48 mm)
 std_msgs/Header header      # stamp = 촬영 시각, frame_id = base_link
 bool found                  # false = 보고 있는 카메라에 마커 없음
 int32 marker_id

@@ -7,6 +7,10 @@
 //   2) 어느 면인지: 태그 평면의 두 축 방향 ±axis_probe 지점이 양쪽 모두 퍽 색이면 그 축이 긴 축(옆면).
 //      두 축 모두 아니면 끝면(긴 축 = 태그 법선). 색을 모르면 판단하지 않는다(orientation_valid = false, 옆면으로 봄)
 //   3) 중심: 태그 중심에서 법선 반대로 옆면이면 half_width, 끝면이면 half_length
+//   4) 끝면의 모양: 태그 대각선 네 방향 중심에서 corner_probe × √2(18 mm) 지점이 퍽 색인지.
+//      직육면체 끝면(30 × 30)은 그 지점이 면 안, 원기둥 끝면(지름 30)은 면 밖이다.
+//      퍽 색이 3곳 이상이면 직육면체, 1곳 이하면 원기둥, 아니면 모름
+//      (과제 자료 2026-10-23: 태그는 윗면 · 아랫면의 20 × 20 mm 라벨이라 끝면 둘레에 퍽 색이 보인다)
 #pragma once
 
 #include <algorithm>
@@ -33,6 +37,7 @@ struct PuckGeometry
   double ring2_in = 0.016;
   double ring2_out = 0.020;
   double axis_probe = 0.022;     // 옆면 긴 축 방향은 면 안(0.03), 짧은 축 방향은 면 밖(0.015)
+  double corner_probe = 0.0127;  // 끝면 모양: 태그 축 방향 성분. 대각 거리 18 mm(원기둥 반지름 15 밖 · 직육면체 모서리 21 안)
   double probe_half = 0.0015;    // 탐침 3 × 3 점 간격
   int min_votes = 6;             // 색을 정할 최소 화소 수
   double cap_white_ratio = 0.8;  // 띠 밝기(V) / 흰 여백 밝기가 이 이상이고 채도가 낮으면 흰 스티커
@@ -46,6 +51,7 @@ struct PuckEstimate
   bool orientation_valid = false;
   bool end_face = false;
   bool cylinder_cap = false;     // 면 전체가 흰 스티커인 원기둥 끝면
+  int shape = 0;                 // 0 모름 · 1 원기둥 · 2 직육면체 (robot_interfaces/Puck SHAPE_* 와 같음)
   cv::Vec3d center;              // 카메라 광학 좌표 [m]
   cv::Matx33d axes = cv::Matx33d::eye();   // 열: x = 보이는 면 바깥 법선(옆면) 또는 태그 x(끝면) · y · z = 긴 축
 };
@@ -193,6 +199,7 @@ inline PuckEstimate estimate_puck(const cv::Mat & bgr, const cv::Mat & K, const 
     depth = g.half_length;
     e.axes = detail::from_columns(ex, ez.cross(ex), ez);
     e.orientation_valid = true;
+    e.shape = 1;
   } else if (e.color_cls >= 0) {
     auto both = [&](double ux, double uy) {
       return detail::probe_is(hsv, R, t, K, ranges, ux * g.axis_probe, uy * g.axis_probe, g.probe_half, e.color_cls) &&
@@ -208,6 +215,14 @@ inline PuckEstimate estimate_puck(const cv::Mat & bgr, const cv::Mat & K, const 
       depth = g.half_length;
       e.axes = detail::from_columns(ex, ez.cross(ex), ez);
       e.orientation_valid = true;
+      int corners = 0;
+      for (int sx : {-1, 1}) {
+        for (int sy : {-1, 1}) {
+          corners += detail::probe_is(hsv, R, t, K, ranges, sx * g.corner_probe, sy * g.corner_probe, g.probe_half,
+            e.color_cls);
+        }
+      }
+      e.shape = corners >= 3 ? 2 : corners <= 1 ? 1 : 0;
     }
   }
   e.center = t - ez * depth;

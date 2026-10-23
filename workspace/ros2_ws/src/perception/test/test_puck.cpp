@@ -159,3 +159,60 @@ TEST(Marker, DetectsAruco4x4)
   EXPECT_NEAR(tags[0].tvec[2], 1.0, 0.02);
   EXPECT_EQ(tags[0].corners.size(), 4u);
 }
+
+// 과제 라벨(2026-10-23): 윗면 20 × 20 mm 라벨 안에 16 mm tag36h11. 위에서 본 끝면 모양
+namespace
+{
+cv::Mat top_face(bool cylinder, const cv::Scalar & color, int id)
+{
+  cv::Mat img(720, 1280, CV_8UC3, cv::Scalar(128, 128, 128));
+  if (cylinder) {
+    cv::circle(img, cv::Point(static_cast<int>(CX), static_cast<int>(CY)), static_cast<int>(0.015 * PPM), color, -1);
+  } else {
+    img(centered(0.03, 0.03)).setTo(color);
+  }
+  img(centered(0.020, 0.020)).setTo(cv::Scalar(255, 255, 255));
+  const cv::Rect r = centered(0.016, 0.016);
+  cv::Mat tag;
+  cv::cvtColor(marker_image(cv::aruco::DICT_APRILTAG_36h11, id, r.width), tag, cv::COLOR_GRAY2BGR);
+  tag.copyTo(img(r));
+  return img;
+}
+
+PuckEstimate run16(const cv::Mat & img, int id)
+{
+  TagDetector d("tag36h11", 0.016);
+  const auto tags = d.detect(img, K(), cv::Mat());
+  EXPECT_EQ(tags.size(), 1u);
+  if (tags.empty()) {return {};}
+  EXPECT_EQ(tags[0].id, id);
+  PuckGeometry g;
+  g.tag_half = 0.008;
+  return estimate_puck(img, K(), tags[0], default_hsv(), g);
+}
+}  // namespace
+
+TEST(Puck, TopFaceCuboidAndCylinder)
+{
+  for (const auto & color : {RED, GREEN}) {
+    auto e = run16(top_face(false, color, 2), 2);
+    EXPECT_TRUE(e.end_face);
+    EXPECT_FALSE(e.cylinder_cap);
+    EXPECT_EQ(e.shape, 2) << "직육면체";
+    e = run16(top_face(true, color, 7), 7);
+    EXPECT_TRUE(e.end_face);
+    EXPECT_FALSE(e.cylinder_cap);
+    EXPECT_EQ(e.shape, 1) << "원기둥";
+  }
+}
+
+TEST(Puck, TopFaceCylinderNextToSameColor)
+{
+  // 원기둥 바로 옆(중심 간격 0.05 m)에 같은 색 직육면체가 있어도 대각선 지점은 바닥 → 원기둥
+  cv::Mat img = top_face(true, RED, 1);
+  const int dx = static_cast<int>(std::lround(0.05 * PPM));
+  cv::Rect nb = centered(0.03, 0.03);
+  nb.x += dx;
+  img(nb).setTo(RED);
+  EXPECT_EQ(run16(img, 1).shape, 1);
+}

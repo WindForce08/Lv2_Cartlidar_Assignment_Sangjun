@@ -17,7 +17,7 @@
 //      Arducam 태그 → 번호 · 색 · 중심 · 긴 축(puck_estimator.hpp), D435 색 검출 → 색 · 중심(번호 -1)
 //      같은 퍽(merge_dist 안)이면 태그로 읽은 것을 남긴다. 새 영상이 없는 카메라는 그 영상으로 낸 결과를 다시 쓴다
 //   /perception/task_marker (토픽, TaskMarker): READ_MARKER 가 켜져 있으면 앞 · 뒤 D435 (팔 카메라가 켜져 있으면 그것도)
-//      에서 Aruco 마커를 찾아 가장 크게 보이는 것 하나. 없으면 found = false
+//      에서 장소 태그(marker.family · ids)를 찾아 가장 크게 보이는 것 하나. 없으면 found = false
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -205,6 +205,9 @@ public:
     const double tag_size = declare_parameter("tag.size", 0.10);
     tag_ = std::make_unique<TagDetector>(declare_parameter("tag.family", std::string("tag36h11")), tag_size);
     puck_geom_.tag_half = tag_size / 2.0;
+    for (auto id : declare_parameter<std::vector<int64_t>>("tag.ids", std::vector<int64_t>{})) {
+      tag_ids_.push_back(static_cast<int>(id));
+    }
     marker_ = std::make_unique<TagDetector>(declare_parameter("marker.family", std::string("DICT_4X4_50")),
         declare_parameter("marker.size", 0.10));
     for (auto id : declare_parameter<std::vector<int64_t>>("marker.ids", std::vector<int64_t>{})) {
@@ -217,6 +220,7 @@ public:
     puck_geom_.ring2_in = declare_parameter("puck.ring2_in", puck_geom_.ring2_in);
     puck_geom_.ring2_out = declare_parameter("puck.ring2_out", puck_geom_.ring2_out);
     puck_geom_.axis_probe = declare_parameter("puck.axis_probe", puck_geom_.axis_probe);
+    puck_geom_.corner_probe = declare_parameter("puck.corner_probe", puck_geom_.corner_probe);
     puck_geom_.min_votes = static_cast<int>(declare_parameter("puck.min_votes", puck_geom_.min_votes));
     merge_dist_ = declare_parameter("puck.merge_dist", 0.04);
 
@@ -519,7 +523,7 @@ private:
       Puck p;
       p.tag_id = t->id;
       p.color = e.color_cls >= 0 ? static_cast<uint8_t>(e.color_cls + 1) : Puck::COLOR_UNKNOWN;
-      p.shape = e.cylinder_cap ? Puck::SHAPE_CYLINDER : Puck::SHAPE_UNKNOWN;
+      p.shape = static_cast<uint8_t>(e.shape);   // 0 모름 · 1 원기둥 · 2 직육면체 (Puck.SHAPE_* 와 같음)
       const tf2::Vector3 c = T * tf2::Vector3(e.center[0], e.center[1], e.center[2]);
       p.pose.position.x = c.x();
       p.pose.position.y = c.y();
@@ -544,7 +548,7 @@ private:
     return out;
   }
 
-  // Aruco 검출 중 가장 크게 보이는 것 → base_link 기준 마커
+  // 장소 태그 검출 중 가장 크게 보이는 것 → base_link 기준 마커
   std::optional<MarkerHit> best_marker(const std::vector<TagDetection> & dets, const tf2::Transform & T,
     const builtin_interfaces::msg::Time & stamp, uint8_t cam)
   {
@@ -769,7 +773,11 @@ private:
       T = lookup_at(base_frame_, frame, rclcpp::Time(img->header.stamp, get_clock()->get_clock_type()));
     }
     if (mode & SetMode::Request::READ_TAG) {
-      const auto tags = tag_->detect(u, newK_, cv::Mat());
+      auto tags = tag_->detect(u, newK_, cv::Mat());
+      if (!tag_ids_.empty()) {   // 같은 계열 장소 태그는 크기가 달라 퍽 자세가 틀리므로 뺀다
+        tags.erase(std::remove_if(tags.begin(), tags.end(), [this](const TagDetection & t) {
+            return std::find(tag_ids_.begin(), tag_ids_.end(), t.id) == tag_ids_.end();}), tags.end());
+      }
       const TagDetection * best = nullptr;
       for (const auto & t : tags) {if (!best || t.area > best->area) {best = &t;}}
       if (best) {
@@ -836,7 +844,7 @@ private:
 
   std::unique_ptr<Detector> detector_;
   std::unique_ptr<TagDetector> tag_, marker_;
-  std::vector<int> marker_ids_;
+  std::vector<int> marker_ids_, tag_ids_;
   std::vector<HsvRange> hsv_;
   PuckGeometry puck_geom_;
   double merge_dist_ = 0.04, min_confidence_ = 0.5;
