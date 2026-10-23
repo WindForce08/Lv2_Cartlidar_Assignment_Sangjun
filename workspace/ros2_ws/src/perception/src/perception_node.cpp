@@ -202,8 +202,9 @@ public:
     size_min_m_ = declare_parameter("target.size_min_m", 0.015);
     size_max_m_ = declare_parameter("target.size_max_m", 0.09);
 
-    tag_ = std::make_unique<TagDetector>(declare_parameter("tag.family", std::string("tag36h11")),
-        declare_parameter("tag.size", 0.10));
+    const double tag_size = declare_parameter("tag.size", 0.10);
+    tag_ = std::make_unique<TagDetector>(declare_parameter("tag.family", std::string("tag36h11")), tag_size);
+    puck_geom_.tag_half = tag_size / 2.0;
     marker_ = std::make_unique<TagDetector>(declare_parameter("marker.family", std::string("DICT_4X4_50")),
         declare_parameter("marker.size", 0.10));
     for (auto id : declare_parameter<std::vector<int64_t>>("marker.ids", std::vector<int64_t>{})) {
@@ -518,7 +519,7 @@ private:
       Puck p;
       p.tag_id = t->id;
       p.color = e.color_cls >= 0 ? static_cast<uint8_t>(e.color_cls + 1) : Puck::COLOR_UNKNOWN;
-      p.shape = Puck::SHAPE_UNKNOWN;
+      p.shape = e.cylinder_cap ? Puck::SHAPE_CYLINDER : Puck::SHAPE_UNKNOWN;
       const tf2::Vector3 c = T * tf2::Vector3(e.center[0], e.center[1], e.center[2]);
       p.pose.position.x = c.x();
       p.pose.position.y = c.y();

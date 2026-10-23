@@ -108,10 +108,36 @@ TEST(Puck, EndFace)
   EXPECT_GT(std::abs(e.axes(2, 2)), 0.95);              // 긴 축 = 시선 방향
 }
 
-TEST(Puck, NoColorMeansNoOrientation)
+TEST(Puck, WhiteFaceIsCylinderCap)
 {
-  TagDetection t;   // 면 전체가 흰 스티커이고 바깥은 회색 바탕 → 색 모름
-  const auto e = run(face(0.03, 0.03, cv::Scalar(255, 255, 255), 0), 0, t);
+  TagDetection t;   // 면 전체가 흰 스티커(원기둥 끝면 가정) → 끝면 · 원기둥, 색은 바깥 회색이라 모름
+  const auto e = run(face(0.03, 0.03, cv::Scalar(240, 240, 240), 0), 0, t);
+  EXPECT_TRUE(e.cylinder_cap);
+  EXPECT_EQ(e.color_cls, -1);
+  ASSERT_TRUE(e.orientation_valid);
+  EXPECT_TRUE(e.end_face);
+  EXPECT_NEAR(e.center[2], t.tvec[2] + 0.03, 0.001);
+}
+
+TEST(Puck, WhiteDiscOnGrayIsCylinderCap)
+{
+  TagDetection t;   // 지름 30 mm 흰 원판(원기둥 끝면)을 위에서 봄. 정사각 띠 모서리는 원판 밖 회색
+  cv::Mat img = face(0.0, 0.0, cv::Scalar(128, 128, 128), 4);
+  cv::Mat disc(img.size(), CV_8UC3, cv::Scalar(128, 128, 128));
+  cv::circle(disc, cv::Point(static_cast<int>(CX), static_cast<int>(CY)), static_cast<int>(0.015 * PPM), cv::Scalar(235, 235, 235), -1);
+  const cv::Rect m = centered(0.018 * 10 / 8, 0.018 * 10 / 8);
+  img(m).copyTo(disc(m));
+  const auto e = run(disc, 4, t);
+  EXPECT_TRUE(e.cylinder_cap);
+  EXPECT_TRUE(e.end_face);
+  EXPECT_NEAR(e.center[2], t.tvec[2] + 0.03, 0.001);
+}
+
+TEST(Puck, NoColorNoCapMeansNoOrientation)
+{
+  TagDetection t;   // 태그 둘레가 회색 바탕 → 색 모름 · 스티커도 아님 → 자세 모름, 옆면 깊이
+  const auto e = run(face(0.0, 0.0, cv::Scalar(128, 128, 128), 0), 0, t);
+  EXPECT_FALSE(e.cylinder_cap);
   EXPECT_EQ(e.color_cls, -1);
   EXPECT_FALSE(e.orientation_valid);
   EXPECT_NEAR(e.center[2], t.tvec[2] + 0.015, 0.001);

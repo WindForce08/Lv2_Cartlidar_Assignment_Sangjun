@@ -33,29 +33,33 @@ perception_node:
     detector:
       type: auto                # auto | tensorrt | color
       engine_path: ""           # ★ TensorRT 엔진 (.engine). 비우면 색 검출기
-      score_threshold: 0.3
-      nms_threshold: 0.45
+      score_threshold: 0.3      # 색 검출 점수 = 0.5·채움 + 0.5·가로세로비. 퍽 끝면(태그 때문에 채움 약 0.44)도 0.7 이상
+      nms_threshold: 0.45       # TensorRT(YOLOv8) 겹침 제거, YOLOv8 기본값
       target_class: -1
       target_color: any
-      min_area_ratio: 0.002
-      blur_ksize: 5
-      morph_kernel: 5
-      min_fill_ratio: 0.5
+      min_area_ratio: 0.0004    # 화면 넓이 대비 최소 영역 (640×480 에서 약 120 px). D435 로 2 m 의 퍽 30 × 60 mm 가 약 9 × 18 px
+      blur_ksize: 3             # 2 m 의 퍽 폭 약 9 px 이라 큰 블러·열림 연산은 퍽을 지운다
+      morph_kernel: 3
+      min_fill_ratio: 0.35      # 끝면은 가운데 태그(흰 여백 포함 22.5 mm)가 30 mm 면의 56 % 를 가려 채움 약 0.44
       hsv:                      # [H(0~179), S, V] ★ 현장 조명에서 다시 맞춤
-        red:   {lower: [0, 90, 60],    upper: [10, 255, 255]}
-        red2:  {lower: [170, 90, 60],  upper: [179, 255, 255]}
-        green: {lower: [40, 90, 60],   upper: [85, 255, 255]}
-        blue:  {lower: [98, 190, 25],  upper: [118, 255, 230]}
+        # 근거(2026-10-23): 파란 퍽 실사진 3장(640×480) 퍽 화소 H 97~115 · S 1 % 값 82~87 · V 1 % 값 24~98.
+        #   현장 사진(휴대폰) 벽판 S 약 30, 카펫 S 37 이하 → S 하한 80 으로 뺀다. 파란 출력 기둥은 H 113 · S 87~190 으로
+        #   퍽 파랑과 겹친다(크기 · 선반 높이 · 태그로 거름). 빨강 · 초록은 실물 사진이 없어 가상 월드 색 기준이고,
+        #   합성 영상 어두움(0.625)에서 빛 반대쪽 면 V 약 54 → V 하한 35
+        red:   {lower: [0, 80, 35],    upper: [10, 255, 255]}
+        red2:  {lower: [170, 80, 35],  upper: [179, 255, 255]}
+        green: {lower: [40, 80, 35],   upper: [85, 255, 255]}
+        blue:  {lower: [95, 80, 25],   upper: [120, 255, 255]}
     target:                     # 물체 하나만 따라가기
-      exclude_min: [-0.30, -0.25, -0.10]   # ★ base_link 기준 버리는 상자 (차체 + 그리퍼 작업 영역). 과제의 집기 방식이 정해지면 다시 정함
+      exclude_min: [-0.30, -0.25, -0.10]   # ★ base_link 기준 버리는 상자: 차체(0.445 × 0.306 m) + 여유, 앞 0.35 m 는 집게에 든 퍽 자리(가정)
       exclude_max: [ 0.35,  0.25,  0.60]
       min_confidence: 0.5
-      gate: 0.3                 # [m] 고른 뒤 같은 물체로 보는 거리 (odom)
-      lost_timeout: 1.0         # [s] 이만큼 안 보이면 다시 고름
-      size_min_m: 0.015         # ★ 깊이로 본 짧은 변 하한 (0 = 끔)
-      size_max_m: 0.09          # ★ 긴 변 상한
+      gate: 0.06                # [m] 고른 뒤 같은 물체로 보는 거리 (odom). 한 선반(0.2 m) 위 퍽 사이가 수 cm 라 퍽 폭 2개
+      lost_timeout: 1.0         # [s] 이만큼 안 보이면 다시 고름 (15 Hz 로 15 장)
+      size_min_m: 0.015         # 깊이로 본 짧은 변 하한 (퍽 30 mm 의 반, 일부 가림 허용. 0 = 끔)
+      size_max_m: 0.09          # 긴 변 상한 (퍽 60 mm, 누운 퍽 대각 67 mm + 여유)
     tag:
-      family: tag36h11          # ★
+      family: tag36h11          # ★ AprilTag 계열은 가정
       size: 0.018               # ★ 태그 한 변 [m] (검은 테두리 바깥). 퍽 태그 가정값
     puck:                       # 태그 → 퍽 (include/perception/puck_estimator.hpp). 퍽 30 × 30 × 60 mm
       half_width: 0.015         # [m] 짧은 변 / 2 (원기둥 반지름)

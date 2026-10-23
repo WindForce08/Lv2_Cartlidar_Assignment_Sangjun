@@ -1,5 +1,7 @@
 #include "perception/tag_detector.hpp"
 
+#include <algorithm>
+
 #include <opencv2/calib3d.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/core/version.hpp>
@@ -71,18 +73,36 @@ std::vector<TagDetection> TagDetector::detect(const cv::Mat & bgr, const cv::Mat
   if (!ok_ || bgr.empty()) {return out;}
   cv::Mat gray;
   cv::cvtColor(bgr, gray, cv::COLOR_BGR2GRAY);
+  // AprilTag 은 두 방식으로 찾아 번호별로 합친다: CORNER_REFINE_APRILTAG(AprilTag 사각형 찾기)와
+  // CORNER_REFINE_SUBPIX(윤곽 찾기)가 놓치는 태그가 서로 달라서(2026-10-23 합성 영상 144조건: 113 · 102 → 합쳐서 128).
+  // 같은 번호면 AprilTag 방식 결과를 쓴다. Aruco 마커는 SUBPIX 한 번
   std::vector<int> ids;
-  std::vector<std::vector<cv::Point2f>> corners, rejected;
+  std::vector<std::vector<cv::Point2f>> corners;
+  auto run = [&](int method) {
+      std::vector<int> ii;
+      std::vector<std::vector<cv::Point2f>> cc, rejected;
 #if ROBOT_ARUCO_NEW
-  cv::aruco::DetectorParameters p;
-  p.cornerRefinementMethod = aruco_ ? cv::aruco::CORNER_REFINE_SUBPIX : cv::aruco::CORNER_REFINE_APRILTAG;
-  cv::aruco::ArucoDetector det(cv::aruco::getPredefinedDictionary(dict_id_), p);
-  det.detectMarkers(gray, corners, ids, rejected);
+      cv::aruco::DetectorParameters p;
+      p.cornerRefinementMethod = method;
+      cv::aruco::ArucoDetector det(cv::aruco::getPredefinedDictionary(dict_id_), p);
+      det.detectMarkers(gray, cc, ii, rejected);
 #else
-  auto p = cv::aruco::DetectorParameters::create();
-  p->cornerRefinementMethod = aruco_ ? cv::aruco::CORNER_REFINE_SUBPIX : cv::aruco::CORNER_REFINE_APRILTAG;
-  cv::aruco::detectMarkers(gray, cv::aruco::getPredefinedDictionary(dict_id_), corners, ids, p, rejected);
+      auto p = cv::aruco::DetectorParameters::create();
+      p->cornerRefinementMethod = method;
+      cv::aruco::detectMarkers(gray, cv::aruco::getPredefinedDictionary(dict_id_), cc, ii, p, rejected);
 #endif
+      for (size_t k = 0; k < ii.size(); ++k) {
+        if (std::find(ids.begin(), ids.end(), ii[k]) != ids.end()) {continue;}
+        ids.push_back(ii[k]);
+        corners.push_back(cc[k]);
+      }
+    };
+  if (aruco_) {
+    run(cv::aruco::CORNER_REFINE_SUBPIX);
+  } else {
+    run(cv::aruco::CORNER_REFINE_APRILTAG);
+    run(cv::aruco::CORNER_REFINE_SUBPIX);
+  }
   const double h = size_ / 2.0;
   // aruco 모서리 순서: 왼쪽 위 · 오른쪽 위 · 오른쪽 아래 · 왼쪽 아래 (태그 평면 z = 0)
   const std::vector<cv::Point3f> obj = {{float(-h), float(h), 0}, {float(h), float(h), 0},
