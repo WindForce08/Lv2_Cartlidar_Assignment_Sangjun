@@ -1,7 +1,7 @@
 # perception_node 설정. ★ = 실물·현장에서 다시 확인할 값
 # 카메라 토픽: 실물은 realsense2_camera(camera_name 을 top_camera_front · top_camera_rear 로 실행)와 UVC 드라이버,
 #   시뮬레이션은 Isaac Sim 이 같은 이름으로 발행한다. frame_id 를 비우면 영상 header.frame_id 를 쓴다.
-#   realsense2_camera 의 컬러 header.frame_id 는 <camera_name>_color_optical_frame 이라 URDF(261022_1800) 이름과 같다.
+#   realsense2_camera 의 컬러 header.frame_id 는 <camera_name>_color_optical_frame 이라 URDF(261022_2119) 이름과 같다.
 perception_node:
   ros__parameters:
     publish_rate: 15.0          # [Hz] 이 주기로 새 영상이 있는지 보고 결과를 낸다 (ARM_ALIGN 은 15 Hz 이상 필요)
