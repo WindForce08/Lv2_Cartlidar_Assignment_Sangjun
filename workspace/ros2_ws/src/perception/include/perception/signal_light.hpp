@@ -6,9 +6,13 @@
 //      꺼짐은 자리가 화면 안인데 후보가 없는 프레임이 min_off_frames 번 이어져야 센다(검출이 한 프레임 끊긴 것은 꺼짐 아님).
 //      퍽처럼 늘 켜져 보이는 것은 꺼짐이 없어 고정되지 않는다.
 //      고정 뒤 프레임 상태: 그 자리 근처 후보가 있으면 그 색, 없고 자리가 화면 안이면 꺼짐, 화면 밖이면 모름
+//   4) 가림: 후보가 없는 프레임에서 세 칸 중 하나라도 앞이 가려졌으면(노드가 깊이로 판단) 꺼짐이 아니라 모름.
+//      가린 칸을 꺼짐으로 세면 점멸을 놓쳐 순서가 틀어지고, 모름(빠진 프레임)은 점멸 세기가 견딘다(U1 빠짐 5 %).
+//      칸 위치: 본 색은 그 후보 위치, 못 본 색은 아래부터 초록 · 노랑 · 빨강이 segment_pitch 간격이라고 보고 채운다.
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <functional>
 #include <optional>
@@ -86,6 +90,7 @@ struct LocatorConfig
   int lock_blinks = 3;           // 켜졌다 꺼지기를 이만큼 본 자리를 신호등으로 고정
   int min_off_frames = 2;        // 꺼짐으로 세는 연속 프레임 수
   double forget_s = 10.0;        // [s] 고정 전 자리를 이만큼 못 보면 지움
+  double segment_pitch = 0.0349; // [m] 칸 중심 위아래 간격 (칸 길이 34.9 mm, 사용자 실측 2026-10-23)
   std::size_t max_sites = 20;
 };
 
@@ -95,16 +100,21 @@ public:
   explicit SignalLightLocator(LocatorConfig c = {})
   : c_(c) {}
 
-  void reset() {sites_.clear(); locked_ = -1;}
+  void reset() {sites_.clear(); blocked_.clear(); locked_ = -1;}
   bool locked() const {return locked_ >= 0;}
   Vec3 position() const {return locked() ? sites_[locked_].pos : Vec3{};}
+  using Segments = std::array<Vec3, 3>;   // 칸 중심 (아래부터 초록 · 노랑 · 빨강), odom [m]
+  Segments segments() const {return locked() ? segments(sites_[locked_]) : Segments{};}
 
-  // in_view(pos): 그 자리가 이 프레임 카메라 화면 안인지 (가림은 보지 않음)
-  // 반환: 고정 뒤 이 프레임의 신호등 상태. 고정 전이거나 자리가 화면 밖이면 nullopt
+  // in_view(pos): 그 자리가 이 프레임 카메라 화면 안인지
+  // occluded(칸 중심 3개): 이 프레임에서 그중 하나라도 앞이 가려졌는지 (없으면 가림을 보지 않음)
+  // 반환: 고정 뒤 이 프레임의 신호등 상태. 고정 전이거나 자리가 화면 밖이거나 가려졌으면 nullopt
   std::optional<Light> update(double t, const std::vector<LightObs> & obs,
-    const std::function<bool(const Vec3 &)> & in_view)
+    const std::function<bool(const Vec3 &)> & in_view,
+    const std::function<bool(const Segments &)> & occluded = nullptr)
   {
     std::vector<int> lit(sites_.size(), -1);   // 자리별로 이 프레임에 붙은 후보 (가장 큰 것)
+    blocked_.assign(sites_.size(), false);
     for (std::size_t k = 0; k < obs.size(); ++k) {
       int best = -1;
       double bd = c_.lock_dist;
@@ -114,8 +124,11 @@ public:
       }
       if (best < 0) {
         if (locked() || sites_.size() >= c_.max_sites) {continue;}   // 고정 뒤에는 새 자리를 만들지 않음
-        sites_.push_back({obs[k].pos, t, false, 0, 0});
+        sites_.push_back({obs[k].pos, t, false, 0, 0, {}, {}});
+        sites_.back().seg[level(obs[k].color)] = obs[k].pos;
+        sites_.back().seg_seen[level(obs[k].color)] = true;
         lit.push_back(static_cast<int>(k));
+        blocked_.push_back(false);
         continue;
       }
       if (lit[best] < 0 || obs[k].area > obs[lit[best]].area) {lit[best] = static_cast<int>(k);}
@@ -129,9 +142,17 @@ public:
         s.off_frames = 0;
         s.last_seen = t;
         // 위치를 천천히 맞춘다 (오도메트리가 흘러도 따라가게)
-        s.pos = {0.8 * s.pos.x + 0.2 * o.pos.x, 0.8 * s.pos.y + 0.2 * o.pos.y, 0.8 * s.pos.z + 0.2 * o.pos.z};
-      } else if (in_view(s.pos) && ++s.off_frames >= c_.min_off_frames) {
-        s.on = false;
+        s.pos = blend(s.pos, o.pos);
+        const int l = level(o.color);
+        s.seg[l] = s.seg_seen[l] ? blend(s.seg[l], o.pos) : o.pos;
+        s.seg_seen[l] = true;
+      } else if (in_view(s.pos)) {
+        const bool hidden = occluded && occluded(segments(s));
+        if (hidden) {
+          blocked_[i] = true;   // 꺼짐으로 세지 않음 (연속 꺼짐 수도 그대로 둠)
+        } else if (++s.off_frames >= c_.min_off_frames) {
+          s.on = false;
+        }
       }
     }
     if (!locked()) {
@@ -147,9 +168,12 @@ public:
     }
     const Site & s = sites_[locked_];
     if (lit[locked_] >= 0) {return obs[lit[locked_]].color;}
-    if (in_view(s.pos)) {return Light::Off;}
+    if (in_view(s.pos) && !blocked_[locked_]) {return Light::Off;}
     return std::nullopt;
   }
+
+  // 마지막 update 에서 고정된 자리가 가려졌는지
+  bool occluded_last() const {return locked() && blocked_.size() > static_cast<std::size_t>(locked_) && blocked_[locked_];}
 
 private:
   struct Site
@@ -159,7 +183,32 @@ private:
     bool on = false;
     int blinks = 0;              // 꺼짐 → 켜짐 횟수 (처음 본 켜짐 포함)
     int off_frames = 0;
+    Segments seg;                // 색별로 본 칸 중심 (level 순서)
+    std::array<bool, 3> seg_seen{};
   };
+
+  static int level(Light l) {return l == Light::Green ? 0 : l == Light::Yellow ? 1 : 2;}
+
+  static Vec3 blend(const Vec3 & a, const Vec3 & b)
+  {
+    return {0.8 * a.x + 0.2 * b.x, 0.8 * a.y + 0.2 * b.y, 0.8 * a.z + 0.2 * b.z};
+  }
+
+  // 본 칸은 그 위치, 못 본 칸은 본 칸들에서 간격으로 미룬 위치 (하나도 못 봤으면 자리 위치 기준 가운데 = 노랑)
+  Segments segments(const Site & s) const
+  {
+    double base = 0;
+    int n = 0;
+    for (int l = 0; l < 3; ++l) {
+      if (s.seg_seen[l]) {base += s.seg[l].z - l * c_.segment_pitch; ++n;}
+    }
+    base = n ? base / n : s.pos.z - c_.segment_pitch;
+    Segments out;
+    for (int l = 0; l < 3; ++l) {
+      out[l] = s.seg_seen[l] ? s.seg[l] : Vec3{s.pos.x, s.pos.y, base + l * c_.segment_pitch};
+    }
+    return out;
+  }
 
   static double dist(const Vec3 & a, const Vec3 & b)
   {
@@ -168,6 +217,7 @@ private:
 
   LocatorConfig c_;
   std::vector<Site> sites_;
+  std::vector<bool> blocked_;    // 마지막 update 에서 자리별로 가려졌는지
   int locked_ = -1;
 };
 

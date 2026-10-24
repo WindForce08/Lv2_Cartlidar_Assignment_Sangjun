@@ -99,6 +99,7 @@ perception_node:
       lock_blinks: 3            # 같은 자리에서 켜졌다 꺼지기를 이만큼 보면 신호등으로 고정
       min_off_frames: 2         # 꺼짐으로 세는 연속 프레임 수
       forget_s: 10.0
+      occlusion_margin_m: 0.10  # 켜진 등이 없는 프레임에서 칸 중심 깊이가 그 칸보다 이만큼 넘게 가까우면 가려짐 → 꺼짐이 아니라 모름
       # 점멸 세기 (판정 기준 v1 U1 · U2 통과 값, Cartlidar/results/unit_signal_dice_261023_1859_5p)
       blinks_per_cycle: 12      # 과제: 한 묶음 12회
       term_ratio: 2.0           # 텀 = 점멸 사이 꺼짐 중앙값의 이 배수와

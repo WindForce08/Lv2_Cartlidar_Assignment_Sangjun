@@ -21,7 +21,8 @@
 //      에서 장소 태그(marker.family · ids)를 찾아 가장 크게 보이는 것 하나. 없으면 found = false
 //   /perception/signal (토픽, SignalSequence): READ_SIGNAL 이 켜져 있으면 앞 · 뒤 D435 의 컬러 프레임을 모두(빠짐 없이)
 //      처리 주기마다 차례로 본다: 켜진 등 후보(signal_light.hpp) → 깊이로 크기 · 높이 거름 → 같은 자리 점멸로 신호등 고정
-//      → 프레임 상태 → 점멸 순서 세기(signal_sequence.hpp). READ_SIGNAL 을 끄면 센 것을 지운다
+//      → 프레임 상태(켜진 등이 없고 칸 앞을 무엇이 가리면 꺼짐이 아니라 모름) → 점멸 순서 세기(signal_sequence.hpp).
+//      READ_SIGNAL 을 끄면 센 것을 지운다
 //   /perception/check_dice (서비스, CheckDice): 가장 최근 /perception/pucks 목록으로 선반 위 3×3 주사위 판정(dice_check.hpp)
 #include <algorithm>
 #include <atomic>
@@ -261,6 +262,8 @@ public:
     lc.lock_blinks = static_cast<int>(declare_parameter("signal.lock_blinks", lc.lock_blinks));
     lc.min_off_frames = static_cast<int>(declare_parameter("signal.min_off_frames", lc.min_off_frames));
     lc.forget_s = declare_parameter("signal.forget_s", lc.forget_s);
+    lc.segment_pitch = seg_h_;
+    occl_margin_ = declare_parameter("signal.occlusion_margin_m", occl_margin_);
     locator_ = SignalLightLocator(lc);
     SignalConfig sc;
     sc.blinks_per_cycle = static_cast<int>(declare_parameter("signal.blinks_per_cycle", sc.blinks_per_cycle));
@@ -861,7 +864,31 @@ private:
         const double u = K.fx * q.x() / q.z() + K.ppx, v = K.fy * q.y() / q.z() + K.ppy;
         return u >= 2 && v >= 2 && u < w - 2 && v < h - 2;
       };
-      const auto state = locator_.update(t, obs, in_view);
+      // 가림: 칸 중심 화소의 깊이가 그 칸까지 거리보다 occlusion_margin_m 넘게 가까우면 앞에 무엇이 있음
+      //       (접은 팔 등). 깊이 영상이 없거나 그 자리 깊이 값이 비면 가림 증거 없음
+      cv_bridge::CvImageConstPtr dimg;
+      const double dscale = f.depth ? depth_scale_for_encoding(f.depth->encoding) : 0.0;
+      if (dscale > 0.0 && f.depth->width == static_cast<uint32_t>(w) && f.depth->height == static_cast<uint32_t>(h)) {
+        try {
+          dimg = cv_bridge::toCvShare(f.depth);
+        } catch (const cv_bridge::Exception &) {
+          dimg.reset();
+        }
+      }
+      auto occluded = [&](const SignalLightLocator::Segments & segs) {
+        if (!T_co || !dimg) {return false;}
+        for (const Vec3 & p : segs) {
+          const tf2::Vector3 q = *T_co * tf2::Vector3(p.x, p.y, p.z);
+          if (q.z() <= 0.0) {continue;}
+          const double u = K.fx * q.x() / q.z() + K.ppx, v = K.fy * q.y() / q.z() + K.ppy;
+          if (u < 0 || v < 0 || u >= w || v >= h) {continue;}
+          const cv::Point c(static_cast<int>(std::lround(u)), static_cast<int>(std::lround(v)));
+          const double d = median_depth(dimg->image, c, 2, dscale, depth_min_, depth_max_);
+          if (std::isfinite(d) && d < q.z() - occl_margin_) {return true;}
+        }
+        return false;
+      };
+      const auto state = locator_.update(t, obs, in_view, occluded);
       any = true;
       last_stamp = stamp;
       if (state) {
@@ -1111,6 +1138,7 @@ private:
   // 신호등 · 주사위
   LightBlobConfig light_cfg_;
   double seg_w_ = 0.0396, seg_h_ = 0.0349, area_ratio_min_ = 0.15, area_ratio_max_ = 2.5;
+  double occl_margin_ = 0.10;   // [m] 칸 앞을 가렸다고 보는 깊이 차
   double light_z_min_ = 0.05, light_z_max_ = 0.20;
   size_t signal_q_max_ = 30;
   SignalLightLocator locator_;
