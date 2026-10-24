@@ -257,6 +257,9 @@ public:
     light_z_min_ = declare_parameter("signal.height_min_m", 0.05);
     light_z_max_ = declare_parameter("signal.height_max_m", 0.20);
     signal_q_max_ = static_cast<size_t>(declare_parameter("signal.queue_frames", 30));
+    // 신호등은 쌓아 둔 컬러 프레임을 한꺼번에 처리하므로 깊이도 그만큼 보관해야 짝을 찾는다
+    // (5장이면 처리가 밀린 묶음의 앞 프레임이 깊이 없이 '꺼짐'으로 셈 — R2 재생에서 발견)
+    for (auto * c : {&front_, &rear_}) {c->depth.set_capacity(std::max<size_t>(5, signal_q_max_));}
     LocatorConfig lc;
     lc.lock_dist = declare_parameter("signal.lock_dist_m", lc.lock_dist);
     lc.lock_blinks = static_cast<int>(declare_parameter("signal.lock_blinks", lc.lock_blinks));
@@ -844,6 +847,11 @@ private:
       const double t = stamp.seconds();
       if (t <= signal_last_t_ || !f.info) {continue;}
       signal_last_t_ = t;
+      if (!f.depth) {   // 깊이 짝이 없으면 켜진 등을 확인할 수 없음 → 꺼짐이 아니라 모름(빠진 프레임)
+        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "%s 신호등 프레임 깊이 짝 없음 — 모름으로 둠",
+          f.cam->name.c_str());
+        continue;
+      }
       cv_bridge::CvImageConstPtr color;
       try {
         color = cv_bridge::toCvShare(f.color, "bgr8");
@@ -952,7 +960,7 @@ private:
     }
     for (const auto & b : detect_light_blobs(bgr, light_cfg_)) {
       const cv::Point ctr(static_cast<int>(std::lround(b.center.x)), static_cast<int>(std::lround(b.center.y)));
-      const double z = median_depth(depth->image, ctr, 2, scale, depth_min_, depth_max_);
+      const double z = blob_median_depth(depth->image, b, scale, depth_min_, depth_max_);
       if (!std::isfinite(z)) {continue;}
       const double expect = (seg_w_ * K.fx / z) * (seg_h_ * K.fy / z);
       if (b.area < area_ratio_min_ * expect || b.area > area_ratio_max_ * expect) {continue;}

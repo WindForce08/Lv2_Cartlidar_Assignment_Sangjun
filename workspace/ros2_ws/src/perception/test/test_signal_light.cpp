@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "perception/geometry.hpp"
 #include "perception/signal_light.hpp"
 
 using namespace perception;
@@ -287,4 +288,28 @@ TEST(SignalLight, U5b_OcclusionRandom1000)
               << tally[m].wrong << ", 확정 못 함 " << tally[m].none << std::endl;
   }
   EXPECT_EQ(tally[0].wrong, 0);
+}
+
+// 일부 가린 칸: 아래 가운데가 가려 덩어리가 U자로 휘면 무게중심이 가린 물체 위에 떨어진다.
+// 무게중심 둘레 깊이는 가린 물체(0.30 m), 덩어리 자기 화소 깊이는 칸(0.50 m)이어야 한다
+TEST(SignalLight, BlobDepthUsesOwnPixelsWhenPartlyHidden)
+{
+  cv::Mat img(480, 640, CV_8UC3, cv::Scalar(90, 90, 90));
+  cv::Mat depth(480, 640, CV_32F, cv::Scalar(0.30f));
+  const cv::Rect seg(300, 200, 40, 40), hidden(310, 205, 20, 35);   // 칸 · 가운데 아래를 가린 팔
+  img(seg).setTo(cv::Scalar(20, 20, 255));
+  depth(seg).setTo(0.50f);
+  img(hidden).setTo(cv::Scalar(200, 200, 200));
+  depth(hidden).setTo(0.30f);
+  const auto blobs = detect_light_blobs(img, LightBlobConfig{});
+  ASSERT_EQ(blobs.size(), 1u);
+  const LightBlob & b = blobs[0];
+  const cv::Point c(static_cast<int>(std::lround(b.center.x)), static_cast<int>(std::lround(b.center.y)));
+  EXPECT_TRUE(hidden.contains(c)) << "무게중심이 가린 물체 위에 있어야 이 시험의 뜻이 있음";
+  EXPECT_NEAR(median_depth(depth, c, 2, 1.0, 0.15, 4.0), 0.30, 1e-6);
+  EXPECT_NEAR(blob_median_depth(depth, b, 1.0, 0.15, 4.0), 0.50, 1e-6);
+  // 16UC1(mm) 도 같은 값
+  cv::Mat d16;
+  depth.convertTo(d16, CV_16U, 1000.0);
+  EXPECT_NEAR(blob_median_depth(d16, b, 0.001, 0.15, 4.0), 0.50, 1e-6);
 }

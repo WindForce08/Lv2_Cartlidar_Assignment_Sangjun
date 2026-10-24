@@ -50,6 +50,12 @@ class NearestCache
 public:
   explicit NearestCache(size_t capacity = 5) : capacity_(capacity) {}
 
+  void set_capacity(size_t capacity)
+  {
+    capacity_ = capacity;
+    while (items_.size() > capacity_) {items_.pop_front();}
+  }
+
   void push(int64_t ns, T v)
   {
     items_.emplace_back(ns, std::move(v));

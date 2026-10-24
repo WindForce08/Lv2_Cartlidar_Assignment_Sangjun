@@ -15,6 +15,7 @@
 #include <array>
 #include <cmath>
 #include <functional>
+#include <limits>
 #include <optional>
 #include <vector>
 
@@ -42,6 +43,7 @@ struct LightBlob
   cv::Rect box;
   cv::Point2f center;
   double area = 0;               // 화소 수
+  cv::Mat pixels;                // box 안에서 이 덩어리 화소 (CV_8U, 0 / 255)
 };
 
 inline std::vector<LightBlob> detect_light_blobs(const cv::Mat & bgr, const LightBlobConfig & c)
@@ -70,10 +72,31 @@ inline std::vector<LightBlob> detect_light_blobs(const cv::Mat & bgr, const Ligh
           stats.at<int>(i, cv::CC_STAT_WIDTH), stats.at<int>(i, cv::CC_STAT_HEIGHT));
       b.center = cv::Point2f(static_cast<float>(cents.at<double>(i, 0)), static_cast<float>(cents.at<double>(i, 1)));
       b.area = area;
+      b.pixels = (labels(b.box) == i);
       out.push_back(b);
     }
   }
   return out;
+}
+
+// 덩어리 자기 화소들의 깊이 중앙값 [m]. 칸 일부가 가려지면 덩어리가 휘어 무게중심이 가린 물체 위에 떨어질 수 있어
+// 무게중심 둘레 깊이 대신 쓴다(0.35 m 접은 팔 렌더, Cartlidar/sim_render README). 깊이 값이 하나도 없으면 NaN
+inline double blob_median_depth(const cv::Mat & depth, const LightBlob & b, double scale, double min_m, double max_m)
+{
+  std::vector<double> v;
+  const bool f32 = depth.type() == CV_32F;
+  if ((!f32 && depth.type() != CV_16U) || b.pixels.empty()) {return std::numeric_limits<double>::quiet_NaN();}
+  for (int y = 0; y < b.box.height; ++y) {
+    for (int x = 0; x < b.box.width; ++x) {
+      const int u = b.box.x + x, w = b.box.y + y;
+      if (!b.pixels.at<uint8_t>(y, x) || u >= depth.cols || w >= depth.rows) {continue;}
+      const double d = f32 ? static_cast<double>(depth.at<float>(w, u)) * scale : depth.at<uint16_t>(w, u) * scale;
+      if (std::isfinite(d) && d >= min_m && d <= max_m) {v.push_back(d);}
+    }
+  }
+  if (v.empty()) {return std::numeric_limits<double>::quiet_NaN();}
+  std::nth_element(v.begin(), v.begin() + v.size() / 2, v.end());
+  return v[v.size() / 2];
 }
 
 // 켜진 등 후보 하나 (노드가 3D 위치를 붙인 것)
