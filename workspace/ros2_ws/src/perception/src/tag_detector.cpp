@@ -103,6 +103,22 @@ std::vector<TagDetection> TagDetector::detect(const cv::Mat & bgr, const cv::Mat
     run(cv::aruco::CORNER_REFINE_APRILTAG);
     run(cv::aruco::CORNER_REFINE_SUBPIX);
   }
+  // 하나도 못 찾으면 2배로 키운 영상에서 한 번 더 찾고 꼭짓점을 원래 크기로 줄인다.
+  // D435 1 m 의 48 mm 장소 태그(약 29 px)를 밝은 조명에서 놓친 7장이 2배에서 모두 찾아짐(R5 렌더 2026-10-25)
+  if (ids.empty()) {
+    const cv::Mat orig = gray;
+    cv::resize(orig, gray, cv::Size(), 2.0, 2.0, cv::INTER_CUBIC);
+    if (aruco_) {
+      run(cv::aruco::CORNER_REFINE_SUBPIX);
+    } else {
+      run(cv::aruco::CORNER_REFINE_APRILTAG);
+      run(cv::aruco::CORNER_REFINE_SUBPIX);
+    }
+    for (auto & cs : corners) {
+      for (auto & c : cs) {c = (c + cv::Point2f(0.5f, 0.5f)) * 0.5f - cv::Point2f(0.5f, 0.5f);}   // 화소 가운데 기준
+    }
+    gray = orig;
+  }
   const double h = size_ / 2.0;
   // aruco 모서리 순서: 왼쪽 위 · 오른쪽 위 · 오른쪽 아래 · 왼쪽 아래 (태그 평면 z = 0)
   const std::vector<cv::Point3f> obj = {{float(-h), float(h), 0}, {float(h), float(h), 0},

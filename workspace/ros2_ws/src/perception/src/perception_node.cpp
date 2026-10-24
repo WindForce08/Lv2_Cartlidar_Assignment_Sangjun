@@ -57,6 +57,7 @@
 #include "perception/puck_estimator.hpp"
 #include "perception/signal_light.hpp"
 #include "perception/signal_sequence.hpp"
+#include "perception/tag_depth.hpp"
 #include "perception/tag_detector.hpp"
 #include "perception/target_tracker.hpp"
 #include "perception/tf_helper.hpp"
@@ -667,7 +668,21 @@ private:
     const std::string frame = c.frame_id.empty() ? s.color->header.frame_id : c.frame_id;
     const auto T = tf_->fixed(base_frame_, frame);
     if (!T) {return std::nullopt;}
-    return best_marker(marker_->detect(color, K, s.info->d.empty() ? cv::Mat() : D), *T, s.color->header.stamp, cam);
+    auto dets = marker_->detect(color, K, s.info->d.empty() ? cv::Mat() : D);
+    // 정렬 깊이로 태그 거리를 맞춘다 (tag_depth.hpp). 깊이가 없거나 크기가 다르면 PnP 값 그대로
+    const double scale = s.depth ? depth_scale_for_encoding(s.depth->encoding) : 0.0;
+    if (scale > 0.0 && s.depth->width == static_cast<uint32_t>(color.cols) &&
+      s.depth->height == static_cast<uint32_t>(color.rows))
+    {
+      try {
+        const auto dimg = cv_bridge::toCvShare(s.depth);
+        for (auto & d : dets) {
+          if (d.pose_valid) {scale_tag_to_depth(d.tvec, d.corners, dimg->image, scale, depth_min_, depth_max_);}
+        }
+      } catch (const cv_bridge::Exception &) {
+      }
+    }
+    return best_marker(dets, *T, s.color->header.stamp, cam);
   }
 
   void process()
