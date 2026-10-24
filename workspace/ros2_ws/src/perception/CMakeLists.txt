@@ -69,7 +69,7 @@ if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   ament_add_gtest(test_perception_logic test/test_tfmini.cpp test/test_vision.cpp test/test_tracker_tag.cpp
     test/test_inputs.cpp test/test_lidar.cpp test/test_puck.cpp test/test_signal.cpp test/test_dice.cpp
-    test/test_signal_light.cpp)
+    test/test_signal_light.cpp test/test_depth_split.cpp)
   target_link_libraries(test_perception_logic perception_detector)
 endif()
 

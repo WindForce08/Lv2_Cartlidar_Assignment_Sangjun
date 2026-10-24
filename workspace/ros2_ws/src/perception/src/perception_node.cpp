@@ -11,7 +11,8 @@
 //      stamp = 결과에 쓴 영상 중 가장 오래된 촬영 시각 (받는 쪽 300 ms 규칙의 기준)
 //      쓸 수 있는 영상이 하나도 없으면 발행하지 않는다 (카메라 정지 = 침묵, 받는 쪽은 300 ms 뒤 "모름")
 //   영상 시각 규칙: 같은·과거 stamp(재전송)는 버린다. 1 s 넘게 뒤로 가면 시각 재시작으로 보고 추적 상태를 초기화한다
-//   SEARCH_* : 검출 → 정렬 깊이 중앙값 → 컬러 광학 좌표 3D → TF 로 base_link · odom → TargetTracker → object_pose
+//   SEARCH_* : 검출 → (색 검출기면) 덩어리를 깊이가 끊긴 곳에서 나눔 → 조각 깊이 중앙값 → 컬러 광학 좌표 3D
+//              → TF 로 base_link · odom → TargetTracker → object_pose
 //   ARM_ALIGN: camera_info 로 왜곡 보정한 영상을 detect_width 로 줄여 검출 → 화면 중심 대비 arm_offset
 //   READ_TAG : 왜곡 보정 원본에서 AprilTag → tag_id · tag_pose (Arducam 광학 프레임 기준, x 오른쪽 · y 아래 · z 앞)
 //   /perception/pucks (토픽, PuckArray): SEARCH_* 또는 READ_TAG 가 켜져 있으면 result 와 같은 주기로 발행한다
@@ -50,6 +51,7 @@
 #include "robot_interfaces/srv/set_perception_mode.hpp"
 #include "sensor_msgs/msg/camera_info.hpp"
 #include "sensor_msgs/msg/image.hpp"
+#include "perception/depth_split.hpp"
 #include "perception/detector.hpp"
 #include "perception/dice_check.hpp"
 #include "perception/frame_gate.hpp"
@@ -205,6 +207,13 @@ public:
     }
     target_class_ = dc.target_class;
     hsv_ = dc.hsv;
+    blur_ksize_ = dc.blur_ksize;
+    morph_kernel_ = dc.morph_kernel;
+    score_threshold_ = dc.score_threshold;
+    split_on_ = declare_parameter("detector.depth_split.enabled", true);
+    split_.tol_m = declare_parameter("detector.depth_split.tol_m", split_.tol_m);
+    split_.min_face_ratio = declare_parameter("detector.depth_split.min_face_ratio", split_.min_face_ratio);
+    split_.min_fill = dc.min_fill_ratio;
 
     TrackerConfig tc;
     auto ex_min = declare_parameter("target.exclude_min", std::vector<double>{tc.exclude_min.x, tc.exclude_min.y, tc.exclude_min.z});
@@ -293,6 +302,9 @@ public:
       RCLCPP_FATAL(get_logger(), "검출기 생성 실패: %s", info.c_str());
       throw std::runtime_error("detector");
     }
+    split_on_ = split_on_ && detector_->name() != "tensorrt";   // 깊이 나누기는 색 검출기 덩어리에만
+    split_.min_m = depth_min_;
+    split_.max_m = depth_max_;
     RCLCPP_INFO(get_logger(), "검출기: %s %s · 태그 %s · 마커 %s", detector_->name().c_str(), info.c_str(),
       tag_->ok() ? "사용 가능" : "패밀리 오류", marker_->ok() ? "사용 가능" : "사전 이름 오류");
 
@@ -531,10 +543,25 @@ private:
     const PinholeK K{s.info->k[0], s.info->k[4], s.info->k[2], s.info->k[5]};
     const std::string frame = c.frame_id.empty() ? s.color->header.frame_id : c.frame_id;
     const rclcpp::Time stamp(s.color->header.stamp, get_clock()->get_clock_type());
-    for (const auto & d : detector_->detect(color)) {
+    // 색 검출 덩어리는 깊이가 끊긴 곳에서 나눠 조각마다 퍽 하나로 본다(depth_split.hpp). 끄면 상자 하나 = 퍽 하나, 중심 = 상자 가운데
+    std::vector<DepthPiece> pieces;
+    const auto dets = detector_->detect(color);
+    if (split_on_) {
+      pieces = split_by_depth(dets, color, depth->image, scale, hsv_, blur_ksize_, morph_kernel_, K, split_, score_threshold_);
+    } else {
+      for (const auto & d : dets) {
+        DepthPiece pc;
+        pc.det = d;
+        pc.center = cv::Point(static_cast<int>(d.box.x + d.box.width / 2), static_cast<int>(d.box.y + d.box.height / 2));
+        pc.depth = median_depth(depth->image, pc.center, depth_win_, scale, depth_min_, depth_max_);
+        pieces.push_back(pc);
+      }
+    }
+    for (const auto & pc : pieces) {
+      const auto & d = pc.det;
       if (target_class_ >= 0 && d.class_id != target_class_) {continue;}
-      const cv::Point ctr(static_cast<int>(d.box.x + d.box.width / 2), static_cast<int>(d.box.y + d.box.height / 2));
-      const double z = median_depth(depth->image, ctr, depth_win_, scale, depth_min_, depth_max_);
+      const cv::Point ctr = pc.center;
+      const double z = pc.depth;
       if (!std::isfinite(z)) {continue;}
       if (size_min_m_ > 0 && !size_plausible(d.box, z, K, size_min_m_, size_max_m_)) {continue;}
       Candidate k;
@@ -1147,6 +1174,10 @@ private:
   std::unique_ptr<TagDetector> tag_, marker_;
   std::vector<int> marker_ids_, tag_ids_;
   std::vector<HsvRange> hsv_;
+  int blur_ksize_ = 3, morph_kernel_ = 3;
+  float score_threshold_ = 0.3f;
+  bool split_on_ = true;
+  DepthSplitConfig split_;
   PuckGeometry puck_geom_;
   double merge_dist_ = 0.04, min_confidence_ = 0.5;
   TargetTracker tracker_;
