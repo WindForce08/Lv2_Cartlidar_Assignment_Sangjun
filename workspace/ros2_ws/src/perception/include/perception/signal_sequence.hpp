@@ -9,7 +9,10 @@
 //      (꺼짐이 몇 프레임뿐이면 잡음 1~2프레임으로도 비율을 넘으므로 프레임 여유를 둔다)
 //      (한 묶음에 꺼짐이 blinks_per_cycle - 1 번, 텀은 1 번이라 중앙값은 점멸 사이 꺼짐 길이를 따른다)
 //   5) 텀으로 끝난 묶음을 기록한다. 맨 앞 묶음은 중간부터 봤을 수 있지만 점멸 수가 맞을 때만 후보가 되므로 같이 기록
+//      묶음은 꺼짐이 텀을 넘는 순간 먼저 기록되고, 텀 길이는 다음 점멸이 끝난 뒤 그 묶음에 채운다
 //   6) blinks_per_cycle 개짜리 묶음 중 같은 순서가 confirm_cycles 번 나오면 확정. reset() 전까지 유지
+//      (확정 뒤에도 잰 켜짐 · 꺼짐 · 텀 길이는 계속 갱신한다. 텀은 점멸 수가 맞는 두 묶음 사이만 쓰므로
+//       맞는 묶음을 연달아 두 번 본 뒤에야 0 이 아니다)
 //   max_gap 보다 오래 프레임이 끊기면(신호등을 놓침) 세던 점멸은 버리고 기록한 묶음만 남긴다.
 #pragma once
 
@@ -55,7 +58,7 @@ struct SignalResult
   std::string sequence;          // 확정(또는 마지막 후보) 순서, 예: "RGRRGRGGYGYG"
   int red = 0, yellow = 0, green = 0;
   int cycles = 0;                // 본 묶음 중 점멸 수가 맞는 것
-  double t_on = 0, t_off = 0, t_term = 0;   // 잰 켜짐 중앙값 · 점멸 사이 꺼짐 중앙값 · 텀 평균 [s]
+  double t_on = 0, t_off = 0, t_term = 0;   // 잰 켜짐 중앙값 · 점멸 사이 꺼짐 중앙값 · 텀 중앙값(점멸 수가 맞는 두 묶음 사이) [s]
 };
 
 class SignalSequenceTracker
@@ -69,7 +72,6 @@ public:
     raw_.clear();
     events_.clear();
     cycles_.clear();
-    terms_.clear();
     stable_ = Light::Off;
     started_ = false;
     result_ = {};
@@ -114,6 +116,7 @@ private:
   {
     double t0, t1;             // 첫 점멸 켜짐 · 마지막 점멸 꺼짐 시각
     std::string seq;
+    double term = -1;          // 이 묶음 뒤 텀 [s] (다음 점멸을 아직 못 봤으면 < 0)
   };
 
   Light filtered() const
@@ -204,19 +207,23 @@ private:
       if (stable_ == Light::Off && last.off >= 0 && t - last.off > term) {record(ev, begin, ev.size(), -1);}
     }
 
-    if (result_.status == SignalResult::CONFIRMED) {return;}
+    const double t_term = measured_term();
+    if (result_.status == SignalResult::CONFIRMED) {
+      // 순서는 그대로 두고 잰 길이만 갱신 (신호등을 놓쳐 점멸 기록이 비면 마지막 값 유지)
+      if (med_on > 0) {result_.t_on = med_on;}
+      if (med > 0) {result_.t_off = med;}
+      if (t_term > 0) {result_.t_term = t_term;}
+      return;
+    }
     std::vector<std::string> valid;
-    double term_sum = 0;
-    int term_n = 0;
     for (const auto & c : cycles_) {
       if (static_cast<int>(c.seq.size()) == c_.blinks_per_cycle) {valid.push_back(c.seq);}
     }
-    for (double g : terms_) {term_sum += g; ++term_n;}
     SignalResult r;
     r.cycles = static_cast<int>(valid.size());
     r.t_on = med_on;
     r.t_off = med;
-    r.t_term = term_n ? term_sum / term_n : 0;
+    r.t_term = t_term;
     r.status = events_.empty() && cycles_.empty() ? SignalResult::SEARCHING : SignalResult::COUNTING;
     for (const auto & s : valid) {
       if (std::count(valid.begin(), valid.end(), s) >= c_.confirm_cycles) {
@@ -237,25 +244,41 @@ private:
     result_ = r;
   }
 
-  // 같은 시간대 묶음은 한 번만 기록 (잡음 정리 결과가 나중에 조금 달라져도 같은 묶음을 두 번 세지 않게)
+  // 텀 길이 = 점멸 수가 맞는 두 묶음 사이 꺼짐의 중앙값 (모르면 0).
+  // 텀 중간에 잡음 점멸이 끼면 텀이 둘로 나뉘고 뒤 묶음의 점멸 수가 틀려지므로, 앞뒤 묶음이 모두 맞을 때만 쓴다
+  double measured_term() const
+  {
+    std::vector<Cycle> cs(cycles_.begin(), cycles_.end());
+    std::sort(cs.begin(), cs.end(), [](const Cycle & a, const Cycle & b) {return a.t0 < b.t0;});
+    const auto full = [this](const Cycle & c) {return static_cast<int>(c.seq.size()) == c_.blinks_per_cycle;};
+    std::vector<double> terms;
+    for (std::size_t i = 0; i + 1 < cs.size(); ++i) {
+      if (cs[i].term > 0 && full(cs[i]) && full(cs[i + 1])) {terms.push_back(cs[i].term);}
+    }
+    return median(terms);
+  }
+
+  // 같은 시간대 묶음은 한 번만 기록 (잡음 정리 결과가 나중에 조금 달라져도 같은 묶음을 두 번 세지 않게).
+  // 이미 기록한 묶음이면 텀 길이만 아직 없을 때 채운다 (term_after < 0: 다음 점멸을 아직 못 봄)
   void record(const std::vector<Event> & ev, std::size_t begin, std::size_t end, double term_after)
   {
     if (begin >= end) {return;}
     const double t0 = ev[begin].on, t1 = ev[end - 1].off;
-    for (const auto & c : cycles_) {
-      if (t0 <= c.t1 && c.t0 <= t1) {return;}
+    for (auto & c : cycles_) {
+      if (t0 <= c.t1 && c.t0 <= t1) {
+        if (term_after > 0 && c.term < 0) {c.term = term_after;}
+        return;
+      }
     }
     std::string s;
     for (std::size_t i = begin; i < end; ++i) {s += light_char(ev[i].color);}
-    cycles_.push_back({t0, t1, s});
-    if (term_after > 0) {terms_.push_back(term_after);}
+    cycles_.push_back({t0, t1, s, term_after});
   }
 
   SignalConfig c_;
   std::deque<Light> raw_;
   std::deque<Event> events_;
   std::vector<Cycle> cycles_;
-  std::vector<double> terms_;
   Light stable_ = Light::Off;
   bool started_ = false;
   double last_t_ = 0, dt_ = -1;   // 프레임 간격 추정 [s]

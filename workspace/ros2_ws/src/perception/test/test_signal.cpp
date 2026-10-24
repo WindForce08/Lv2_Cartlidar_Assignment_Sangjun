@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iostream>
 #include <random>
 #include <string>
 
@@ -202,4 +203,47 @@ TEST(SignalSequence, U2_MeasuredTimesAndCounts)
   EXPECT_EQ(r.red, 4);
   EXPECT_EQ(r.yellow, 2);
   EXPECT_EQ(r.green, 6);
+  // 잰 길이: 프레임 경계만큼 어긋날 수 있음. 텀은 확정 뒤 다음 점멸이 끝나야 알 수 있다
+  EXPECT_NEAR(r.t_on, b.t_on, 1.5 / FPS);
+  EXPECT_NEAR(r.t_off, b.t_off, 1.5 / FPS);
+  EXPECT_NEAR(r.t_term, b.t_term, 1.5 / FPS);
+}
+
+// 텀 길이: 확정 순간에는 아직 모를 수 있지만, 그 뒤 다음 점멸을 보면 채워져야 한다(확정 뒤에도 갱신).
+// U1 과 같은 범위 · 잡음으로 200회, 5주기 본 뒤 잰 텀. 통과(사용자 2026-10-24): 99 % 이상이 정답과 3프레임 안,
+// 나머지도 0.5 s 안. 100 % 가 아닌 이유: 텀 끝에 같은 색 잘못된 프레임이 2장 겹치면(3프레임 다수결을 넘음) 다음 점멸에
+// 합쳐져 텀이 짧게 재지는 경우가 있다(첫 실행 199/200, 0.46 s). 텀은 순서 확정에 쓰지 않는 참고 값이다
+TEST(SignalSequence, U2_TermMeasuredAfterConfirm)
+{
+  std::mt19937 rng(20261024);
+  std::uniform_real_distribution<double> on_off(0.1, 1.0), unit(0, 1);
+  std::uniform_int_distribution<int> other(1, 3);
+  int ok = 0, near = 0;
+  for (int k = 0; k < 200; ++k) {
+    Blinker b{random_seq(rng), on_off(rng), on_off(rng), 0};
+    const double lo = std::max(3 * b.t_off, 1.0);
+    b.t_term = lo + unit(rng) * (5.0 - lo);
+    const double P = b.period(), start = unit(rng) * P;
+    SignalSequenceTracker tr;
+    for (int n = 0; n / FPS <= 5 * P; ++n) {
+      if (unit(rng) < 0.05) {continue;}
+      Light s = b.at(start + n / FPS);
+      if (unit(rng) < 0.02) {s = static_cast<Light>((static_cast<int>(s) + other(rng)) % 4);}
+      tr.update(start + n / FPS, s);
+    }
+    const auto & r = tr.result();
+    const double err = std::abs(r.t_term - b.t_term);
+    if (r.status == SignalResult::CONFIRMED && err <= 3.0 / FPS) {
+      ++ok;
+    } else if (r.status == SignalResult::CONFIRMED && err <= 0.5) {
+      ++near;
+      std::cout << k << ": 텀 " << r.t_term << " (정답 " << b.t_term << ") on " << b.t_on << " off " << b.t_off << "\n";
+    } else {
+      ADD_FAILURE() << k << ": 상태 " << int(r.status) << " 텀 " << r.t_term << " (정답 " << b.t_term
+                    << ") on " << b.t_on << " off " << b.t_off;
+    }
+  }
+  RecordProperty("within_3_frames", ok);
+  RecordProperty("within_0_5s", near);
+  EXPECT_GE(ok, 198) << "3프레임 안 " << ok << "/200";
 }
