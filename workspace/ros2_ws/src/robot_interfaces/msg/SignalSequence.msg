@@ -22,5 +22,5 @@ bool position_valid
 geometry_msgs/Point position   # base_link 기준 신호등 위치 (position_valid 일 때)
 float32 t_on                # 잰 켜짐 길이 중앙값 [s]
 float32 t_off               # 잰 점멸 사이 꺼짐 길이 중앙값 [s]
-float32 t_term              # 잰 묶음 사이 텀 평균 [s] (모르면 0)
+float32 t_term              # 잰 묶음 사이 텀 [s]: 점멸 수가 맞는 두 묶음 사이 꺼짐의 중앙값 (모르면 0)
 uint8 camera                # 마지막으로 신호등을 본 카메라 (Puck.CAMERA_*)
