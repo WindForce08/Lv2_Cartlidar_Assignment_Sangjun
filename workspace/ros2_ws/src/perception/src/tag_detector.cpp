@@ -1,6 +1,8 @@
 #include "perception/tag_detector.hpp"
 
 #include <algorithm>
+#include <cmath>
+#include <utility>
 
 #include <opencv2/calib3d.hpp>
 #include <opencv2/imgproc.hpp>
@@ -78,6 +80,8 @@ std::vector<TagDetection> TagDetector::detect(const cv::Mat & bgr, const cv::Mat
   // 같은 번호면 AprilTag 방식 결과를 쓴다. Aruco 마커는 SUBPIX 한 번
   std::vector<int> ids;
   std::vector<std::vector<cv::Point2f>> corners;
+  std::vector<std::vector<cv::Point2f>> cand;   // 원래 크기 영상에서 사각형은 찾았지만 해독하지 못한 후보
+  bool keep_cand = true;
   auto run = [&](int method) {
       std::vector<int> ii;
       std::vector<std::vector<cv::Point2f>> cc, rejected;
@@ -96,6 +100,7 @@ std::vector<TagDetection> TagDetector::detect(const cv::Mat & bgr, const cv::Mat
         ids.push_back(ii[k]);
         corners.push_back(cc[k]);
       }
+      if (keep_cand) {cand.insert(cand.end(), rejected.begin(), rejected.end());}
     };
   if (aruco_) {
     run(cv::aruco::CORNER_REFINE_SUBPIX);
@@ -105,6 +110,8 @@ std::vector<TagDetection> TagDetector::detect(const cv::Mat & bgr, const cv::Mat
   }
   // 하나도 못 찾으면 2배로 키운 영상에서 한 번 더 찾고 꼭짓점을 원래 크기로 줄인다.
   // D435 1 m 의 48 mm 장소 태그(약 29 px)를 밝은 조명에서 놓친 7장이 2배에서 모두 찾아짐(R5 렌더 2026-10-25)
+  keep_cand = false;
+  const bool none_at_1x = ids.empty();
   if (ids.empty()) {
     const cv::Mat orig = gray;
     cv::resize(orig, gray, cv::Size(), 2.0, 2.0, cv::INTER_CUBIC);
@@ -116,6 +123,46 @@ std::vector<TagDetection> TagDetector::detect(const cv::Mat & bgr, const cv::Mat
     }
     for (auto & cs : corners) {
       for (auto & c : cs) {c = (c + cv::Point2f(0.5f, 0.5f)) * 0.5f - cv::Point2f(0.5f, 0.5f);}   // 화소 가운데 기준
+    }
+    gray = orig;
+  }
+  // 다른 태그는 찾아 위의 2배 재검출이 돌지 않았으면, 해독하지 못한 사각형 후보 둘레만 2배로 키워 다시 해독한다.
+  // 팔 카메라 0.10 m 의 16 mm 퍽 태그(약 45 px)를 밝은 조명에서 사각형은 찾고 해독만 못 한 1장이 2배에서 읽힘(R4 렌더 2026-10-25).
+  // 한 변 8~200 px 후보 중 큰 것부터 최대 10개, 둘레 여백 = 긴 변의 반
+  if (!none_at_1x && !cand.empty()) {
+    std::vector<std::pair<double, cv::Rect>> rois;
+    const cv::Rect img(0, 0, gray.cols, gray.rows);
+    for (const auto & q : cand) {
+      if (q.size() != 4) {continue;}
+      double lo = 1e9, hi = 0.0;
+      for (int k = 0; k < 4; ++k) {
+        const double e = cv::norm(q[k] - q[(k + 1) % 4]);
+        lo = std::min(lo, e);
+        hi = std::max(hi, e);
+      }
+      if (lo < 8.0 || hi > 200.0) {continue;}
+      const int m = static_cast<int>(std::ceil(hi / 2.0));
+      const cv::Rect r = (cv::boundingRect(q) + cv::Size(2 * m, 2 * m) - cv::Point(m, m)) & img;
+      const bool same = std::any_of(rois.begin(), rois.end(), [&](const auto & o) {return (o.second & r).area() > 0.8 * r.area();});
+      if (!same && r.area() > 0) {rois.emplace_back(std::fabs(cv::contourArea(q)), r);}
+    }
+    std::sort(rois.begin(), rois.end(), [](const auto & a, const auto & b) {return a.first > b.first;});
+    if (rois.size() > 10) {rois.resize(10);}
+    const cv::Mat orig = gray;
+    for (const auto & [area, r] : rois) {
+      cv::Mat up;   // 새 버퍼에 키움: 키운 크기가 원래 영상과 같아도 orig 를 덮어쓰지 않게
+      cv::resize(orig(r), up, cv::Size(), 2.0, 2.0, cv::INTER_CUBIC);
+      gray = up;
+      const size_t n0 = corners.size();
+      if (aruco_) {
+        run(cv::aruco::CORNER_REFINE_SUBPIX);
+      } else {
+        run(cv::aruco::CORNER_REFINE_APRILTAG);
+        run(cv::aruco::CORNER_REFINE_SUBPIX);
+      }
+      for (size_t k = n0; k < corners.size(); ++k) {
+        for (auto & c : corners[k]) {c = (c + cv::Point2f(0.5f, 0.5f)) * 0.5f - cv::Point2f(0.5f, 0.5f) + cv::Point2f(r.tl());}
+      }
     }
     gray = orig;
   }
