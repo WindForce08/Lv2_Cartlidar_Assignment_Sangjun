@@ -24,7 +24,7 @@ std::vector<Detection> detect(const cv::Mat & img)
 std::vector<DepthPiece> split(const cv::Mat & img, const cv::Mat & depth)
 {
   DetectorConfig c;
-  const auto dets = detect(img.clone());   // 색 검출기는 입력 영상을 제자리에서 블러하므로 사본을 넘김
+  const auto dets = detect(img);
   return split_by_depth(dets, img, depth, 1.0, c.hsv, 3, 3, K, DepthSplitConfig{}, 0.3f);
 }
 }  // namespace
