@@ -1,0 +1,30 @@
+# mission → perception_node. 선반 위 3×3 주사위 확인 (팔이 놓은 뒤)
+#   요청 시점의 퍽 목록(/perception/pucks 와 같은 것)으로 판정한다. 모양(노랑 주사위)은 팔 카메라가 윗면 태그를
+#   읽은 퍽만 알 수 있으므로 READ_TAG 를 켜고 팔 카메라로 선반을 위에서 보는 중에 부른다.
+#   칸 번호 0~8 은 행 우선 ((1,1) = 0, (1,3) = 2, (3,3) = 8). 칸 위치 · 크기는 판단이 정해 넘긴다
+uint8 EMPTY=0
+uint8 RED=1                 # 빨간 퍽 (모양 무관)
+uint8 GREEN=2               # 초록 퍽 (모양 무관)
+uint8 YELLOW=3              # 색 무관, 모양 = yellow_shape
+std_msgs/Header header      # frame_id = 칸 좌표의 좌표계 (비우면 base_link). stamp 는 쓰지 않음
+geometry_msgs/Point[9] cells   # 칸 중심 (선반 윗면 높이)
+uint8[9] expect
+uint8 yellow_shape          # Puck.SHAPE_CYLINDER 또는 Puck.SHAPE_CUBOID
+float32 tolerance           # 칸 중심에서 벗어나도 되는 거리 [m]. 0 이면 노드 설정값
+---
+bool observed               # 판정에 쓸 최근 퍽 목록이 있었음 (false 면 아래 값은 의미 없음)
+bool passed
+string message
+uint8 OK=0
+uint8 MISSING=1             # 퍽이 있어야 할 칸이 빔
+uint8 UNEXPECTED=2          # 비어야 할 칸에 퍽
+uint8 MULTIPLE=3            # 한 칸에 퍽 2개 이상
+uint8 OFFSET=4              # 칸 중심에서 tolerance 넘게 벗어남
+uint8 WRONG_COLOR=5
+uint8 WRONG_SHAPE=6         # 노랑 칸 모양이 다르거나 모름
+uint8[9] error
+uint8[9] count              # 칸에 넣은 퍽 수
+float32[9] offset           # 가장 가까운 퍽 중심과 칸 중심의 수평 거리 [m]
+uint8[9] color              # 그 퍽의 Puck.COLOR_*
+uint8[9] shape              # 그 퍽의 Puck.SHAPE_*
+int32[] wrong               # 틀린 칸 번호 (작은 순)

@@ -12,8 +12,14 @@ std::vector<Detection> ColorDetector::detect(const cv::Mat & bgr)
 {
   std::vector<Detection> out;
   if (bgr.empty()) {return out;}
+  // 블러는 새 버퍼에 한다. 예전에는 src 가 bgr 와 버퍼를 같이 써서 입력 영상을 제자리에서 흐리게 했다
+  // → 노드가 같은 영상으로 이어서 찾는 태그 · 장소 태그 · 깊이 나누기가 흐린 영상을 받았다(2026-10-25 발견)
   cv::Mat src = bgr, hsv;
-  if (cfg_.blur_ksize > 1) {cv::GaussianBlur(bgr, src, cv::Size(cfg_.blur_ksize | 1, cfg_.blur_ksize | 1), 0);}
+  if (cfg_.blur_ksize > 1) {
+    cv::Mat blurred;
+    cv::GaussianBlur(bgr, blurred, cv::Size(cfg_.blur_ksize | 1, cfg_.blur_ksize | 1), 0);
+    src = blurred;
+  }
   cv::cvtColor(src, hsv, cv::COLOR_BGR2HSV);
   const double img_area = static_cast<double>(bgr.cols) * bgr.rows;
   const int k = std::max(1, cfg_.morph_kernel);

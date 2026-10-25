@@ -10,6 +10,9 @@ namespace names
 {
 // 토픽
 inline constexpr const char * PERCEPTION_RESULT = "/perception/result";
+inline constexpr const char * PERCEPTION_PUCKS = "/perception/pucks";
+inline constexpr const char * PERCEPTION_TASK_MARKER = "/perception/task_marker";
+inline constexpr const char * PERCEPTION_SIGNAL = "/perception/signal";
 inline constexpr const char * ARM_RANGE = "/arm_range";
 inline constexpr const char * SCAN = "/scan";
 inline constexpr const char * ODOM_FILTERED = "/odometry/filtered";
@@ -33,6 +36,7 @@ inline constexpr const char * ARM_TRAJ_ACTION = "/arm_controller/follow_joint_tr
 inline constexpr const char * GRIPPER_ACTION = "/gripper_controller/gripper_cmd";
 // Service
 inline constexpr const char * PERCEPTION_SET_MODE = "/perception/set_mode";
+inline constexpr const char * PERCEPTION_CHECK_DICE = "/perception/check_dice";
 inline constexpr const char * MISSION_START = "/mission/start";
 inline constexpr const char * MISSION_STOP = "/mission/stop";
 }  // namespace names

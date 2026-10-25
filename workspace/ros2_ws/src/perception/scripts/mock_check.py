@@ -2,7 +2,7 @@
 """인지 노드 모의 시험 M1~M5 (Isaac Sim 없이 가짜 입력을 발행해 판정한다. 실물 시험 아님)
 
 먼저 띄울 것 (같은 ROS_DOMAIN_ID, use_sim_time:=true):
-  robot_state_publisher (URDF 261022_1800) · ros2 launch perception perception.launch.py use_sim_time:=true
+  robot_state_publisher (URDF 261022_2119) · ros2 launch perception perception.launch.py use_sim_time:=true
 이 스크립트가 /clock 을 직접 발행한다 (Isaac Sim 처럼 시뮬레이션 시계).
 
 사용: python3 mock_check.py --urdf <waffle_4wd.urdf> --out <결과 폴더>   (보통은 run_mock_check.sh 로 실행)

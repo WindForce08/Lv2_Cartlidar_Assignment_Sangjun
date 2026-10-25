@@ -12,6 +12,20 @@
 
 using namespace perception;
 
+// 검출기는 입력 영상을 바꾸지 않는다 (노드는 같은 영상으로 태그 · 마커도 찾음)
+TEST(ColorDetector, KeepsInputImage)
+{
+  cv::Mat img(480, 640, CV_8UC3, cv::Scalar(90, 90, 90));
+  cv::rectangle(img, cv::Rect(100, 200, 60, 60), cv::Scalar(0, 0, 220), cv::FILLED);
+  const cv::Mat before = img.clone();
+  DetectorConfig c;
+  c.type = "color";
+  c.blur_ksize = 5;
+  std::string info;
+  ASSERT_EQ(make_detector(c, info)->detect(img).size(), 1u);
+  EXPECT_EQ(cv::norm(before, img, cv::NORM_INF), 0.0);
+}
+
 TEST(ColorDetector, FindsColoredPucks)
 {
   cv::Mat img(480, 640, CV_8UC3, cv::Scalar(90, 90, 90));
