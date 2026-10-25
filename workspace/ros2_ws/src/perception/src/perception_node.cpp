@@ -61,6 +61,7 @@
 #include "perception/signal_sequence.hpp"
 #include "perception/tag_depth.hpp"
 #include "perception/tag_detector.hpp"
+#include "perception/tag_upright.hpp"
 #include "perception/target_tracker.hpp"
 #include "perception/tf_helper.hpp"
 #include "tf2/LinearMath/Matrix3x3.hpp"
@@ -249,6 +250,7 @@ public:
     puck_geom_.corner_probe = declare_parameter("puck.corner_probe", puck_geom_.corner_probe);
     puck_geom_.min_votes = static_cast<int>(declare_parameter("puck.min_votes", puck_geom_.min_votes));
     merge_dist_ = declare_parameter("puck.merge_dist", 0.04);
+    upright_gap_px_ = declare_parameter("puck.upright_gap_px", 1.0);
 
     LightBlobConfig & lb = light_cfg_;
     lb.v_min = static_cast<int>(declare_parameter("signal.v_min", lb.v_min));
@@ -621,7 +623,10 @@ private:
     for (const auto * t : order) {
       if (std::find(seen.begin(), seen.end(), t->id) != seen.end()) {continue;}
       seen.push_back(t->id);
-      const PuckEstimate e = estimate_puck(bgr, K, *t, hsv_, puck_geom_);
+      // PnP 두 해의 오차가 거의 같으면 법선이 base_link 수직 · 수평에 가까운 해 (tag_upright.hpp)
+      const tf2::Matrix3x3 & B = T.getBasis();
+      const cv::Matx33d R_base_cam(B[0][0], B[0][1], B[0][2], B[1][0], B[1][1], B[1][2], B[2][0], B[2][1], B[2][2]);
+      const PuckEstimate e = estimate_puck(bgr, K, prefer_upright(*t, R_base_cam, upright_gap_px_), hsv_, puck_geom_);
       Puck p;
       p.tag_id = t->id;
       p.color = e.color_cls >= 0 ? static_cast<uint8_t>(e.color_cls + 1) : Puck::COLOR_UNKNOWN;
@@ -1180,6 +1185,7 @@ private:
   DepthSplitConfig split_;
   PuckGeometry puck_geom_;
   double merge_dist_ = 0.04, min_confidence_ = 0.5;
+  double upright_gap_px_ = 1.0;
   TargetTracker tracker_;
   uint8_t mode_ = SetMode::Request::OFF;   // ctl_cbg_ 에서만 읽고 쓴다
   bool restart_seen_ = false;

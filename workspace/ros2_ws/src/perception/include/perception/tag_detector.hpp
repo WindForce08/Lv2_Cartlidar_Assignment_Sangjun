@@ -18,6 +18,10 @@ struct TagDetection
   std::vector<cv::Point2f> corners;   // 왼쪽 위 · 오른쪽 위 · 오른쪽 아래 · 왼쪽 아래 (화소)
   bool pose_valid = false;
   cv::Vec3d rvec, tvec;       // 광학 좌표, m
+  double err = 0;             // rvec · tvec 의 재투영 오차 [px] (IPPE)
+  bool alt_valid = false;     // 카메라를 향하는 IPPE 의 다른 해 (작은 태그는 두 해의 오차가 거의 같음 → tag_upright.hpp)
+  cv::Vec3d rvec_alt, tvec_alt;
+  double err_alt = 0;
 };
 
 class TagDetector

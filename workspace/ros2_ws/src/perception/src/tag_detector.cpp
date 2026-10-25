@@ -43,12 +43,14 @@ bool facing(const cv::Vec3d & rvec, const cv::Vec3d & tvec)
   return R(0, 2) * tvec[0] + R(1, 2) * tvec[1] + R(2, 2) * tvec[2] < 0.0;
 }
 
-// IPPE_SQUARE 두 해 중 카메라를 향하는 것 가운데 재투영 오차가 작은 것.
+// IPPE_SQUARE 두 해 중 카메라를 향하는 것 가운데 재투영 오차가 작은 것(rvec · tvec), 카메라를 향하는 다른 해가 있으면 *_alt.
 // 태그를 거의 정면에서 보면 IPPE 가 뒷면을 보는 해(법선이 카메라 반대)만 내는 일이 있어(2026-10-23 모의 시험,
 // 0° 에서 퍽 중심이 면 반대쪽으로 계산됨) 그때는 반복법으로 다시 푼다
 bool solve_facing(const std::vector<cv::Point3f> & obj, const std::vector<cv::Point2f> & img, const cv::Mat & K,
-  const cv::Mat & D, cv::Vec3d & rvec, cv::Vec3d & tvec)
+  const cv::Mat & D, TagDetection & tag)
 {
+  cv::Vec3d & rvec = tag.rvec;
+  cv::Vec3d & tvec = tag.tvec;
   std::vector<cv::Mat> rs, ts;
   cv::Mat err;
   const int n = cv::solvePnPGeneric(obj, img, K, D, rs, ts, false, cv::SOLVEPNP_IPPE_SQUARE, cv::noArray(), cv::noArray(), err);
@@ -62,6 +64,15 @@ bool solve_facing(const std::vector<cv::Point3f> & obj, const std::vector<cv::Po
   if (best >= 0) {
     rvec = cv::Vec3d(rs[best]);
     tvec = cv::Vec3d(ts[best]);
+    tag.err = err.at<double>(best);
+    for (int k = 0; k < n; ++k) {
+      const cv::Vec3d r(rs[k]), t(ts[k]);
+      if (k == best || !facing(r, t)) {continue;}
+      tag.alt_valid = true;
+      tag.rvec_alt = r;
+      tag.tvec_alt = t;
+      tag.err_alt = err.at<double>(k);
+    }
     return true;
   }
   if (!cv::solvePnP(obj, img, K, D, rvec, tvec, false, cv::SOLVEPNP_ITERATIVE)) {return false;}
@@ -176,7 +187,7 @@ std::vector<TagDetection> TagDetector::detect(const cv::Mat & bgr, const cv::Mat
     t.area = std::fabs(cv::contourArea(corners[i]));
     t.corners = corners[i];
     if (!K.empty()) {
-      t.pose_valid = solve_facing(obj, corners[i], K, D.empty() ? cv::Mat::zeros(1, 5, CV_64F) : D, t.rvec, t.tvec);
+      t.pose_valid = solve_facing(obj, corners[i], K, D.empty() ? cv::Mat::zeros(1, 5, CV_64F) : D, t);
     }
     out.push_back(t);
   }
