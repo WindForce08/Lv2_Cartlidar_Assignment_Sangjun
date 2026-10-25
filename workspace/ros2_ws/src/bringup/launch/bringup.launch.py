@@ -7,7 +7,7 @@
 #
 # ① ros2_control_node · ② base_container : opencr_hardware/base_bringup.launch.py
 # ⑦ perception_container                  : perception/perception.launch.py
-# ⑧ control_container (component_container_mt) — MissionNode(center) · DriveNode · ManipulatorNode(control) · TFminiNode(perception)
+# ⑧ control_container (component_container_mt) — MissionNode(mission) · DriveNode · ManipulatorNode(control) · TFminiNode(perception)
 #    같은 프로세스 · intra-process 통신 · 노드마다 MutuallyExclusive 콜백 그룹 → 바퀴 · 팔 · 판단 콜백이 병렬
 # ⑥ ekf (use_ekf) — 바퀴 vx + IMU yaw rate
 # nav2 · slam_toolbox 는 기존 패키지 launch 로 따로 (nav2 체인 마지막 출력만 /cmd_vel_nav)
@@ -26,7 +26,7 @@ def generate_launch_description():
     hw = FindPackageShare('opencr_hardware')
     per = FindPackageShare('perception')
     ctl = FindPackageShare('control')
-    cen = FindPackageShare('center')
+    mis = FindPackageShare('mission')
     pol = FindPackageShare('robot_policy')
     me = FindPackageShare('bringup')
     ipc = [{'use_intra_process_comms': True}]
@@ -37,8 +37,9 @@ def generate_launch_description():
         name='control_container', namespace='', package='rclcpp_components',
         executable='component_container_mt', output='screen',
         composable_node_descriptions=[
-            ComposableNode(package='center', plugin='center::MissionNode', name='mission_node',
-                           parameters=[PathJoinSubstitution([cen, 'config', 'mission.yaml'])], extra_arguments=ipc),
+            ComposableNode(package='mission', plugin='mission::MissionNode', name='mission_node',
+                           parameters=[PathJoinSubstitution([mis, 'config', 'mission.yaml']),
+                                       PathJoinSubstitution([mis, 'config', 'mission_table.yaml'])], extra_arguments=ipc),
             ComposableNode(package='control', plugin='control::DriveNode', name='drive_node',
                            parameters=[PathJoinSubstitution([ctl, 'config', 'drive.yaml']), skill], extra_arguments=ipc),
             ComposableNode(package='control', plugin='control::ManipulatorNode', name='manipulator_node',
