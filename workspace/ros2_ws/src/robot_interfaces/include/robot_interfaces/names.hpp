@@ -13,6 +13,7 @@ inline constexpr const char * PERCEPTION_RESULT = "/perception/result";
 inline constexpr const char * PERCEPTION_PUCKS = "/perception/pucks";
 inline constexpr const char * PERCEPTION_TASK_MARKER = "/perception/task_marker";
 inline constexpr const char * PERCEPTION_SIGNAL = "/perception/signal";
+inline constexpr const char * PERCEPTION_BARCODE = "/perception/barcode";
 inline constexpr const char * ARM_RANGE = "/arm_range";
 inline constexpr const char * SCAN = "/scan";
 inline constexpr const char * ODOM_FILTERED = "/odometry/filtered";
