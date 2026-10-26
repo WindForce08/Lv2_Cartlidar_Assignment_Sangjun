@@ -112,10 +112,12 @@ private:
 static std::string make_urdf(const std::string & ports, const std::string & extra_params)
 {
   std::string joints, links = "<link name=\"base_link\"/>", urdf_joints;
-  const char * wheels[6] = {"wheel_left_front_joint", "wheel_left_mid_joint", "wheel_left_rear_joint",
-    "wheel_right_front_joint", "wheel_right_mid_joint", "wheel_right_rear_joint"};
+  // 바퀴 4개 — opencr.ros2_control.xacro (wheel_count 4) 와 같은 칸 순서
+  static_assert(WHEEL_COUNT == 4, "xacro 4륜 칸 순서와 맞출 것");
+  const char * wheels[WHEEL_COUNT] = {"wheel_left_front_joint", "wheel_left_rear_joint",
+    "wheel_right_front_joint", "wheel_right_rear_joint"};
   const char * arm[6] = {"joint1", "joint2", "joint3", "joint4", "joint5", "gripper_roll"};
-  for (int i = 0; i < 6; ++i) {
+  for (int i = 0; i < WHEEL_COUNT; ++i) {
     joints += std::string("<joint name=\"") + wheels[i] + "\"><param name=\"role\">wheel</param><param name=\"slot\">" +
       std::to_string(i) + "</param><command_interface name=\"velocity\"/><state_interface name=\"position\"/>"
       "<state_interface name=\"velocity\"/><state_interface name=\"effort\"/></joint>";
@@ -172,7 +174,7 @@ TEST(HostFirmwareSil, PhasesOnOneBoot)
 {
   SilBoard & wb = sil_wheel_board();
   SilBoard & ab = sil_arm_board();
-  for (uint8_t id = 1; id <= 6; ++id) {wb.motors[id] = SilMotor{}; wb.motors[id].model = WHEEL_MODEL;}
+  for (uint8_t id : WHEEL_IDS) {wb.motors[id] = SilMotor{}; wb.motors[id].model = WHEEL_MODEL;}
   for (uint8_t id : ARM_IDS) {ab.motors[id] = SilMotor{}; ab.motors[id].model = ARM_MODEL;}
   SilLink wheel(wb), arm(ab);
   const std::string ports = wheel.path() + "," + arm.path();
@@ -238,7 +240,7 @@ TEST(HostFirmwareSil, PhasesOnOneBoot)
       EXPECT_GE(err_at, 30) << "comm_timeout 0.5 s 전에는 ERROR 아님 (주기 수, 10 ms + 처리 시간)";
       EXPECT_TRUE(wheel.last_flags() & FLAG_ESTOP) << "끊기지 않은 보드에 ESTOP";
       EXPECT_EQ(goal(arm, 11), arm_tick(0.5f)) << "끊긴 팔은 마지막 승인 목표 유지";
-      for (uint8_t id = 1; id <= 6; ++id) {
+      for (uint8_t id : WHEEL_IDS) {
         EXPECT_EQ(wheel.with_board([id](SilBoard & b) {return b.motors[id].goal_velocity;}), 0) << int(id);
       }
       // 링크 복구 뒤 ros2_control 이 컴포넌트를 어떻게 다루는지는 버전마다 다를 수 있어 관찰만 한다

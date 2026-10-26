@@ -103,7 +103,7 @@ struct Bench
   Bench()
   : w(sil_wheel_board()), a(sil_arm_board()), hw(w, ROLE_WHEEL), ha(a, ROLE_ARM)
   {
-    for (uint8_t id = 1; id <= 6; ++id) {w.motors[id] = SilMotor{}; w.motors[id].model = WHEEL_MODEL;}
+    for (uint8_t id : WHEEL_IDS) {w.motors[id] = SilMotor{}; w.motors[id].model = WHEEL_MODEL;}
     for (uint8_t id : ARM_IDS) {a.motors[id] = SilMotor{}; a.motors[id].model = ARM_MODEL;}
   }
   void boot() {w.setup(); a.setup();}
@@ -138,7 +138,8 @@ struct Bench
   // 팔 슬롯 k 의 모터 (config.h ARM_IDS 순서 — ID 순서와 다를 수 있음)
   SilMotor & arm_motor(int k) {return a.motors[ARM_IDS[k]];}
   int32_t arm_goal(int k) {return arm_motor(k).goal_position;}
-  int32_t wheel_goal(int k) {return w.motors[static_cast<uint8_t>(1 + k)].goal_velocity;}
+  // 바퀴 칸 k (0 ~ WHEEL_COUNT-1) 의 모터 (config.h WHEEL_IDS 순서)
+  int32_t wheel_goal(int k) {return w.motors[WHEEL_IDS[k]].goal_velocity;}
 
   SilBoard & w;
   SilBoard & a;
@@ -171,15 +172,23 @@ TEST(FirmwareSil, NormalCmdState)
     EXPECT_FLOAT_EQ(sa.quat[0], 0.f);
     EXPECT_TRUE(sa.error & ERR_CMD_TIMEOUT) << "CMD 전에는 타임아웃 상태";
 
+    const int last = WHEEL_COUNT - 1;
     b.hw.wheel[0] = 2.0f;
-    b.hw.wheel[5] = -1.0f;
+    b.hw.wheel[last] = -1.0f;
+    for (int k = WHEEL_COUNT; k < MAX_WHEELS; ++k) {b.hw.wheel[k] = 3.0f;}   // 바퀴 없는 칸: 값이 와도 쓰지 않음
     b.drive(100, FLAG_TORQUE_ON, NO_CMD);
-    EXPECT_TRUE(b.w.motors[1].torque);
+    EXPECT_TRUE(b.w.motors[WHEEL_IDS[0]].torque);
     EXPECT_EQ(b.wheel_goal(0), wheel_raw(0, 2.0f));
-    EXPECT_EQ(b.wheel_goal(5), wheel_raw(5, -1.0f));
+    EXPECT_EQ(b.wheel_goal(last), wheel_raw(last, -1.0f));
+    EXPECT_EQ(b.w.motors.size(), static_cast<size_t>(WHEEL_COUNT));
     sw = b.hw.last();
     EXPECT_NEAR(sw.vel[0], 2.0, 0.05);
-    EXPECT_NEAR(sw.vel[5], -1.0, 0.05);
+    EXPECT_NEAR(sw.vel[last], -1.0, 0.05);
+    for (int k = WHEEL_COUNT; k < MAX_WHEELS; ++k) {
+      EXPECT_EQ(sw.pos[k], 0.f) << "바퀴 없는 칸 " << k << " 은 0";
+      EXPECT_EQ(sw.vel[k], 0.f) << k;
+      EXPECT_EQ(sw.effort[k], 0.f) << k;
+    }
     EXPECT_FALSE(sw.error & ERR_CMD_TIMEOUT);
 
     b.arm_activate();
@@ -320,7 +329,7 @@ TEST(FirmwareSil, WheelTimeoutWritesZero)
     b.run(190);
     EXPECT_NE(b.wheel_goal(0), 0) << "200 ms 전에는 유지";
     b.run(30);
-    for (int k = 0; k < MAX_WHEELS; ++k) {EXPECT_EQ(b.wheel_goal(k), 0) << k;}
+    for (int k = 0; k < WHEEL_COUNT; ++k) {EXPECT_EQ(b.wheel_goal(k), 0) << k;}
     EXPECT_TRUE(b.hw.last().error & ERR_CMD_TIMEOUT);
     EXPECT_TRUE(b.w.motors[1].torque);
   });
@@ -715,12 +724,12 @@ TEST(FirmwareSil, BootTurnsWheelTorqueOff)
 {
   isolated([] {
     Bench b;
-    for (uint8_t id = 1; id <= 6; ++id) {
+    for (uint8_t id : WHEEL_IDS) {
       b.w.motors[id].torque = true;
       b.w.motors[id].goal_velocity = 100;
     }
     b.boot();
-    for (uint8_t id = 1; id <= 6; ++id) {EXPECT_FALSE(b.w.motors[id].torque) << int(id);}
+    for (uint8_t id : WHEEL_IDS) {EXPECT_FALSE(b.w.motors[id].torque) << int(id);}
   });
 }
 

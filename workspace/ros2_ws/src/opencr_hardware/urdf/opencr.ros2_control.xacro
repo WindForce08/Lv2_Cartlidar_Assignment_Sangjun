@@ -30,7 +30,8 @@
   </xacro:macro>
 
   <!-- 두 OpenCR의 순서는 고정하지 않고 STATE.role로 역할을 판별한다. -->
-  <xacro:macro name="opencr_ros2_control" params="name:=OpenCRSystem ports:=/dev/ttyACM0,/dev/ttyACM1 wheel_count:=6 use_gripper:=false joy_required:=true">
+  <!-- wheel_count 4 의 칸 순서 (왼앞 0 · 왼뒤 1 · 오른앞 2 · 오른뒤 3) 는 주행 펌웨어 config.h WHEEL_IDS · WHEEL_DIR 와 같다 -->
+  <xacro:macro name="opencr_ros2_control" params="name:=OpenCRSystem ports:=/dev/ttyACM0,/dev/ttyACM1 wheel_count:=4 use_gripper:=false joy_required:=true">
     <ros2_control name="${name}" type="system">
       <hardware>
         <plugin>opencr_hardware/OpenCRHardware</plugin>

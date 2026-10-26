@@ -1,5 +1,10 @@
 # 듀얼 OpenCR 프로토콜 v4
 
+> **이력 문서 (v4 · 6륜 기준).** 현재 펌웨어는 v5 · 주행 4륜이다 —
+> 사용법은 [`ros2_ws/src/opencr_firmware/README.md`](../ros2_ws/src/opencr_firmware/README.md),
+> 규격 변경 요청은 [`opencr_v5_change_request.md`](opencr_v5_change_request.md). 아래 "Arduino IDE 에서 `OPENCR_BOARD_ROLE` 값을 바꿔 빌드" 는
+> 더 이상 쓰지 않는다 (역할은 빌드 옵션으로만, `tools/build_firmware.sh`).
+
 ## 목표
 
 Jetson Orin Nano는 USB CDC를 통해 두 개의 OpenCR 보드와 통신합니다. 한 보드는 속도 모드(Velocity Mode)의 바퀴 Dynamixel 6개(ID 1–6)를 담당하고, 다른 보드는 위치 모드(Position Mode)의 매니퓰레이터 Dynamixel 6개(ID 11–16)를 담당합니다. 호스트는 USB 열거 순서나 물리 포트 위치가 아니라 프로토콜 역할을 기준으로 각 보드를 식별합니다.
