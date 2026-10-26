@@ -72,6 +72,13 @@ static const float   ARM_MAX_RAD[ARM_COUNT] = { 2.8f,  1.6f,  1.5f,  2.0f,  2.8f
 //   모터 EEPROM Min/Max Position Limit 도 이 범위와 같게 (부팅 점검이 확인, tools/dxl_setup 의 m 명령)
 static const int8_t  ARM_DIR[ARM_COUNT]     = {+1, +1, +1, +1, +1, +1};   // 2026-10-26 J1~J5 손으로 확인 (URDF + 방향과 같음)
 static const uint16_t ARM_MODEL = 1020;    // XM430-W350 (2026-10-26 실물 확인: 팔 모터 6대 모두 W350). W210 이면 1030
+// 위치 제어 게인 (모터 RAM — 모터 전원이 켜질 때마다 공장값으로 돌아가므로 부팅 때마다 쓰고 다시 읽어 확인. 0~16383).
+//   e-Manual: KPP = P/128, KPI = I/65536, KPD = D/16. 공장값 P 800 · I 0 · D 0 에서는 중력만큼 처진 채 버티고 (J2 0.026 rad / 0.33 A),
+//   목표를 현재 위치로 다시 잡을 때마다 더 내려간다 (docs/arm_bench_test_2026-10-26.md 4-2). 실물 튜닝으로 정함 ★
+//   I 게인은 막혔을 때 미는 힘이 계속 커진다 (과부하 → 모터가 토크를 끄면 팔이 떨어짐). 6 번째 칸 (그리퍼 개폐) 은 I = 0 고정.
+static const uint16_t ARM_POS_P_GAIN[ARM_COUNT] = {800, 800, 800, 800, 800, 800};
+static const uint16_t ARM_POS_I_GAIN[ARM_COUNT] = {  0,   0,   0,   0,   0,   0};
+static const uint16_t ARM_POS_D_GAIN[ARM_COUNT] = {  0,   0,   0,   0,   0,   0};
 
 // 그리퍼 개폐 전용 경로 (미정). 실물 개폐 모터는 지금 6 번째 칸 (위) 으로 다룸
 #define GRIPPER_ID        0                // 0 = 없음. 정해지면 ID 와 아래 변환을 맞춤 ★

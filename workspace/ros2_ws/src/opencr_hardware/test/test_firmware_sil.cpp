@@ -399,6 +399,64 @@ TEST(FirmwareSil, ArmPositionLimitNarrowerThanConfigFaults)
   });
 }
 
+// 7c. 위치 게인 (RAM): 부팅 때 팔 모터마다 config 값을 쓰고 다시 읽어 확인. 바퀴 보드는 쓰지 않음
+TEST(FirmwareSil, ArmGainsWrittenAtBoot)
+{
+  for (int k = 0; k < ARM_COUNT; ++k) {
+    EXPECT_LE(ARM_POS_P_GAIN[k], 16383) << k;
+    EXPECT_LE(ARM_POS_I_GAIN[k], 16383) << k;
+    EXPECT_LE(ARM_POS_D_GAIN[k], 16383) << k;
+  }
+  EXPECT_EQ(ARM_POS_I_GAIN[ARM_COUNT - 1], 0) << "6 번째 칸 (그리퍼 개폐) 은 I = 0 — 닫힌 끝에 막히면 적분으로 계속 조임";
+
+  isolated([] {
+    Bench b;
+    for (int k = 0; k < ARM_COUNT; ++k) {
+      b.arm_motor(k).pos_p_gain = 123;
+      b.arm_motor(k).pos_i_gain = 45;
+      b.arm_motor(k).pos_d_gain = 6;
+    }
+    for (uint8_t id : WHEEL_IDS) {b.w.motors[id].pos_p_gain = 123;}
+    b.boot();
+    for (int k = 0; k < ARM_COUNT; ++k) {
+      EXPECT_EQ(b.arm_motor(k).pos_p_gain, ARM_POS_P_GAIN[k]) << k;
+      EXPECT_EQ(b.arm_motor(k).pos_i_gain, ARM_POS_I_GAIN[k]) << k;
+      EXPECT_EQ(b.arm_motor(k).pos_d_gain, ARM_POS_D_GAIN[k]) << k;
+    }
+    for (uint8_t id : WHEEL_IDS) {EXPECT_EQ(b.w.motors[id].pos_p_gain, 123) << "바퀴 보드는 위치 게인을 쓰지 않음 " << int(id);}
+    b.run(50);
+    EXPECT_FALSE(b.ha.last().error & (ERR_FAULT | ERR_MOTOR_CONFIG));
+  });
+  // D5-1: OpenCR 만 재부팅되어 팔 토크가 켜져 있어도 게인을 쓰고, 토크는 그대로 둔다
+  isolated([] {
+    Bench b;
+    for (int k = 0; k < ARM_COUNT; ++k) {
+      b.arm_motor(k).torque = true;
+      b.arm_motor(k).pos_i_gain = 45;
+    }
+    b.boot();
+    for (int k = 0; k < ARM_COUNT; ++k) {
+      EXPECT_TRUE(b.arm_motor(k).torque) << k;
+      EXPECT_EQ(b.arm_motor(k).pos_i_gain, ARM_POS_I_GAIN[k]) << k;
+    }
+  });
+  // 게인 쓰기가 반영되지 않는 모터 → 부팅 점검 실패 (FAULT, 토크 거부)
+  isolated([] {
+    Bench b;
+    b.arm_motor(2).ignore_gain_writes = true;
+    b.arm_motor(2).pos_p_gain = ARM_POS_P_GAIN[2] + 1;
+    b.boot();
+    for (int t = 0; t < 1000; t += 100) {
+      b.drive(50, NO_CMD, FLAG_TORQUE_ON);
+      b.drive(50, NO_CMD, FLAG_TORQUE_ON | FLAG_REARM);
+    }
+    const State sa = b.ha.last();
+    EXPECT_TRUE(sa.error & ERR_FAULT);
+    EXPECT_TRUE(sa.error & ERR_MOTOR_CONFIG);
+    for (uint8_t id : ARM_IDS) {EXPECT_FALSE(b.a.motors[id].torque) << int(id);}
+  });
+}
+
 // 8. REARM 상승 에지
 TEST(FirmwareSil, RearmRisingEdgeActivates)
 {

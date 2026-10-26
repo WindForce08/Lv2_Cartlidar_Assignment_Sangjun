@@ -17,6 +17,10 @@ struct SilMotor
   int32_t homing_offset = 0;
   int32_t min_position_limit = 0;      // EEPROM Min/Max Position Limit (공장값 0 · 4095)
   int32_t max_position_limit = 4095;
+  int32_t pos_p_gain = 800;            // 위치 게인 (RAM, 공장값 800 · 0 · 0)
+  int32_t pos_i_gain = 0;
+  int32_t pos_d_gain = 0;
+  bool ignore_gain_writes = false;     // 시험용: 게인 쓰기가 반영되지 않는 모터
   uint8_t hw_error = 0;         // Hardware Error Status
   uint8_t mode = 3;
   bool torque = false;
@@ -59,5 +63,6 @@ SilBoard & sil_arm_board();
 namespace sil_item
 {
 enum : uint8_t { HOMING_OFFSET, RETURN_DELAY_TIME, BUS_WATCHDOG, PROFILE_VELOCITY, PROFILE_ACCELERATION,
-  HARDWARE_ERROR_STATUS, TORQUE_ENABLE, GOAL_POSITION, GOAL_VELOCITY, OPERATING_MODE, MIN_POSITION_LIMIT, MAX_POSITION_LIMIT };
+  HARDWARE_ERROR_STATUS, TORQUE_ENABLE, GOAL_POSITION, GOAL_VELOCITY, OPERATING_MODE, MIN_POSITION_LIMIT, MAX_POSITION_LIMIT,
+  POSITION_P_GAIN, POSITION_I_GAIN, POSITION_D_GAIN };
 }

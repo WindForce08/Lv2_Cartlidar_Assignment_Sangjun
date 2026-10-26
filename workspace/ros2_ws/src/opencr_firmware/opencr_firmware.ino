@@ -13,7 +13,7 @@
 //   sendState()    상태 + IMU + 배터리 전압 + 오류 · HOLD · FAULT 비트
 //
 // 부팅 점검 (Xmen opencr_control.ino prepareAxis 참고): ping · 모델 번호 · Homing Offset 0 · Return Delay 0
-//   · (팔) 모터 Min/Max Position Limit 가 config 범위를 덮는지. 하나라도 어긋나면 ERR_MOTOR_CONFIG · ERR_FAULT → 호스트가 활성화를 거부. 토크 ON 때 Bus Watchdog 500 ms 를 켬.
+//   · (팔) 모터 Min/Max Position Limit 가 config 범위를 덮는지 · 위치 P/I/D 게인 쓰기 (다시 읽어 확인). 하나라도 어긋나면 ERR_MOTOR_CONFIG · ERR_FAULT → 호스트가 활성화를 거부. 토크 ON 때 Bus Watchdog 500 ms 를 켬.
 // 필요 라이브러리: OpenCR 보드 패키지 (Arduino IDE), Dynamixel2Arduino ≥ 0.6, OpenCR IMU (보드 패키지 내장)
 
 // 역할은 빌드 옵션으로만 정한다 (기본값 없음 — 팔 보드에 주행 펌웨어가 잘못 올라가는 것을 막음)
@@ -137,6 +137,20 @@ static void checkArmLimits(int i)
   const int32_t hi = dxl.readControlTableItem(MAX_POSITION_LIMIT, id);
   if (dxl.getLastLibErrCode() != DXL_LIB_OK) {g_config_error = true; return;}
   if (lo > (a < b ? a : b) || hi < (a < b ? b : a)) {g_config_error = true;}
+}
+
+// 팔: 위치 P · I · D 게인 (RAM, 토크 ON 중에도 쓸 수 있음) 을 config 값으로 쓰고 다시 읽어 확인. 다르면 점검 실패
+static void writeArmGains(int i)
+{
+  const uint8_t id = ARM_IDS[i];
+  if (!dxl.ping(id)) {return;}   // 응답 없음은 setupMotor 가 이미 알림
+  const uint8_t items[3] = {POSITION_P_GAIN, POSITION_I_GAIN, POSITION_D_GAIN};
+  const uint16_t gains[3] = {ARM_POS_P_GAIN[i], ARM_POS_I_GAIN[i], ARM_POS_D_GAIN[i]};
+  for (int k = 0; k < 3; ++k) {
+    dxl.writeControlTableItem(items[k], id, gains[k]);
+    const int32_t v = dxl.readControlTableItem(items[k], id);
+    if (dxl.getLastLibErrCode() != DXL_LIB_OK || v != gains[k]) {g_config_error = true;}
+  }
 }
 
 static void setupSync()
@@ -386,6 +400,7 @@ void setup()
     for (int i = 0; i < ARM_COUNT; ++i) {
       torque_kept += setupMotor(ARM_IDS[i], OP_POSITION, true, ARM_MODEL) ? 1 : 0;
       checkArmLimits(i);
+      writeArmGains(i);
     }
   }
 #if GRIPPER_ID != 0

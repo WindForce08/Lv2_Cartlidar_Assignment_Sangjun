@@ -9,13 +9,14 @@
            6 번째 칸 (실물은 그리퍼 개폐) 은 움직이지 않고 시작 때 위치를 유지한다.
            --dry-run 이면 현재 위치만 읽고 계획을 출력한다 (쓰기 없음). 실제로 움직이려면 --yes.
            오류 비트 · 예상 밖 HOLD · 추종 오차 · 목표 미도달 (머문 뒤 --max-final 초과) · Ctrl-C → ESTOP 프레임을 보낸 뒤 송신을 멈춘다.
-           구간마다 관절별 최대 전류 [A] 를 출력한다.
+           구간마다 관절별 최대 전류 [A] 를 출력한다. --log FILE 이면 STATE 마다 CSV 한 줄 (게인 튜닝용).
            끝나면 송신을 멈춘다 → 펌웨어가 200 ms 뒤 HOLD (토크는 켜진 채 마지막 목표에서 버팀).
            토크를 끄려면 팔을 받친 뒤 모터 전원을 끈다 (물리 E-stop 회로는 없다).
 
 프로토콜은 opencr_firmware/opencr_protocol.h (v5) 와 같아야 한다. 관절 한계는 opencr_firmware/config.h 에서 읽는다.
 """
 import argparse
+import csv
 import re
 import struct
 import sys
@@ -238,6 +239,22 @@ def move(args):
 
     seq = 0
     cmd = list(q0)
+    # --log: 새 STATE 가 올 때마다 한 줄 (게인 튜닝 때 넘침 · 진동 · 정착 시간을 보려고)
+    log_file = open(args.log, 'w', newline='') if args.log else None
+    log = csv.writer(log_file) if log_file else None
+    if log is not None:
+        log.writerow(['t_s', 'phase', 'error'] + [f'cmd{j}' for j in range(1, 7)] +
+                     [f'pos{j}' for j in range(1, 7)] + [f'cur{j}' for j in range(1, 7)])
+    t_start, logged, phase = time.monotonic(), link.count, 'start'
+
+    def poll():
+        nonlocal logged
+        s = link.poll()
+        if log is not None and s is not None and link.count != logged:
+            logged = link.count
+            log.writerow([f'{time.monotonic() - t_start:.3f}', phase, s['error']] + [f'{q:.4f}' for q in cmd] +
+                         [f'{q:.4f}' for q in arm_pos(s)] + [f'{a:.3f}' for a in s['effort'][ARM0:ARM0 + 6]])
+        return s
 
     def send(flags):
         nonlocal seq
@@ -249,23 +266,27 @@ def move(args):
         while time.monotonic() < t_end:
             t0 = time.monotonic()
             send(flags)
-            s = link.poll()
+            s = poll()
             if pred is not None and s is not None and pred(s):
                 return s
             time.sleep(max(0.0, PERIOD - (time.monotonic() - t0)))
         return None
 
     def abort(why):
+        nonlocal phase
         print('중단:', why, '— ESTOP 프레임 후 송신 중단 (펌웨어는 현재 위치에서 HOLD, 토크 유지)')
+        phase = 'abort'
         cycle(FLAG_TORQUE_ON | FLAG_ESTOP, timeout=0.3)
         sys.exit(1)
 
     try:
         # 1) 토크 ON — 펌웨어는 현재 위치를 목표로 잡고 HOLD
+        phase = 'torque_on'
         s = cycle(FLAG_TORQUE_ON, lambda s: s['error'] & ERR_HOLD and not s['error'] & ERR_TIMEOUT, timeout=2.0)
         if s is None or s['error'] & ERR_ABORT:
             abort('토크 ON 뒤 HOLD 를 보지 못함' if s is None else err_text(s['error']))
         # 2) REARM 펄스 (0 → 1 → 0) → HOLD 해제 확인
+        phase = 'rearm'
         cycle(FLAG_TORQUE_ON | FLAG_REARM, timeout=0.03)
         s = cycle(FLAG_TORQUE_ON, lambda s: not s['error'] & ERR_HOLD, timeout=1.0)
         if s is None:
@@ -274,6 +295,7 @@ def move(args):
         step = args.speed * PERIOD
         for name, goal in plan:
             print('→', name)
+            phase = name
             peak = [0.0] * 6
 
             def track(s):
@@ -292,7 +314,7 @@ def move(args):
                     else:
                         cmd[i] = goal[i]
                 send(FLAG_TORQUE_ON)
-                s = link.poll()
+                s = poll()
                 if s is not None:
                     track(s)
                     if s['error'] & (ERR_ABORT | ERR_HOLD):
@@ -303,6 +325,7 @@ def move(args):
                 if done:
                     break
                 time.sleep(max(0.0, PERIOD - (time.monotonic() - t0)))
+            phase = name + ' (머묾)'
             cycle(FLAG_TORQUE_ON, track, timeout=args.dwell)
             s = link.last
             reached = arm_pos(s)
@@ -314,6 +337,9 @@ def move(args):
                 abort(f'목표 미도달 관절 {miss} (> {args.max_final} rad)')
     except KeyboardInterrupt:
         abort('Ctrl-C')
+    finally:
+        if log_file:
+            log_file.close()   # abort 의 sys.exit 때도 닫힘
     print('완료 — 송신을 멈춥니다. 펌웨어는 200 ms 뒤 HOLD (토크 유지). 끄려면 팔을 받치고 모터 전원을 끄세요.')
 
 
@@ -335,6 +361,7 @@ def main():
     v.add_argument('--speed', type=float, default=0.1, help='목표 변화 속도 상한 rad/s (기본 0.1)')
     v.add_argument('--max-track', type=float, default=0.2, help='허용 추종 오차 rad (기본 0.2 ★)')
     v.add_argument('--max-final', type=float, default=0.02, help='머문 뒤 목표 도달 허용 오차 rad (기본 0.02 ★)')
+    v.add_argument('--log', help='STATE 를 CSV 로 기록 (시간 · 단계 · 오류 · 명령 · 위치 · 전류) — 게인 튜닝용')
     v.add_argument('--dwell', type=float, default=1.0, help='목표 도달 뒤 유지 s')
     v.add_argument('--dry-run', action='store_true')
     v.add_argument('--yes', action='store_true', help='실제로 토크를 켜고 움직임')

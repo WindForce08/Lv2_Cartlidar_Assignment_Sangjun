@@ -16,7 +16,8 @@ enum DXLLibErrorCode { DXL_LIB_OK = 0, DXL_LIB_ERROR_TIMEOUT = 3 };   // 실제�
 namespace ControlTableItem
 {
 enum ControlTableItemIndex { HOMING_OFFSET, RETURN_DELAY_TIME, BUS_WATCHDOG, PROFILE_VELOCITY, PROFILE_ACCELERATION,
-  HARDWARE_ERROR_STATUS, TORQUE_ENABLE, GOAL_POSITION, GOAL_VELOCITY, OPERATING_MODE, MIN_POSITION_LIMIT, MAX_POSITION_LIMIT };
+  HARDWARE_ERROR_STATUS, TORQUE_ENABLE, GOAL_POSITION, GOAL_VELOCITY, OPERATING_MODE, MIN_POSITION_LIMIT, MAX_POSITION_LIMIT,
+  POSITION_P_GAIN, POSITION_I_GAIN, POSITION_D_GAIN };
 }
 
 namespace DYNAMIXEL
@@ -81,6 +82,9 @@ public:
       case ControlTableItem::OPERATING_MODE: return m->mode;
       case ControlTableItem::MIN_POSITION_LIMIT: return m->min_position_limit;
       case ControlTableItem::MAX_POSITION_LIMIT: return m->max_position_limit;
+      case ControlTableItem::POSITION_P_GAIN: return m->pos_p_gain;
+      case ControlTableItem::POSITION_I_GAIN: return m->pos_i_gain;
+      case ControlTableItem::POSITION_D_GAIN: return m->pos_d_gain;
       default: return 0;
     }
   }
@@ -160,6 +164,9 @@ private:
       case ControlTableItem::BUS_WATCHDOG: m.watchdog = v; break;
       case ControlTableItem::OPERATING_MODE: m.mode = static_cast<uint8_t>(v); break;
       case ControlTableItem::HOMING_OFFSET: m.homing_offset = v; break;
+      case ControlTableItem::POSITION_P_GAIN: if (!m.ignore_gain_writes) {m.pos_p_gain = v;} break;
+      case ControlTableItem::POSITION_I_GAIN: if (!m.ignore_gain_writes) {m.pos_i_gain = v;} break;
+      case ControlTableItem::POSITION_D_GAIN: if (!m.ignore_gain_writes) {m.pos_d_gain = v;} break;
       default: break;
     }
   }
