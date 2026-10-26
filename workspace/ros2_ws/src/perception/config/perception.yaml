@@ -121,6 +121,19 @@ perception_node:
       tolerance_m: 0.015        # 요청 tolerance 가 0 일 때 칸 중심 허용 오차 (판정 기준 U3 값)
       region_margin_m: 0.04     # 칸 범위 밖 이만큼까지의 퍽을 판정에 넣음 (그 밖은 다른 선반 · 바닥)
       max_age_s: 1.0            # 이보다 오래된 퍽 목록으로는 판정하지 않음
+    barcode:                    # 바코드 라벨 (READ_BARCODE, /perception/barcode). include/perception/barcode_locator.hpp · barcode_reader.hpp
+      # 찾기 문턱은 barcode.<이름> 으로 덮어쓴다(이름 · 기본값은 BarcodeLocatorConfig = R3 설계 45차 locate_v2.py CFG2, sha256 앞 16자 21f7ddbd7ec1fdd5).
+      # 근거 · 판정 결과: Cartlidar/sim_render/README.md R3 절 (모의). 예: thr: 0.65, white_ring_min: 0.98, max_blur: 20.0
+      template_path: ""         # 라벨 그림. 비우면 share/perception/data/barcode_P2-01.png (설계 · 판정 렌더에 쓴 그림과 같음)
+      camera: front             # 라벨을 찾는 D435 (front | rear)
+      base_frame: base_footprint  # 찾기의 높이 · 거리 규칙(min_z 0.06 m, wall_min_top 0.20 m, rng 1.2 m)의 기준 = 바닥
+      depth_frames: 5           # 멈춰서 평균하는 깊이 장수 (설계 전제: 판정은 '5장 평균' 모의 깊이로 함)
+      depth_min_valid: 0        # 평균에 넣을 화소의 최소 유효 장수. 0 = 모든 장에 값이 있어야 함
+      max_motion_m: 0.01        # ★ 평균 중 차체(odom)가 이만큼 넘게 움직이면 다시 모음 (설계값, 실물에서 다시 정함)
+      max_rotation_deg: 1.0     # ★ 위와 같음 (회전)
+      read_scale: 1.0           # 팔 카메라(640 × 480) 영상을 zbar 로 읽기 전 확대 배율. 1 = 원본
+      read_gamma: 2.0           # 읽기 전 감마 (흐려진 좁은 흰 칸을 살림, R3 설계 44차: 설계 자료 5 벌에서 1.5~2.5 같은 판정)
+      read_min_quality: 4       # zbar quality(읽은 스캔 수) 하한: 체크섬 상쇄 잘못 읽기(P2-0x → PF-&x)는 최대 3 (44차)
     frames:
       base: base_link
       odom: odom

@@ -17,6 +17,11 @@ find_package(cv_bridge REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
+find_package(ament_index_cpp REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(ZBAR REQUIRED zbar)
+# LAPACK: 바코드 평면 맞춤의 고유값 분해를 numpy(np.linalg.eigh)와 같은 ssyevd 로
+find_package(LAPACK REQUIRED)
 # AprilTag: OpenCV ≥ 4.7 은 objdetect, 4.6 은 contrib aruco
 find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs videoio calib3d dnn OPTIONAL_COMPONENTS aruco objdetect)
 
@@ -43,9 +48,21 @@ else()
   message(WARNING "perception: TensorRT/CUDA 없음 — ColorDetector 만 빌드")
 endif()
 
+# 바코드 (R3): D435 라벨 찾기 · 팔 카메라 zbar 읽기 (perception_node · 시험 · 비교 도구가 같이 씀)
+add_library(perception_barcode STATIC src/barcode_locator.cpp src/barcode_reader.cpp)
+set_target_properties(perception_barcode PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_include_directories(perception_barcode PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include/${PROJECT_NAME}>)
+target_include_directories(perception_barcode PRIVATE ${ZBAR_INCLUDE_DIRS})
+target_link_libraries(perception_barcode PUBLIC ${OpenCV_LIBS} ${ZBAR_LIBRARIES} ${LAPACK_LIBRARIES})
+
+# barcode_compare: 렌더 장면에서 찾기 · 읽기 결과를 JSON 으로 (scripts/barcode_compare.py 가 기준 Python 과 견줌)
+add_executable(barcode_compare src/barcode_compare_main.cpp)
+target_link_libraries(barcode_compare perception_barcode)
+
 # perception_node: 카메라 3대(영상 토픽) → /perception/result
 add_library(perception_node SHARED src/perception_node.cpp)
-target_link_libraries(perception_node PUBLIC perception_detector
+target_link_libraries(perception_node PUBLIC perception_detector perception_barcode ament_index_cpp::ament_index_cpp
   rclcpp::rclcpp rclcpp_components::component ${robot_interfaces_TARGETS} ${sensor_msgs_TARGETS} ${geometry_msgs_TARGETS}
   cv_bridge::cv_bridge tf2::tf2 tf2_ros::tf2_ros tf2_geometry_msgs::tf2_geometry_msgs)
 rclcpp_components_register_node(perception_node PLUGIN "perception::PerceptionNode" EXECUTABLE perception)
@@ -60,18 +77,21 @@ rclcpp_components_register_node(perception_lidar PLUGIN "perception::ScanMergerN
 rclcpp_components_register_node(perception_lidar PLUGIN "perception::ObstacleStopNode" EXECUTABLE obstacle_stop)
 rclcpp_components_register_node(perception_lidar PLUGIN "perception::TFminiNode" EXECUTABLE tfmini)
 
-install(TARGETS perception_detector perception_node perception_lidar
+install(TARGETS perception_detector perception_barcode perception_node perception_lidar
   ARCHIVE DESTINATION lib LIBRARY DESTINATION lib RUNTIME DESTINATION bin)
+install(TARGETS barcode_compare RUNTIME DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY include/ DESTINATION include/${PROJECT_NAME})
-install(DIRECTORY config launch udev DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY config launch udev data DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   ament_add_gtest(test_perception_logic test/test_tfmini.cpp test/test_vision.cpp test/test_tracker_tag.cpp
     test/test_inputs.cpp test/test_lidar.cpp test/test_puck.cpp test/test_signal.cpp test/test_dice.cpp
     test/test_signal_light.cpp test/test_depth_split.cpp
-    test/test_tag_upright.cpp)
-  target_link_libraries(test_perception_logic perception_detector)
+    test/test_tag_upright.cpp test/test_barcode.cpp)
+  target_link_libraries(test_perception_logic perception_detector perception_barcode)
+  target_compile_definitions(test_perception_logic PRIVATE
+    PERCEPTION_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data" PERCEPTION_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/data")
 endif()
 
 ament_package()
