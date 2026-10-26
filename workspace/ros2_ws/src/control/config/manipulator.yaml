@@ -1,62 +1,86 @@
+# manipulator_node 설정 (Controller 팀)
+# (추정) 값은 URDF · 하드웨어 확정 후 수정
 manipulator_node:
   ros__parameters:
-    joint_names: [joint1, joint2, joint3, joint4, joint5, gripper_roll]
-    arm:                        # ArmIK — robot.urdf.xacro 와 같은 값 ★ 실측
-      d1: 0.077
-      l2x: 0.024
-      l2z: 0.128
-      l3: 0.124
-      l_tool: 0.167
-    joint_limits:
-      lower: [-2.8, -1.8, -1.6, -1.8, -2.8, -2.8]
-      upper: [ 2.8,  1.6,  1.5,  2.0,  2.8,  2.8]
-    poses:                      # 관절각 (rad) ★ 주행 중 팔이 차체 밖으로 나가지 않는지 확인
-      STOW:  [0.0, -1.05, 0.35, 0.70, 0.0, 0.0]
-      READY: [0.0, -0.20, 0.30, 1.10, 0.0, 0.0]
-      PLACE: [0.0,  0.30, 0.10, 1.00, 0.0, 0.0]
-      TAG_VIEW: [0.0, -0.60, 0.20, 0.40, 0.0, 0.0]   # Arducam 이 태그를 보는 자세 — 차체 footprint 안 (그 자세로 회전) ★
-    motion:
-      max_joint_velocity: 1.0
-      approach_velocity_scale: 0.4
-      min_move_time: 0.6
-      verify_tolerance: 0.05
-      pose_timeout_s: 15.0
-      pick_timeout_s: 45.0
-      final_approach_points: 4   # 마지막 직선 전진 경유점 수
-    frames:
-      arm_base: arm_base_link
-      base: base_link
-      odom: odom                # 물체 위치 기억 기준
-      range: tfmini_link        # ★ 실측 TF (pick ① 정확도)
-    pick:
-      tool_pitch: -1.5708       # 위에서 아래로 집기
-      approach_distance: 0.05
-      grasp_depth: 0.01
-      lift_height: 0.06
-      correction_iterations: 3
-      correction_tolerance: 0.03
-      correction_gain: 0.8
-      correction_settle_s: 0.3
-      cam_hfov: 1.20            # Arducam B0200 광각 ★
-      cam_vfov: 0.75
-      image_x_to_tangential: -1.0   # 화면 오른쪽 → 팔 기준 접선 방향 부호 ★ 장착 방향
-      image_y_to_radial: -1.0       # 화면 아래 → 반경 방향 부호 ★
+    arm:
+      joint_names: [joint1, joint2, joint3, joint4, joint5, gripper_roll]  # controllers.yaml arm_controller와 동일
+      lower_limits: [-3.14, -1.57, -2.5, -2.0, -3.14, -3.14]   # TODO 관절 한계 (rad)
+      upper_limits: [3.14, 1.57, 2.5, 2.0, 3.14, 3.14]
+      max_joint_velocity: 0.5    # rad/s, 궤적 시간 계산용
+      min_duration: 1.0          # s
+      joint_state_timeout: 1.0   # s
+
+    # ArmIK — 기구 가정은 include/control/arm_ik.hpp 주석 참고
+    ik:
+      base_height: 0.08          # TODO 링크 길이 (m)
+      upper_arm: 0.15
+      forearm: 0.15
+      wrist_to_tool: 0.12        # joint4 → 파지점
+      joint_offsets: [0.0, 0.0, 0.0, 0.0, 0.0]   # TODO 관절 0점 보정 (joint1~5)
+      joint_signs: [1.0, 1.0, 1.0, 1.0, 1.0]     # TODO 회전 방향
+      approach_pitches: [-1.5708, -1.0472, -0.7854, -0.5236, 0.0]  # 시도 순서
+      allow_elbow_down: false
+      use_object_yaw: false      # true면 object_pose yaw로 joint5 회전
+      wrist_roll_default: 0.0
+      gripper_roll_default: 0.0
+
+    # TODO STOW · READY · PLACE · TAG_VIEW 관절각 [joint1~5, gripper_roll] (rad)
+    #   TAG_VIEW: 팔 끝 Arducam이 태그를 보는 자세 (mission 시작 단계)
+    poses:
+      names: [STOW, READY, PLACE, TAG_VIEW]
+      STOW: [0.0, 1.2, -2.3, 1.1, 0.0, 0.0]
+      READY: [0.0, 0.6, -1.2, -0.9, 0.0, 0.0]
+      PLACE: [1.57, 0.4, -0.8, -1.1, 0.0, 0.0]
+      TAG_VIEW: [0.0, 0.9, -1.4, 0.2, 0.0, 0.0]   # TODO 현장에서 태그가 보이도록 조정
+
+    # TODO 그리퍼 개폐 액추에이터 미정
     gripper:
-      enabled: false            # 개폐 액추에이터 미정 ★
-      joint: gripper_joint
+      enabled: true              # false면 그리퍼 단계 건너뜀 (팔만 테스트)
+      joint_name: gripper_joint
       open_position: 0.02
       close_position: 0.0
-      assume_grasped_without_gripper: true   # 그리퍼 미정 동안 grasped=true 로 보고 (벤치 시험용)
-    safety:
-      joint_state_timeout_s: 0.5
-      limit_margin: 0.05
-      max_joint_velocity: 3.0
-      min_tool_z: -0.115        # arm_base_link 기준 공구 끝 최저 높이 (바닥 위) ★
-    arm_controller_action: /arm_controller/follow_joint_trajectory
-    gripper_action: /gripper_controller/gripper_cmd
-    stale_s: 0.3
+      max_effort: 0.0            # 0 = 지정 안 함
+      fail_on_empty: true        # 끝까지 닫힘(stalled 아님) = 빈손 → pick 실패
+
+    stale_timeout: 0.3           # 300ms 규칙 (계약): 촬영 시각 기준 이보다 오래된 인식 결과 · 거리는 버림 (예외 없음)
+
+    # 강화학습 정책 (robot_policy, ONNX Runtime CPU). 노드 시작 시 로드, 실패하면 execute_skill 거절 → mission fallback
+    # 관측 배치 · fill · rate_hz · obs_dim은 policies.yaml (학습 담당 제공)
     skill:
-      enabled: false            # robot_policy 연결 전까지 false → goal 거절 → mission 이 IK pick 으로 대체
-      policies_file: ""
-      stream_topic: /arm_controller/joint_trajectory
-      stream_horizon_s: 0.1     # 떨리면 늘림 (미결: 실물 시험)
+      enabled: false             # 모델 · ONNX Runtime 준비되면 true
+      policies: [pick_cup_v1]    # 이 노드가 로드할 policies.yaml 이름
+      policies_file: ""          # 빈 문자열 = <robot_policy share>/config/policies.yaml (bringup이 같은 파일을 넘김)
+      horizon: 1.5               # 스트리밍 1점 궤적 time_from_start = horizon / rate_hz (떨리면 조정)
+
+    arm_base_frame: arm_base_link
+    fixed_frame: odom            # 측정 시각 → 현재 변환 기준
+    tfmini_frame: tfmini_link    # TODO TF 실측 필수 (pick ① 정확도)
+    tf_cache_time: 10.0          # s (측정값은 300ms 안의 것만 쓴다)
+
+    pick:
+      # 목표 우선순위: ① 정밀 정렬 결과 → ② perception object_pose (300ms 안, object_found)
+      offset_tolerance: 0.01     # ① 조건 |arm_offset| <= 이 값. TODO arm_offset 단위 확정 후 (Perception 협의)
+      object_radius: 0.02        # ① TFmini 측정 지점(표면) → 파지점(중심). TODO 물체 크기 확정 후
+      approach_distance: 0.15    # 파지점 앞 접근 위치 거리 (m). TFmini 최소 0.1m 이상 떨어지게
+      # 파지점 거리 = TFmini 측정값 + range_offset (물체 반지름 + 센서가 끝단보다 뒤에 있는 거리)
+      # 보정 목표 측정값 = approach_distance - range_offset (>= 0.10, TFmini 최소 거리)
+      range_offset: 0.02         # TODO TFmini 장착 위치(Perception 협의) · 물체 크기
+      range_mismatch_tolerance: 0.04  # 측정 기반 거리와 계획 거리 차이가 이보다 크면 TFmini 무시 (m)
+      max_final_approach: 0.25   # 최종 전진 거리 상한 (m), 넘으면 abort
+      lift_height: 0.05
+      cartesian_step: 0.01       # 최종 접근 · 들어올리기 직선 경로 경유점 간격 (m)
+      cartesian_speed: 0.05      # 직선 경로 끝단 속도 (m/s)
+      max_waypoint_joint_step: 0.2  # 경유점 사이 관절 변화 상한 (rad), 넘으면 abort (특이점)
+
+    # 미세 보정 (arm_offset · /arm_range)
+    correction:
+      enabled: true
+      required: true             # true: 보정 실패(arm_offset 없음 · 반복 초과) 시 abort / false: 경고 후 진행
+      max_iterations: 5
+      offset_gain: 1.0           # TODO arm_offset 단위 확정 후 (m / 단위). 음수 = 보정 방향 반전, 0 = 좌우 보정 끔
+      lateral_tolerance: 0.005   # m
+      range_tolerance: 0.01      # m
+      max_step: 0.02             # 한 번에 이동하는 최대 거리 (m)
+      min_duration: 0.3          # s
+      settle_time: 0.2           # 이동 후 이 시간 지난 데이터만 사용 (s)
+      wait_timeout: 1.0          # 이 시간 안에 arm_offset 없으면 보정 실패 (s, required에 따라 abort/진행)

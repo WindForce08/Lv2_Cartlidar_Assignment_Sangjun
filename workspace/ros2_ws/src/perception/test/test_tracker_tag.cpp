@@ -10,6 +10,7 @@
 #include <opencv2/aruco.hpp>
 #endif
 
+#include "perception/tag_depth.hpp"
 #include "perception/tag_detector.hpp"
 #include "perception/target_tracker.hpp"
 
@@ -86,4 +87,48 @@ TEST(TagDetector, DetectsAprilTag36h11WithPose)
   EXPECT_LT(tags[0].tvec[2], 0.6);
   EXPECT_NEAR(tags[0].tvec[0], 0.0, 0.02);
   EXPECT_NEAR(tags[0].tvec[1], 0.0, 0.02);
+}
+
+// 작은 태그(약 22 px): 2배로 키워 다시 찾는 경우를 포함해 번호와 꼭짓점(원래 크기 화소)이 맞아야 한다
+TEST(TagDetector, SmallTagFoundWithCornersInOriginalPixels)
+{
+  const int id = 13, px = 22;
+  cv::Mat big, marker;
+#if (CV_VERSION_MAJOR > 4) || (CV_VERSION_MAJOR == 4 && CV_VERSION_MINOR >= 7)
+  cv::aruco::generateImageMarker(cv::aruco::getPredefinedDictionary(cv::aruco::DICT_APRILTAG_36h11), id, 220, big, 1);
+#else
+  cv::aruco::drawMarker(cv::aruco::getPredefinedDictionary(cv::aruco::DICT_APRILTAG_36h11), id, 220, big, 1);
+#endif
+  cv::resize(big, marker, cv::Size(px, px), 0, 0, cv::INTER_AREA);
+  cv::Mat img(480, 640, CV_8UC1, cv::Scalar(200));
+  img(cv::Rect(300, 220, px + 8, px + 8)).setTo(255);   // 흰 여백
+  marker.copyTo(img(cv::Rect(304, 224, px, px)));
+  cv::Mat bgr;
+  cv::cvtColor(img, bgr, cv::COLOR_GRAY2BGR);
+  TagDetector d("tag36h11", 0.048);
+  const auto tags = d.detect(bgr, cv::Mat(), cv::Mat());
+  ASSERT_EQ(tags.size(), 1u);
+  EXPECT_EQ(tags[0].id, id);
+  // 바깥 검은 테두리 = 마커 화소 [304, 326) 가로 · [224, 246) 세로 → 꼭짓점은 그 테두리 근처
+  for (const auto & c : tags[0].corners) {
+    EXPECT_TRUE(c.x > 302 && c.x < 328 && c.y > 222 && c.y < 248) << c;
+  }
+}
+
+// 정렬 깊이로 태그 거리 맞추기: 사각형 안 깊이 1.0 m, 바깥 3.0 m. PnP 거리 0.95 → 1.0, x · y 도 같은 비율
+TEST(TagDepth, ScalesRangeToDepthInsideQuad)
+{
+  cv::Mat depth(480, 640, CV_32F, cv::Scalar(3.0f));
+  depth(cv::Rect(300, 200, 31, 31)).setTo(1.0f);
+  const std::vector<cv::Point2f> q = {{300, 200}, {330, 200}, {330, 230}, {300, 230}};
+  cv::Vec3d t(0.05, 0.02, 0.95);
+  ASSERT_TRUE(scale_tag_to_depth(t, q, depth, 1.0, 0.15, 4.0));
+  EXPECT_NEAR(t[2], 1.0, 1e-9);
+  EXPECT_NEAR(t[0], 0.05 / 0.95, 1e-9);
+  EXPECT_NEAR(t[1], 0.02 / 0.95, 1e-9);
+  // 깊이가 비면(0) 그대로
+  cv::Vec3d t2(0.05, 0.02, 0.95);
+  cv::Mat empty(480, 640, CV_32F, cv::Scalar(0.0f));
+  EXPECT_FALSE(scale_tag_to_depth(t2, q, empty, 1.0, 0.15, 4.0));
+  EXPECT_NEAR(t2[2], 0.95, 1e-12);
 }

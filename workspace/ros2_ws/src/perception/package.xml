@@ -3,21 +3,27 @@
 <package format="3">
   <name>perception</name>
   <version>0.1.0</version>
-  <description>Perception 팀: perception_node (D435 × 2 · Arducam · TensorRT) · tfmini_node</description>
+  <description>인지: perception_node(D435 × 2 · Arducam 영상 토픽 → 물체 · 정렬 오차 · AprilTag · 바코드), scan_merger(라이다 합치기), tfmini_node · obstacle_stop(앞쪽 거리 · 비상 정지)</description>
   <maintainer email="kanichong@gmail.com">pa8</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>pkg-config</buildtool_depend>
   <depend>rclcpp</depend>
   <depend>rclcpp_components</depend>
   <depend>robot_interfaces</depend>
   <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
   <depend>geometry_msgs</depend>
+  <depend>cv_bridge</depend>
   <depend>tf2</depend>
   <depend>tf2_ros</depend>
   <depend>tf2_geometry_msgs</depend>
   <depend>libopencv-dev</depend>
-  <!-- Jetson: librealsense2 (apt librealsense2-dev 또는 소스 빌드), TensorRT · CUDA (JetPack) -->
+  <depend>libzbar-dev</depend>
+  <depend>liblapack-dev</depend>
+  <depend>ament_index_cpp</depend>
+  <!-- 선택: TensorRT · CUDA (Jetson 은 JetPack). 없으면 색 검출기만 빌드된다 -->
 
   <test_depend>ament_cmake_gtest</test_depend>
 

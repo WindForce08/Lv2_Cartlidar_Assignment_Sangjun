@@ -1,0 +1,33 @@
+# 라이다 설정: scan_merger(앞·뒤 LDS-03 합치기) · obstacle_stop(TFmini 앞쪽 거리 비상 정지). ★ = 실물에서 다시 확인할 값
+scan_merger:
+  ros__parameters:
+    inputs: [/scan_front, /scan_rear]   # 첫 항목이 발행 기준(trigger). 라이다는 3층 판 아래 거꾸로 달림 → URDF scan 프레임에 roll π
+    output_topic: /scan
+    output_frame: base_link
+    bins: 360                   # 1° 간격
+    angle_min: -3.141592653589793
+    range_min: 0.0
+    range_max: 12.0             # ★ LDS-03 측정 거리 상한 확인 후 맞춤
+    # 차체 상자 [x_min, x_max, y_min, y_max] (base_link). 이 안의 점은 차체에 맞은 것으로 보고 버린다.
+    # URDF 261022_2119 충돌 형상의 라이다 높이 띠(z 0.048~0.088 m) 외곽 x ±0.2185, y ±0.1526 m 에 1 cm 여유
+    self_box: [-0.2285, 0.2285, -0.1626, 0.1626]
+    max_dt_s: 0.15              # [s] trigger 와 이보다 stamp 차이가 큰 스캔은 합치지 않음
+    stale_s: 0.5                # [s] trigger 가 이만큼 없으면 다른 라이다 기준으로 발행
+
+obstacle_stop:
+  ros__parameters:
+    range_topic: /tfmini/range
+    stop_topic: /perception/obstacle_stop
+    reason_topic: /perception/obstacle_stop/reason
+    # 정지 거리 (TFmini 센서 면 기준) — 가정으로 정한 값, 실물 정지 시험으로 확인해야 함 ★
+    #   정지에 필요한 거리 = 반응 거리 + 감속 거리 = v·t + v²/(2a)
+    #     v = 0.20 m/s (Nav2 설정 가설의 최고 속도), t = 0.1 s (센서 → 판정 → 속도 0 반영까지 가정),
+    #     a = 1.0 m/s² (Nav2 설정 가설의 감속) → 0.02 + 0.02 = 0.04 m
+    #   + TFmini 최소 측정 거리 0.10 m (이 안으로 들어가면 값이 무효가 되므로 그 전에 멈춰야 함)
+    #   + 측정 오차 여유 0.05 m (가정) → 0.19 m → 0.20 m
+    stop_m: 0.20
+    release_m: 0.30             # 해제 거리. 정지 거리와 0.10 m 차이로 경계에서 깜빡이지 않게
+    release_count: 3            # 해제에 필요한 연속 "비었음" 측정 수
+    near_m: 0.30                # 무효 값 직전 거리가 이보다 가까우면 "너무 가까움"으로 보고 정지 유지
+    stale_s: 0.2                # [s] 입력이 이만큼 없으면 정지
+    publish_rate: 10.0          # [Hz] 상태를 이 주기로 다시 발행 (바뀔 때는 바로)
