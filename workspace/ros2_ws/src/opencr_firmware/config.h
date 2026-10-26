@@ -49,7 +49,7 @@ static const float ACCEL_FACTOR     = 0.000598550415f; // ±2 g → m/s^2
 
 // ======================================================================== 주행 보드 전용 (역할 1)
 // 바퀴 4개 (2026-10-26: 6륜에서 가운데 2개를 뺌). 패킷의 바퀴 칸은 6개 그대로 — 칸 4 · 5 는 쓰지 않고 STATE 는 0.
-// 칸 순서 = URDF opencr.ros2_control.xacro (wheel_count 4): 0 왼쪽 앞 · 1 왼쪽 뒤 · 2 오른쪽 앞 · 3 오른쪽 뒤
+// 칸 순서 = URDF opencr.ros2_control.xacro (wheel_fl/rl/fr/rr_joint): 0 왼쪽 앞 · 1 왼쪽 뒤 · 2 오른쪽 앞 · 3 오른쪽 뒤
 #define WHEEL_COUNT       4
 static const uint8_t WHEEL_IDS[WHEEL_COUNT] = {1, 2, 3, 4};      // 6륜 때 ID 1 · 3 · 4 · 6 → 1 · 2 · 3 · 4 로 다시 매김 (tools/dxl_setup) ★
 static const int8_t  WHEEL_DIR[WHEEL_COUNT] = {+1, +1, -1, -1};  // 왼쪽 +1 · 오른쪽 -1 (모터가 마주 보게 장착 가정) — 실물 회전 확인 필수 ★

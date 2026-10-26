@@ -112,7 +112,7 @@ private:
 static std::string make_urdf(const std::string & ports, const std::string & extra_params)
 {
   std::string joints, links = "<link name=\"base_link\"/>", urdf_joints;
-  // 바퀴 4개 — opencr.ros2_control.xacro (wheel_count 4) 와 같은 칸 순서
+  // 바퀴 4개 — opencr.ros2_control.xacro (wheel_fl/rl/fr/rr_joint) 와 같은 칸 순서
   static_assert(WHEEL_COUNT == 4, "xacro 4륜 칸 순서와 맞출 것");
   const char * wheels[WHEEL_COUNT] = {"wheel_left_front_joint", "wheel_left_rear_joint",
     "wheel_right_front_joint", "wheel_right_rear_joint"};

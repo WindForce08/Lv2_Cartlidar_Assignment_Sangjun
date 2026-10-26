@@ -54,7 +54,7 @@ tools/build_firmware.sh wheel --upload /dev/ttyACM0    # 빌드 후 업로드 �
   | 2 | 오른쪽 앞 | 3 | −1 ★ |
   | 3 | 오른쪽 뒤 | 4 | −1 ★ |
 
-  호스트 쪽 같은 순서: `../opencr_hardware/urdf/opencr.ros2_control.xacro` (`wheel_count` 기본 4) · `config/controllers_4wd.yaml`.
+  호스트 쪽 이름 · 순서: `../opencr_hardware/urdf/opencr.ros2_control.xacro` (`wheel_fl/rl/fr/rr_joint` = 칸 0~3) · `config/controllers_4wd.yaml`.
 - **모터 ID 다시 매기기가 필요하다**: 6륜 때 ID 는 왼쪽 1 · 2 · 3, 오른쪽 4 · 5 · 6 이었다. 가운데(2 · 5)를 뺐으므로 남은 모터를
   3 → 2, 4 → 3, 6 → 4 로 바꾼다 (`tools/dxl_setup`, 모터를 **한 대씩** 연결해서. 같은 ID 가 두 대 있으면 둘 다 바뀜).
   바꾸는 순서 주의: 4 → 3 을 하기 전에 3 → 2 를 먼저 (3 이 비어 있어야 함). 6 → 4 는 4 → 3 다음.
@@ -74,8 +74,8 @@ tools/build_firmware.sh wheel --upload /dev/ttyACM0    # 빌드 후 업로드 �
   | 7 | joint2 (어깨) | 12 | −1.8 ~ 1.6 |
   | 8 | joint3 (팔꿈치) | 13 | −1.6 ~ 1.5 |
   | 9 | joint4 (손목 굽힘) | 16 | −1.8 ~ 2.0 |
-  | 10 | joint5 (손목 롤) | 14 | −2.8 ~ 2.8 |
-  | 11 | 6 번째 칸 = **그리퍼 개폐** (규격 이름은 gripper_roll) | 15 | −0.83 ~ 1.27 ★ |
+  | 10 | wrist_roll_joint (손목 롤) | 14 | −2.8 ~ 2.8 |
+  | 11 | gripper_motor_joint = **그리퍼 개폐 모터** (각도 rad, 손가락 m 과의 변환 미정) | 15 | −0.83 ~ 1.27 ★ |
 
 - 모터 EEPROM 의 Min/Max Position Limit 도 위 범위와 같게 맞춰 두었다. **부팅 점검이 이를 확인**한다 —
   모터 한계가 펌웨어 범위보다 좁으면 범위 밖 목표를 모터가 조용히 버리기 때문에 (실제로 joint2 가 그랬음) FAULT 로 막는다.

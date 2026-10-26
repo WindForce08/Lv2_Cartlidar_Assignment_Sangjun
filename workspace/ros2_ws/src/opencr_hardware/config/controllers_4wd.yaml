@@ -1,4 +1,4 @@
-# 컨트롤러 (Firmware 팀) — 4바퀴 (waffle_4wd)
+# 컨트롤러 (Firmware 팀) — 주행 4륜 · 팔. 관절 이름 = CAD URDF (cartridar_01.urdf) · urdf/opencr.ros2_control.xacro
 controller_manager:
   ros__parameters:
     update_rate: 100
@@ -6,9 +6,9 @@ controller_manager:
 diff_drive_controller:
   ros__parameters:
     type: diff_drive_controller/DiffDriveController
-    left_wheel_names: ["wheel_left_front_joint", "wheel_left_rear_joint"]
-    right_wheel_names: ["wheel_right_front_joint", "wheel_right_rear_joint"]
-    wheel_separation: 0.317          # 바퀴 중심 사이 ★ 4WD 미끄럼 보정은 wheel_separation_multiplier 로
+    left_wheel_names: ["wheel_fl_joint", "wheel_rl_joint"]
+    right_wheel_names: ["wheel_fr_joint", "wheel_rr_joint"]
+    wheel_separation: 0.2744         # 바퀴 중심 사이 = CAD 바퀴 y ±0.1372 ★ 실측. 4WD 미끄럼 보정은 wheel_separation_multiplier 로
     wheel_separation_multiplier: 1.0
     wheel_radius: 0.033
     odom_frame_id: odom
@@ -26,7 +26,7 @@ diff_drive_controller:
 arm_controller:
   ros__parameters:
     type: joint_trajectory_controller/JointTrajectoryController
-    joints: [joint1, joint2, joint3, joint4, joint5, gripper_roll]
+    joints: [joint1, joint2, joint3, joint4, wrist_roll_joint]   # gripper_motor_joint (6 번째 칸) 은 gripper_controller 가 맡음
     command_interfaces: [position]
     state_interfaces: [position, velocity]
     allow_partial_joints_goal: false
@@ -44,8 +44,8 @@ imu_sensor_broadcaster:
     sensor_name: imu
     frame_id: imu_link
 
-# 그리퍼 개폐 액추에이터가 정해지면 use_gripper:=true 와 함께 사용 ★
+# 그리퍼 = 팔 6 번째 칸 (ID 15). 목표 단위는 모터 각 rad (범위 -0.83 ~ 1.27, opencr.ros2_control.xacro) — 손가락 간격 m 아님 ★
 gripper_controller:
   ros__parameters:
     type: parallel_gripper_action_controller/GripperActionController
-    joint: gripper_joint
+    joint: gripper_motor_joint

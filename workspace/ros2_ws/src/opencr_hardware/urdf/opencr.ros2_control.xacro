@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!-- OpenCRHardware ros2_control 블록 (Firmware 팀).
-     바퀴 슬롯 = 펌웨어 config.h 의 WHEEL_IDS 순서 (왼쪽 앞→뒤, 오른쪽 앞→뒤).
-     팔 슬롯 0~5 = ARM_IDS 11~16 (joint1~5, gripper_roll). -->
+     바퀴 칸 0~3 = 주행 펌웨어 config.h 의 WHEEL_IDS 순서 (왼쪽 앞 · 왼쪽 뒤 · 오른쪽 앞 · 오른쪽 뒤).
+     팔 칸 0~5 = 팔 펌웨어 ARM_IDS 순서 (joint1~4 · wrist_roll_joint · gripper_motor_joint). -->
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 
   <xacro:macro name="opencr_wheel" params="name slot">
@@ -30,8 +30,9 @@
   </xacro:macro>
 
   <!-- 두 OpenCR의 순서는 고정하지 않고 STATE.role로 역할을 판별한다. -->
-  <!-- wheel_count 4 의 칸 순서 (왼앞 0 · 왼뒤 1 · 오른앞 2 · 오른뒤 3) 는 주행 펌웨어 config.h WHEEL_IDS · WHEEL_DIR 와 같다 -->
-  <xacro:macro name="opencr_ros2_control" params="name:=OpenCRSystem ports:=/dev/ttyACM0,/dev/ttyACM1 wheel_count:=4 use_gripper:=false joy_required:=true">
+  <!-- 관절 이름은 CAD URDF (cartridar_01.urdf) 와 같다. 바퀴 칸 (왼앞 0 · 왼뒤 1 · 오른앞 2 · 오른뒤 3) 은 주행 펌웨어 config.h WHEEL_IDS ·
+       WHEEL_DIR 와, 팔 칸 0~5 는 팔 펌웨어 ARM_IDS {11, 12, 13, 16, 14, 15} 순서와 같다. -->
+  <xacro:macro name="opencr_ros2_control" params="name:=OpenCRSystem ports:=/dev/ttyACM0,/dev/ttyACM1 joy_required:=true">
     <ros2_control name="${name}" type="system">
       <hardware>
         <plugin>opencr_hardware/OpenCRHardware</plugin>
@@ -47,37 +48,27 @@
         <param name="battery_error_v">10.5</param>
       </hardware>
 
-      <xacro:if value="${wheel_count == 4}">
-        <xacro:opencr_wheel name="wheel_left_front_joint"  slot="0"/>
-        <xacro:opencr_wheel name="wheel_left_rear_joint"   slot="1"/>
-        <xacro:opencr_wheel name="wheel_right_front_joint" slot="2"/>
-        <xacro:opencr_wheel name="wheel_right_rear_joint"  slot="3"/>
-      </xacro:if>
-      <xacro:if value="${wheel_count == 6}">
-        <xacro:opencr_wheel name="wheel_left_front_joint"  slot="0"/>
-        <xacro:opencr_wheel name="wheel_left_mid_joint"    slot="1"/>
-        <xacro:opencr_wheel name="wheel_left_rear_joint"   slot="2"/>
-        <xacro:opencr_wheel name="wheel_right_front_joint" slot="3"/>
-        <xacro:opencr_wheel name="wheel_right_mid_joint"   slot="4"/>
-        <xacro:opencr_wheel name="wheel_right_rear_joint"  slot="5"/>
-      </xacro:if>
+      <xacro:opencr_wheel name="wheel_fl_joint" slot="0"/>
+      <xacro:opencr_wheel name="wheel_rl_joint" slot="1"/>
+      <xacro:opencr_wheel name="wheel_fr_joint" slot="2"/>
+      <xacro:opencr_wheel name="wheel_rr_joint" slot="3"/>
 
-      <!-- 관절 한계 (rad) — manipulator.yaml 의 joint_limits 와 맞춤 ★ 실측 -->
-      <xacro:opencr_arm_joint name="joint1"       slot="0" lower="-2.8" upper="2.8"/>
-      <xacro:opencr_arm_joint name="joint2"       slot="1" lower="-1.8" upper="1.6"/>
-      <xacro:opencr_arm_joint name="joint3"       slot="2" lower="-1.6" upper="1.5"/>
-      <xacro:opencr_arm_joint name="joint4"       slot="3" lower="-1.8" upper="2.0"/>
-      <xacro:opencr_arm_joint name="joint5"       slot="4" lower="-2.8" upper="2.8"/>
-      <xacro:opencr_arm_joint name="gripper_roll" slot="5" lower="-2.8" upper="2.8"/>
-
-      <xacro:if value="${use_gripper}">
-        <!-- 그리퍼 개폐 액추에이터 미정 — 정해지면 펌웨어 GRIPPER_ID 와 함께 켬 ★ -->
-        <joint name="gripper_joint">
-          <param name="role">gripper</param>
-          <command_interface name="position"/>
-          <state_interface name="position"/>
-        </joint>
-      </xacro:if>
+      <!-- 팔 관절 한계 (rad): 호스트가 명령을 이 범위로 자른다 = URDF 한계와 펌웨어 config.h ARM_MIN/MAX_RAD 가 겹치는 구간
+           (펌웨어는 범위 밖 CMD 를 통째로 거부하므로 넘으면 안 됨 - test_robot_description 이 확인).
+           URDF (cartridar_01) 는 보관함 계획 값 J1 ±π · J4 위 2.164 라 joint1 · joint4 는 펌웨어 범위 (±2.8 · 2.0) 에서 잘림.
+           보관함 앞 줄 (J1 최대 2.98 · J4 최대 2.16) 을 쓰려면 펌웨어 범위 · 모터 EEPROM 위치 한계를 넓힌 뒤 (장치 쓰기, 승인) 여기도 넓힘 ★.
+           기구 간섭 (홈 자세 J1 > 137° 면 뒤 프로파일, 롤 180° 근처 J4 > 112° 면 카메라) 은 경로 계획이 피해야 함 -->
+      <xacro:opencr_arm_joint name="joint1"           slot="0" lower="-2.8"    upper="2.8"/>
+      <xacro:opencr_arm_joint name="joint2"           slot="1" lower="-1.5"    upper="1.5"/>
+      <xacro:opencr_arm_joint name="joint3"           slot="2" lower="-1.5"    upper="1.4"/>
+      <xacro:opencr_arm_joint name="joint4"           slot="3" lower="-1.7"    upper="2.0"/>
+      <xacro:opencr_arm_joint name="wrist_roll_joint" slot="4" lower="-2.8"    upper="2.8"/>
+      <!-- 6 번째 칸 = 그리퍼 개폐 모터 (ID 15, 모터 각 rad). robot.urdf.xacro 의 가상 관절 (빈 링크) 이라 다른 좌표에 영향 없음.
+           칸이 비면 호스트가 0 을 보내므로 반드시 둔다 — 명령하는 컨트롤러가 없으면 켤 때 위치를 유지.
+           범위 = 펌웨어 config.h 6 번째 칸. gripper_controller 가 이 관절 (모터 각 rad) 을 직접 명령한다.
+           손가락 (gripper_left/right_joint, m) 과의 변환은 미정 ★
+           ⚠ 그리퍼 결합이 0/4095 경계를 지나는 동안 (docs/arm_bench_test_2026-10-26.md 4-4) 은 호스트로 팔 보드를 켜지 않는다 -->
+      <xacro:opencr_arm_joint name="gripper_motor_joint" slot="5" lower="-0.83" upper="1.27"/>
 
       <sensor name="imu">
         <state_interface name="orientation.x"/>
