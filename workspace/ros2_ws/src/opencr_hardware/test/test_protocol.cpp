@@ -43,6 +43,7 @@ TEST(Protocol, CmdRoundTrip)
   ASSERT_EQ(p.type(), TYPE_CMD);
   Cmd d{};
   ASSERT_TRUE(decode_cmd(p.payload(), p.length(), d));
+  EXPECT_EQ(d.role, c.role);
   for (int i = 0; i < MAX_WHEELS; ++i) {EXPECT_FLOAT_EQ(d.wheel_vel[i], c.wheel_vel[i]);}
   for (int i = 0; i < ARM_JOINTS; ++i) {EXPECT_FLOAT_EQ(d.arm_pos[i], c.arm_pos[i]);}
   EXPECT_FLOAT_EQ(d.gripper_pos, c.gripper_pos);
@@ -83,12 +84,87 @@ TEST(Protocol, StateResyncAfterNoiseAndBadCrc)
   }
   EXPECT_EQ(ok, 1);
   EXPECT_GE(p.bad_frames(), 1u);
+  EXPECT_EQ(d.role, ROLE_WHEEL);
   EXPECT_FLOAT_EQ(d.pos[11], s.pos[11]);
   EXPECT_FLOAT_EQ(d.accel[2], 9.8f);
   EXPECT_FLOAT_EQ(d.battery_v, 11.6f);
   EXPECT_EQ(d.error, ERR_CMD_TIMEOUT);
   EXPECT_EQ(d.fw_version, PROTOCOL_VERSION);
   EXPECT_EQ(d.seq, 7);
+}
+
+TEST(Protocol, RejectsV3AndOtherLengths)
+{
+  uint8_t pl[MAX_PAYLOAD] = {};
+  Cmd c{};
+  State s{};
+  EXPECT_FALSE(decode_cmd(pl, 54, c)) << "v3 CMD (role 없음)";
+  EXPECT_FALSE(decode_state(pl, 191, s)) << "v3 STATE";
+  EXPECT_FALSE(decode_cmd(pl, CMD_PAYLOAD + 1, c));
+  EXPECT_FALSE(decode_state(pl, STATE_PAYLOAD - 1, s));
+  EXPECT_FALSE(decode_cmd(pl, STATE_PAYLOAD, c)) << "STATE 길이의 CMD";
+}
+
+TEST(Protocol, V5BitsAndVersion)
+{
+  EXPECT_EQ(PROTOCOL_VERSION, 5);
+  EXPECT_EQ(FLAG_REARM, 0x08);
+  EXPECT_EQ(ERR_HOLD, 0x40);
+  EXPECT_EQ(ERR_FAULT, 0x80);
+  const uint8_t flags[] = {FLAG_TORQUE_ON, FLAG_ESTOP, FLAG_GRIPPER_VALID, FLAG_REARM};
+  const uint8_t errs[] = {ERR_SYNCREAD, ERR_CMD_TIMEOUT, ERR_HW_ESTOP, ERR_MOTOR_HW, ERR_MOTOR_CONFIG,
+    ERR_ROLE_MISMATCH, ERR_HOLD, ERR_FAULT};
+  uint8_t seen = 0;
+  for (uint8_t f : flags) {EXPECT_EQ(seen & f, 0) << "flag 비트 겹침"; seen |= f;}
+  seen = 0;
+  for (uint8_t e : errs) {EXPECT_EQ(seen & e, 0) << "error 비트 겹침"; seen |= e;}
+  EXPECT_EQ(seen, 0xFF) << "error 바이트 8비트 모두 사용";
+}
+
+// 필드 오프셋 고정 (v4 · v5 공통) — 펌웨어 · 호스트가 같은 헤더라도 배치가 바뀌면 여기서 걸린다
+TEST(Protocol, GoldenOffsets)
+{
+  Cmd c{};
+  c.role = ROLE_ARM;
+  c.wheel_vel[0] = 1.0f;     // 0x3F800000
+  c.arm_pos[0] = -2.0f;      // 0xC0000000
+  c.gripper_pos = 0.5f;      // 0x3F000000
+  c.flags = 0xA5;
+  c.seq = 0x5A;
+  uint8_t f[MAX_FRAME];
+  ASSERT_EQ(encode_cmd(c, f), 61u);
+  EXPECT_EQ(f[0], 0xFF);
+  EXPECT_EQ(f[1], 0xFD);
+  EXPECT_EQ(f[2], TYPE_CMD);
+  EXPECT_EQ(f[3], 55);
+  const uint8_t * pl = f + 4;
+  EXPECT_EQ(pl[0], ROLE_ARM);
+  EXPECT_EQ(pl[1 + 3], 0x3F);           // wheel_vel[0] 최상위 바이트 (LE)
+  EXPECT_EQ(pl[25 + 3], 0xC0);          // arm_pos[0]
+  EXPECT_EQ(pl[49 + 3], 0x3F);          // gripper_pos
+  EXPECT_EQ(pl[53], 0xA5);              // flags
+  EXPECT_EQ(pl[54], 0x5A);              // seq
+  const uint16_t crc = crc16(f, 4 + 55);
+  EXPECT_EQ(f[59], crc & 0xFF);
+  EXPECT_EQ(f[60], crc >> 8);
+
+  State s{};
+  s.role = ROLE_WHEEL;
+  s.pos[0] = 1.0f;
+  s.quat[0] = -2.0f;
+  s.battery_v = 0.5f;
+  s.error = 0xC3;
+  s.fw_version = PROTOCOL_VERSION;
+  s.seq = 0x77;
+  ASSERT_EQ(encode_state(s, f), 198u);
+  EXPECT_EQ(f[3], 192);
+  EXPECT_EQ(pl[0], ROLE_WHEEL);
+  EXPECT_EQ(pl[1 + 3], 0x3F);           // pos[0]
+  EXPECT_EQ(pl[145 + 3], 0xC0);         // quat[0]
+  EXPECT_EQ(pl[185 + 3], 0x3F);         // battery_v
+  EXPECT_EQ(pl[189], 0xC3);             // error
+  EXPECT_EQ(pl[190], PROTOCOL_VERSION); // fw_version
+  EXPECT_EQ(pl[191], 0x77);             // seq
 }
 
 TEST(Protocol, FirmwareCopyIsIdentical)

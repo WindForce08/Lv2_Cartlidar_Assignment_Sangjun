@@ -22,6 +22,7 @@
 
 #define CONTROL_PERIOD_US 10000            // 100 Hz
 #define CMD_TIMEOUT_MS    200              // 이 시간 동안 CMD 없으면 바퀴 0 · 팔 위치 유지
+#define ARM_TORQUE_OFF_CMDS 50             // 팔 토크 OFF: TORQUE_ON 없는 정상 CMD 연속 수 + HOLD (100 Hz 면 0.5 s, D5-4 임시값) ★
 #define HW_ERR_POLL_MS    50               // 모터 하나씩 돌아가며 Hardware Error Status 확인
 #define BUS_WATCHDOG_UNIT 25               // Bus Watchdog 25 × 20 ms = 500 ms — OpenCR 루프가 멈추면 모터가 스스로 정지
                                            // (Xmen opencr_control.ino 와 같은 값, 0 이면 끔)
@@ -37,11 +38,14 @@ static const uint16_t WHEEL_MODEL = 1030;  // 부팅 점검: 바퀴 XM430-W210 (
 
 // ---- 팔 (Position 모드) ----
 #define ARM_COUNT         6                // joint1~5 + gripper_roll
-static const uint8_t ARM_IDS[ARM_COUNT]     = {11, 12, 13, 14, 15, 16};
-static const float   ARM_MIN_RAD[ARM_COUNT] = {-2.8f, -1.8f, -1.6f, -1.8f, -2.8f, -2.8f};   // URDF 와 같게 ★
-static const float   ARM_MAX_RAD[ARM_COUNT] = { 2.8f,  1.6f,  1.5f,  2.0f,  2.8f,  2.8f};
+// 벤치 임시 매핑 (2026-10-26 실물 확인): joint4 = ID 16, joint5 = ID 14, 6 번째 칸 = ID 15.
+//   실물의 6 번째 모터는 gripper_roll 이 아니라 그리퍼 개폐 (닫힘 tick 1440 = -0.93 rad, 열림 2945 = +1.38 rad).
+//   규격 (interfaces.md v4 · URDF) 은 gripper_roll 그대로 — 팀 확인 전까지 벤치 시험용 ★
+static const uint8_t ARM_IDS[ARM_COUNT]     = {11, 12, 13, 16, 14, 15};
+static const float   ARM_MIN_RAD[ARM_COUNT] = {-2.8f, -1.8f, -1.6f, -1.8f, -2.8f, -0.83f};   // URDF 와 같게 ★ (6 번째: 그리퍼 끝에서 0.1 rad 안쪽)
+static const float   ARM_MAX_RAD[ARM_COUNT] = { 2.8f,  1.6f,  1.5f,  2.0f,  2.8f,  1.27f};
 static const int8_t  ARM_DIR[ARM_COUNT]     = {+1, +1, +1, +1, +1, +1};                    // ★
-static const uint16_t ARM_MODEL = 1030;    // XM430-W210
+static const uint16_t ARM_MODEL = 1020;    // XM430-W350 (2026-10-26 실물 확인: 팔 모터 6대 모두 W350). W210 이면 1030
 
 // ---- 그리퍼 개폐 (미정) ----
 #define GRIPPER_ID        0                // 0 = 없음. 정해지면 ID 와 아래 변환을 맞춤 ★

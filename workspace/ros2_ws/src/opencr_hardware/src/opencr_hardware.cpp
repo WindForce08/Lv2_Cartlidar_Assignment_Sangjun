@@ -47,6 +47,10 @@ hi::CallbackReturn OpenCRHardware::on_init(const hi::HardwareComponentInterfaceP
   reset_button_ = std::stoi(param_or(hw, "reset_button", "7"));
   battery_warn_v_ = std::stod(param_or(hw, "battery_warn_v", "11.1"));
   battery_error_v_ = std::stod(param_or(hw, "battery_error_v", "10.5"));
+  listen_only_ = param_or(hw, "listen_only", "false") == "true";
+  auto_rearm_ = param_or(hw, "auto_rearm", "false") == "true";
+  if (listen_only_) {RCLCPP_WARN(get_logger(), "listen_only: CMD 를 보내지 않음 (STATE 수신만 확인)");}
+  if (auto_rearm_) {RCLCPP_WARN(get_logger(), "auto_rearm: 리셋 버튼 없이 REARM — 벤치 시험 전용");}
 
   // 관절 ↔ 패킷 슬롯: <param name="role">wheel|arm|gripper</param> <param name="slot">N</param>
   std::vector<bool> wheel_used(opencr_proto::MAX_WHEELS, false), arm_used(opencr_proto::ARM_JOINTS, false);
@@ -76,6 +80,10 @@ hi::CallbackReturn OpenCRHardware::on_init(const hi::HardwareComponentInterfaceP
         RCLCPP_FATAL(get_logger(), "팔 관절 %s 는 position 명령 하나만 가져야 함", j.name.c_str());
         return CallbackReturn::ERROR;
       }
+      // URDF command_interface min/max — 펌웨어는 범위 밖 CMD 를 통째로 거부하므로 보내기 전에 자른다
+      const auto & ci = j.command_interfaces[0];
+      if (!ci.min.empty()) {m.lo = std::stod(ci.min);}
+      if (!ci.max.empty()) {m.hi = std::stod(ci.max);}
     } else if (role == "gripper") {
       m.role = Role::GRIPPER;
       m.slot = 0;
@@ -181,19 +189,22 @@ void OpenCRHardware::publish_diagnostics(bool force)
   add("link", link ? DiagnosticStatus::OK : DiagnosticStatus::ERROR, link ? "정상" : "STATE 무수신",
     {{"bad_frames", std::to_string(bad_frames_.load())}, {"ports", port_}});
   const bool motor_bad = err & (opencr_proto::ERR_MOTOR_HW | opencr_proto::ERR_SYNCREAD |
-      opencr_proto::ERR_MOTOR_CONFIG | opencr_proto::ERR_ROLE_MISMATCH);
+      opencr_proto::ERR_MOTOR_CONFIG | opencr_proto::ERR_ROLE_MISMATCH | opencr_proto::ERR_FAULT);
   add("motors", motor_bad ? DiagnosticStatus::ERROR : DiagnosticStatus::OK,
     (err & opencr_proto::ERR_MOTOR_CONFIG) ? "부팅 점검 실패 (응답 · 모델 · Homing Offset)" :
+    (err & opencr_proto::ERR_FAULT) ? "펌웨어 FAULT" :
     (err & opencr_proto::ERR_MOTOR_HW) ? "모터 Hardware Error" :
     (err & opencr_proto::ERR_ROLE_MISMATCH) ? "CMD 역할 불일치" :
     (err & opencr_proto::ERR_SYNCREAD) ? "SyncRead 응답 부족" : "정상",
-    {{"error_bits", std::to_string(err)}, {"fw_version", std::to_string(fw_version_.load())}});
+    {{"error_bits", std::to_string(err)}, {"fw_version", std::to_string(fw_version_.load())},
+      {"arm_hold", (err & opencr_proto::ERR_HOLD) ? "1" : "0"}});
   uint8_t bl = DiagnosticStatus::OK;
   if (link && bat < battery_error_v_) {bl = DiagnosticStatus::ERROR;} else if (link && bat < battery_warn_v_) {bl = DiagnosticStatus::WARN;}
   char vb[16];
   std::snprintf(vb, sizeof(vb), "%.2f", bat);
   add("battery", bl, bl == DiagnosticStatus::OK ? "정상" : (bl == DiagnosticStatus::WARN ? "전압 낮음" : "전압 위험"), {{"voltage", vb}});
-  static const char * reasons[] = {"", "시작 — 리셋 버튼 필요", "OpenCR 링크 끊김", "물리 E-stop 스위치", "조이스틱 E-stop 버튼", "조이스틱 무수신"};
+  static const char * reasons[] = {"", "시작 — 리셋 버튼 필요", "OpenCR 링크 끊김", "물리 E-stop 스위치", "조이스틱 E-stop 버튼", "조이스틱 무수신",
+    "OpenCR 팔 HOLD — 리셋 버튼으로 REARM"};
   const int rc = estop_reason_code_.load();
   add("estop", estop_.load() ? DiagnosticStatus::WARN : DiagnosticStatus::OK, estop_.load() ? std::string("잠김: ") + reasons[rc] : "해제");
 
@@ -256,7 +267,7 @@ bool OpenCRHardware::roles_ready() const
 void OpenCRHardware::refresh_aggregate_state()
 {
   opencr_proto::State merged{};
-  bool wheel = false, arm = false;
+  bool wheel = false, arm = false, version_mismatch = false;
   for (const auto & link : links_) {
     if (!link->have_state) {continue;}
     const auto & s = link->state;
@@ -277,10 +288,13 @@ void OpenCRHardware::refresh_aggregate_state()
       }
     }
     merged.error |= s.error;
-    if (s.fw_version != opencr_proto::PROTOCOL_VERSION) {merged.fw_version = s.fw_version;}
+    if (s.fw_version != opencr_proto::PROTOCOL_VERSION) {
+      merged.fw_version = s.fw_version;
+      version_mismatch = true;
+    }
   }
   have_state_ = wheel && arm;
-  if (have_state_) {merged.fw_version = opencr_proto::PROTOCOL_VERSION;}
+  if (have_state_ && !version_mismatch) {merged.fw_version = opencr_proto::PROTOCOL_VERSION;}   // 불일치는 덮어쓰지 않음
   latest_ = merged;
 }
 
@@ -289,9 +303,16 @@ bool OpenCRHardware::wait_first_state(double timeout_s)
   const auto t0 = steady_.now();
   while ((steady_.now() - t0).seconds() < timeout_s) {
     if (!poll_serial()) {return false;}
-    if (roles_ready()) {
+    // 두 보드가 이전 호스트 세션의 명령을 놓을 때까지 (ERR_CMD_TIMEOUT) 기다린다.
+    // 펌웨어는 seq 가 뒤로 간 CMD 를 오래된 명령으로 버리므로, 무수신이 되어 seq 기준이 지워져야 새 세션의 seq 0 부터 받는다
+    const bool idle = std::all_of(links_.begin(), links_.end(), [](const std::unique_ptr<BoardLink> & l) {
+        return l->have_state && (l->state.error & opencr_proto::ERR_CMD_TIMEOUT);
+      });
+    if (roles_ready() && idle) {
+      // 활성화 중에는 CMD 를 보내지 않는다 (D5-2) — 토크가 켜져 있던 팔이 호스트 재시작으로 처지지 않게.
+      // 첫 CMD 는 write() 의 TORQUE_ON (잠김이면 + ESTOP). 팔은 REARM 까지 현재 위치에서 HOLD
       have_state_ = true;
-      return send_cmd(false);   // 역할이 확인된 두 보드에 토크 OFF 명령
+      return true;
     }
     rclcpp::sleep_for(std::chrono::milliseconds(10));
   }
@@ -306,7 +327,12 @@ hi::CallbackReturn OpenCRHardware::on_activate(const rclcpp_lifecycle::State &)
     return CallbackReturn::ERROR;
   }
   if (!wait_first_state(first_state_timeout_s_)) {
-    RCLCPP_ERROR(get_logger(), "%.1f s 안에 WHEEL·ARM 역할 STATE를 모두 받지 못함", first_state_timeout_s_);
+    if (roles_ready()) {
+      RCLCPP_ERROR(get_logger(), "%.1f s 안에 두 보드가 무수신 상태(ERR_CMD_TIMEOUT)가 되지 않음 — 다른 프로그램이 CMD 를 보내는지 확인",
+        first_state_timeout_s_);
+    } else {
+      RCLCPP_ERROR(get_logger(), "%.1f s 안에 WHEEL·ARM 역할 STATE를 모두 받지 못함", first_state_timeout_s_);
+    }
     return CallbackReturn::ERROR;
   }
   // 펌웨어 버전 확인 — 다르면 패킷 해석이 어긋나므로 명령을 보내지 않음
@@ -316,8 +342,12 @@ hi::CallbackReturn OpenCRHardware::on_activate(const rclcpp_lifecycle::State &)
     return CallbackReturn::ERROR;
   }
   if (latest_.error & opencr_proto::ERR_MOTOR_CONFIG) {
-    RCLCPP_ERROR(get_logger(), "OpenCR 부팅 점검 실패 (모터 응답 · 모델 · Homing Offset) — Dynamixel Wizard 로 확인");
-    return CallbackReturn::ERROR;
+    if (!listen_only_) {
+      RCLCPP_ERROR(get_logger(), "OpenCR 부팅 점검 실패 (모터 응답 · 모델 · Homing Offset) — Dynamixel Wizard 로 확인");
+      return CallbackReturn::ERROR;
+    }
+    // CMD 를 보내지 않으므로 모터 없이 연결한 보드도 STATE 수신 확인용으로 활성화한다
+    RCLCPP_WARN(get_logger(), "listen_only: 부팅 점검 실패 보드 (모터 없음 등) — STATE 수신만 확인");
   }
   apply_state_to_interfaces();
   // 팔 명령 초기값 = 현재 위치 (토크 ON 순간 튀지 않게), 바퀴 = 0
@@ -326,7 +356,12 @@ hi::CallbackReturn OpenCRHardware::on_activate(const rclcpp_lifecycle::State &)
     if (j.role == Role::WHEEL) {
       set_command(cmd_if, 0.0);
     } else if (j.role == Role::ARM) {
-      set_command(cmd_if, static_cast<double>(latest_.pos[opencr_proto::MAX_WHEELS + j.slot]));
+      const double q = latest_.pos[opencr_proto::MAX_WHEELS + j.slot];
+      if (q < j.lo || q > j.hi) {
+        RCLCPP_WARN(get_logger(), "%s 현재 위치 %.3f rad 가 명령 한계 [%.3f, %.3f] 밖 — 한계로 자른 값을 초기 명령으로",
+          j.name.c_str(), q, j.lo, j.hi);
+      }
+      set_command(cmd_if, std::clamp(q, j.lo, j.hi));
     } else {
       set_command(cmd_if, 0.0);   // 그리퍼 피드백 없음 — 0(열림 기준)에서 시작 ★
     }
@@ -383,6 +418,10 @@ void OpenCRHardware::update_estop()
   in.reset_button = joy_reset_btn_.load();
   in.physical_pressed = latest_.error & opencr_proto::ERR_HW_ESTOP;
   in.link_ok = link_ok_.load();
+  // 팔 HOLD 상승 (무수신 · ESTOP · 토크 ON) → 잠금. /e_stop 으로 manipulator 가 자세를 멈추고 운용자가 리셋한다
+  const bool arm_hold = latest_.error & opencr_proto::ERR_HOLD;
+  in.trip = arm_hold && !prev_arm_hold_;
+  prev_arm_hold_ = arm_hold;
   const bool was = estop_.load();
   const bool now_latched = latch_.update(in);
   estop_.store(now_latched);
@@ -390,9 +429,12 @@ void OpenCRHardware::update_estop()
     const std::string & r = latch_.reason();
     estop_reason_code_.store(!now_latched ? 0 : r.find("시작") != std::string::npos ? 1 :
       r.find("링크") != std::string::npos ? 2 : r.find("물리") != std::string::npos ? 3 :
-      r.find("버튼") != std::string::npos ? 4 : 5);
+      r.find("버튼") != std::string::npos ? 4 : r.find("HOLD") != std::string::npos ? 6 : 5);
     RCLCPP_WARN(get_logger(), "E-stop %s %s", now_latched ? "잠김:" : "해제", r.c_str());
   }
+  const bool request = rearm_request(was, now_latched, in.reset_button, prev_reset_btn_, auto_rearm_);
+  prev_reset_btn_ = in.reset_button;
+  rearm_flag_ = rearm_.update(now_latched, request, arm_hold, latest_.error & opencr_proto::ERR_FAULT);
 }
 
 return_type OpenCRHardware::read(const rclcpp::Time &, const rclcpp::Duration &)
@@ -402,6 +444,7 @@ return_type OpenCRHardware::read(const rclcpp::Time &, const rclcpp::Duration &)
   bool wheel_fresh = false, arm_fresh = false;
   for (const auto & link : links_) {
     if (!link->have_state || (now - link->last_state_time).seconds() > comm_timeout_s_) {continue;}
+    if (link->state.fw_version != opencr_proto::PROTOCOL_VERSION) {continue;}   // 운용 중 버전이 바뀐 보드 = 링크 오류
     if (link->state.role == opencr_proto::ROLE_WHEEL) {wheel_fresh = true;}
     else if (link->state.role == opencr_proto::ROLE_ARM) {arm_fresh = true;}
   }
@@ -419,10 +462,12 @@ return_type OpenCRHardware::read(const rclcpp::Time &, const rclcpp::Duration &)
   battery_v_.store(latest_.battery_v);
   if (latest_.error != last_error_) {
     if (latest_.error) {
-      RCLCPP_WARN(get_logger(), "OpenCR 오류 비트 0x%02X (SyncRead 누락 %d · 명령 타임아웃 %d · 물리 E-stop %d · 모터 HW %d · 역할 불일치 %d)",
+      RCLCPP_WARN(get_logger(), "OpenCR 오류 비트 0x%02X (SyncRead 누락 %d · 명령 타임아웃 %d · 물리 E-stop %d · 모터 HW %d · 역할 불일치 %d"
+        " · 팔 HOLD %d · FAULT %d)",
         latest_.error, !!(latest_.error & opencr_proto::ERR_SYNCREAD),
         !!(latest_.error & opencr_proto::ERR_CMD_TIMEOUT), !!(latest_.error & opencr_proto::ERR_HW_ESTOP),
-        !!(latest_.error & opencr_proto::ERR_MOTOR_HW), !!(latest_.error & opencr_proto::ERR_ROLE_MISMATCH));
+        !!(latest_.error & opencr_proto::ERR_MOTOR_HW), !!(latest_.error & opencr_proto::ERR_ROLE_MISMATCH),
+        !!(latest_.error & opencr_proto::ERR_HOLD), !!(latest_.error & opencr_proto::ERR_FAULT));
     }
     last_error_ = latest_.error;
   }
@@ -432,6 +477,7 @@ return_type OpenCRHardware::read(const rclcpp::Time &, const rclcpp::Duration &)
 
 bool OpenCRHardware::send_cmd(bool torque_on)
 {
+  if (listen_only_) {return true;}   // 통신 확인 전용: 어떤 CMD 도 보내지 않음
   bool wheel_sent = false, arm_sent = false, ok = true;
   for (const auto & link : links_) {
     if (!link->have_state) {continue;}
@@ -454,13 +500,15 @@ bool OpenCRHardware::send_cmd_for_role(uint8_t role, bool torque_on)
       c.wheel_vel[j.slot] = std::isfinite(v) ? static_cast<float>(v) : 0.0f;
     } else if (role == opencr_proto::ROLE_ARM && j.role == Role::ARM) {
       const double p = get_command<double>(j.name + "/" + hi::HW_IF_POSITION);
-      c.arm_pos[j.slot] = static_cast<float>(std::isfinite(p) ? p : latest_.pos[opencr_proto::MAX_WHEELS + j.slot]);
+      const double q = std::isfinite(p) ? p : latest_.pos[opencr_proto::MAX_WHEELS + j.slot];
+      c.arm_pos[j.slot] = static_cast<float>(std::clamp(q, j.lo, j.hi));   // 펌웨어는 범위 밖이면 CMD 전체를 거부
     } else if (role == opencr_proto::ROLE_ARM && j.role == Role::GRIPPER) {
       const double g = get_command<double>(j.name + "/" + hi::HW_IF_POSITION);
       if (std::isfinite(g)) {c.gripper_pos = static_cast<float>(g); c.flags |= opencr_proto::FLAG_GRIPPER_VALID;}
     }
   }
   if (torque_on) {c.flags |= opencr_proto::FLAG_TORQUE_ON;}
+  if (role == opencr_proto::ROLE_ARM && rearm_flag_) {c.flags |= opencr_proto::FLAG_REARM;}
   if (estop_.load() || !link_ok_.load()) {
     c.flags |= opencr_proto::FLAG_ESTOP;
     for (float & w : c.wheel_vel) {w = 0.0f;}

@@ -11,6 +11,7 @@
 //   fw_version = PROTOCOL_VERSION — 호스트는 다르면 활성화를 거부 (Xmen 의 펌웨어 버전 확인과 같은 목적)
 //   role = ROLE_WHEEL(1) 또는 ROLE_ARM(2). 각 OpenCR은 자기 역할의 배열 칸만 채우거나 적용한다.
 //   관절 순서(12): 바퀴 슬롯 0~5 → 0~5, 팔 슬롯 0~5 → 6~11. 쓰지 않는 칸은 0.
+//   v5 = v4 와 길이 · 오프셋이 같고 FLAG_REARM · ERR_HOLD · ERR_FAULT 비트만 추가. 버전 값으로만 구분된다.
 #ifndef OPENCR_PROTOCOL_H_
 #define OPENCR_PROTOCOL_H_
 
@@ -25,7 +26,7 @@ static const uint8_t HDR0 = 0xFF;
 static const uint8_t HDR1 = 0xFD;
 static const uint8_t TYPE_CMD = 0x01;
 static const uint8_t TYPE_STATE = 0x81;
-static const uint8_t PROTOCOL_VERSION = 4;   // 역할 필드 추가: v3와 호환되지 않음
+static const uint8_t PROTOCOL_VERSION = 5;   // v4: 역할 필드 추가 (v3 와 길이가 다름). v5: REARM · HOLD · FAULT 비트
 
 // 보드 역할은 물리 USB 포트 번호와 무관하게 프레임 안에서 확인한다.
 static const uint8_t ROLE_WHEEL = 1;
@@ -39,6 +40,7 @@ static const int STATE_JOINTS = MAX_WHEELS + ARM_JOINTS;
 static const uint8_t FLAG_TORQUE_ON = 0x01;
 static const uint8_t FLAG_ESTOP = 0x02;
 static const uint8_t FLAG_GRIPPER_VALID = 0x04;   // 그리퍼 개폐 액추에이터가 정해지면 사용
+static const uint8_t FLAG_REARM = 0x08;   // 0→1 상승 에지에서만 HOLD → ACTIVE 재활성화 요청 (계속 1 이면 한 번만)
 
 // STATE error bits
 static const uint8_t ERR_SYNCREAD = 0x01;   // SyncRead 응답 부족
@@ -47,6 +49,8 @@ static const uint8_t ERR_HW_ESTOP = 0x04;   // 물리 E-stop 눌림
 static const uint8_t ERR_MOTOR_HW = 0x08;   // 모터 Hardware Error Status ≠ 0
 static const uint8_t ERR_MOTOR_CONFIG = 0x10;   // 부팅 점검 실패: 응답 없음 · 모델 다름 · Homing Offset ≠ 0
 static const uint8_t ERR_ROLE_MISMATCH = 0x20;  // 호스트 CMD의 역할이 이 보드와 다름
+static const uint8_t ERR_HOLD = 0x40;   // 팔이 유지 목표를 붙잡고 새 목표를 받지 않는 중 — REARM 상승 에지 필요
+static const uint8_t ERR_FAULT = 0x80;  // 래치된 오류 (현재: 부팅 점검 실패) — 토크를 켜지 않고 재부팅으로만 해제
 
 static const size_t CMD_PAYLOAD = (MAX_WHEELS + ARM_JOINTS + 1) * 4 + 3;            // role + values + flags + seq = 55
 static const size_t STATE_PAYLOAD = (STATE_JOINTS * 3 + 4 + 3 + 3 + 1) * 4 + 4;     // role + error + version + seq = 192
