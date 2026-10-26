@@ -1,5 +1,5 @@
 // POSIX termios 시리얼 포트 (USB CDC). 비차단 읽기 · 원시 모드 · 독점 열기.
-//   독점(TIOCEXCL + flock): 다른 프로세스가 /dev/opencr 를 같이 열면 패킷이 섞인다 (Xmen control.py exclusive=True 와 같은 이유)
+//   독점(TIOCEXCL + flock): 다른 프로세스가 같은 OpenCR 포트를 열면 패킷이 섞인다 (Xmen control.py exclusive=True 와 같은 이유)
 #pragma once
 
 #include <fcntl.h>
