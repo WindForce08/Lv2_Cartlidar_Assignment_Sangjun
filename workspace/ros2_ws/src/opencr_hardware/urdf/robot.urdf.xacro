@@ -3,7 +3,7 @@
      링크 위치 · 관절 원점은 값이 확정되지 않아 ★ 표시한 자리값이다 (Perception 팀이 센서 장착 위치 제공).
      형상(visual/collision)은 넣지 않았다. waffle_4wd 메시를 쓰려면 base_link 에 visual 을 추가한다. -->
 <robot name="puckbot" xmlns:xacro="http://www.ros.org/wiki/xacro">
-  <xacro:arg name="wheel_count" default="6"/>
+  <xacro:arg name="wheel_count" default="4"/>   <!-- 주행 펌웨어 WHEEL_COUNT 와 같게 (2026-10-26 가운데 2개 제거) -->
   <xacro:arg name="use_gripper" default="false"/>
   <xacro:arg name="ports" default="/dev/ttyACM0,/dev/ttyACM1"/>
   <xacro:arg name="joy_required" default="true"/>

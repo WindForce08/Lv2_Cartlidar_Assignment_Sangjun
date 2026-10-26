@@ -1,9 +1,9 @@
 # Lv2_Cartlidar_Assignment
 
-퍽 운반 로봇 (6륜 · 매니퓰레이터 · LiDAR · D435 × 2 · Arducam) — Perception · Controller · Firmware. ROS 2 Lyrical · C++17 component.
+퍽 운반 로봇 (4륜 · 매니퓰레이터 · LiDAR · D435 × 2 · Arducam) — Perception · Controller · Firmware. ROS 2 Lyrical · C++17 component.
 
 - 노드 설계 기준: [workspace/docs/robot_nodes.html](workspace/docs/robot_nodes.html) (4륜, XM430 ID 1~4)
-- 통신 정의: [workspace/docs/interfaces.md](workspace/docs/interfaces.md), [workspace/docs/opencr_dual_board_v4.md](workspace/docs/opencr_dual_board_v4.md)
+- 통신 정의: [workspace/docs/interfaces.md](workspace/docs/interfaces.md) (OpenCR 절은 v5 제안 — [변경 요청](workspace/docs/opencr_v5_change_request.md), 승인 대기)
 - 설계 대비 검토 · 개선: [workspace/docs/review_robot_nodes.md](workspace/docs/review_robot_nodes.md)
 
 ## 패키지 (`workspace/ros2_ws/src`)
@@ -29,7 +29,7 @@ colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release
 
 선택 의존성은 있으면 켜지고, 없으면 경고만 내고 빌드된다: librealsense2 (없으면 D435 검색 모드 거부), TensorRT (없으면 HSV 색 검출), ONNX Runtime (없으면 `skill_enabled:=false`).
 
-펌웨어는 Arduino IDE 로 `opencr_firmware/opencr_firmware.ino` 를 각각 바퀴·팔 역할로 빌드한다. `config.h`에서 `OPENCR_BOARD_ROLE=1`은 바퀴, `=2`는 팔이다. `opencr_protocol.h`는 `opencr_hardware/include/.../opencr_protocol.hpp`와 같아야 한다.
+펌웨어는 OpenCR 2대 (주행 · 팔) 에 역할별로 따로 빌드해 올린다: `opencr_firmware/tools/build_firmware.sh wheel|arm` (설명: [opencr_firmware/README.md](workspace/ros2_ws/src/opencr_firmware/README.md)). `opencr_protocol.h`는 `opencr_hardware/include/.../opencr_protocol.hpp`와 같아야 한다.
 
 ## 실행
 

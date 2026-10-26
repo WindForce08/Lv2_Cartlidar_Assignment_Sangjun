@@ -1,6 +1,8 @@
 // opencr_firmware.ino — OpenCR 보드 (Firmware 팀)
-// Jetson(opencr_hardware) ↔ USB CDC ↔ role별 OpenCR ↔ RS-485 1 Mbps ↔ 해당 Dynamixel 6개
-// OPENCR_BOARD_ROLE=1: 바퀴 ID 1~6 / Velocity Mode. =2: 팔 ID 11~16 / Position Mode.
+// Jetson(opencr_hardware) ↔ USB CDC ↔ 역할별 OpenCR ↔ RS-485 1 Mbps ↔ 해당 Dynamixel
+// 같은 소스를 역할별로 따로 빌드한다 (README.md, tools/build_firmware.sh wheel|arm):
+//   OPENCR_BOARD_ROLE=1  주행 보드: 바퀴 ID 1~4 / Velocity Mode / IMU · 배터리
+//   OPENCR_BOARD_ROLE=2  팔 보드:   팔 ID 11~16 / Position Mode
 //
 // loop (100 Hz):
 //   receiveHost()  헤더 · 길이 · CRC 검증 후 CMD 를 safety_core 에 넘김 (역할 · 유한값 · 팔 범위 · seq 검사)
@@ -11,8 +13,17 @@
 //   sendState()    상태 + IMU + 배터리 전압 + 오류 · HOLD · FAULT 비트
 //
 // 부팅 점검 (Xmen opencr_control.ino prepareAxis 참고): ping · 모델 번호 · Homing Offset 0 · Return Delay 0
-//   하나라도 어긋나면 ERR_MOTOR_CONFIG · ERR_FAULT → 호스트가 활성화를 거부. 토크 ON 때 Bus Watchdog 500 ms 를 켬.
+//   · (팔) 모터 Min/Max Position Limit 가 config 범위를 덮는지. 하나라도 어긋나면 ERR_MOTOR_CONFIG · ERR_FAULT → 호스트가 활성화를 거부. 토크 ON 때 Bus Watchdog 500 ms 를 켬.
 // 필요 라이브러리: OpenCR 보드 패키지 (Arduino IDE), Dynamixel2Arduino ≥ 0.6, OpenCR IMU (보드 패키지 내장)
+
+// 역할은 빌드 옵션으로만 정한다 (기본값 없음 — 팔 보드에 주행 펌웨어가 잘못 올라가는 것을 막음)
+#ifndef OPENCR_BOARD_ROLE
+#error "OPENCR_BOARD_ROLE 을 지정하세요: 주행 보드 = 1, 팔 보드 = 2 (tools/build_firmware.sh wheel|arm, README.md 참고)"
+#endif
+#if OPENCR_BOARD_ROLE != 1 && OPENCR_BOARD_ROLE != 2
+#error "OPENCR_BOARD_ROLE 은 1 (주행 보드) 또는 2 (팔 보드)"
+#endif
+
 #include <Dynamixel2Arduino.h>
 #include <IMU.h>
 
@@ -30,6 +41,8 @@ cIMU imu;
 // ---- 상태 ----
 static const uint8_t BOARD_ROLE = OPENCR_BOARD_ROLE;
 static const int N_MOTORS = BOARD_ROLE == opencr_proto::ROLE_WHEEL ? WHEEL_COUNT : ARM_COUNT;
+static_assert(WHEEL_COUNT <= opencr_proto::MAX_WHEELS, "바퀴 수가 패킷 바퀴 칸보다 많음");   // 남는 칸은 STATE 0
+static_assert(ARM_COUNT == opencr_proto::ARM_JOINTS, "팔 칸 수는 패킷과 같아야 함");
 static uint8_t g_ids[N_MOTORS];
 
 struct __attribute__((packed)) PresentData { int16_t current; int32_t velocity; int32_t position; };

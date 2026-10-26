@@ -76,3 +76,7 @@ core.*
 *.orig
 *.rej
 .history/
+
+# AI 도구 개인 작업 메모 (저장소에 올리지 않음, 2026-10-26)
+AGENTS.md
+codex/

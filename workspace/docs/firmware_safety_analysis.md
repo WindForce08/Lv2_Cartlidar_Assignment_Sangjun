@@ -151,6 +151,7 @@ USB 수신이 루프를 무한 대기시키지 않게, 불완전 프레임 · �
 기타:
 - 바퀴 한계 충돌: 펌웨어 `WHEEL_VEL_LIMIT_RAW = 330` → 모터 7.91 rad/s × `WHEEL_GEAR` 1.5 = 바퀴 ≈ 11.9 rad/s. diff_drive 한계 (선속도 0.34 m/s + 각속도 2.0 rad/s × 0.317/2) 동시 사용 시 ≈ 19.9 rad/s. "범위 초과 거부" 로 바꾸면 회전하며 주행하는 명령이 거부된다 (D6).
 - `wheel_count:=4` 설정 (`controllers_4wd.yaml`, xacro 4륜 슬롯) 은 6륜 고정 펌웨어의 슬롯 방향 (`WHEEL_DIR`) 과 맞지 않는다 — 범위 밖, 보고만.
+  → 2026-10-26 해결: 주행 4륜으로 바뀌어 펌웨어도 `WHEEL_COUNT 4` (ID 1~4, xacro 4륜 칸 순서와 같음), 호스트 기본 `wheel_count` 4.
 - e-Manual 기준 (실물 설정값 미확인): 모터 HW 오류 시 Shutdown 설정에 따라 해당 모터가 스스로 토크를 끈다. Bus Watchdog 만료 시 Position 모드 모터의 실제 동작은 실물로 확인해야 한다.
 
 ---

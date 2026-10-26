@@ -60,7 +60,8 @@ def _setup(context):
 
 def generate_launch_description():
     return LaunchDescription([
-        DeclareLaunchArgument('wheel_count', default_value='6', description='실물 바퀴 수 (기본 6)'),
+        DeclareLaunchArgument('wheel_count', default_value='4',
+                              description='실물 바퀴 수 (기본 4 = 주행 펌웨어 WHEEL_COUNT, 6 은 이전 6륜 구성)'),
         DeclareLaunchArgument('use_gripper', default_value='false', description='그리퍼 개폐 액추에이터 사용'),
         DeclareLaunchArgument('use_teleop', default_value='true'),
         DeclareLaunchArgument('ports', default_value='/dev/ttyACM0,/dev/ttyACM1',
