@@ -57,7 +57,7 @@ i=$(mktemp) && GIT_INDEX_FILE=$i git read-tree --empty && GIT_INDEX_FILE=$i git 
   - `feature/firmware` (origin · backup 같음, AI 메모 없는 이력): e71db83 · a57f48b (10/22 · 10/23 update) → 5b6c6c5 v5 안전 정책 · SIL · 팔 실기 →
     95eff5f 주행 4륜 · 역할별 빌드 · 문서 → 6b6dcd9 origin/dev 병합 (충돌 0) → 892e8f4 AI 메모 ignore. colcon test 77 실패 0 (병합 뒤).
     이 이력은 AI 메모를 뺀 채 다시 만든 것 — 예전 이력 (메모 포함) 은 `archive/feature-firmware-with-notes` (로컬 · backup).
-  - PR: origin `feature/firmware` → `dev`. interfaces.md 변경이 있어 **Controller 팀장 승인 뒤에만 병합**. gh CLI 없음 (웹에서 PR).
+  - **PR #6** (2026-10-26 사용자가 웹에서 올림): origin `feature/firmware` → `dev`. interfaces.md 변경이 있어 **Controller 팀장 승인 뒤에만 병합**. gh CLI 없음.
   - 팔 보드 바이너리는 커밋 전후 같음 (sha256 ab02c1cc…). xacro 미설치라 URDF 전개는 확인 못 함.
   - dev (80c3d3d) 의 mission · perception 은 이 PC 에 nav2_msgs · libzbar-dev 가 없어 빌드 안 됨 (dev 와 같은 파일).
 - 팔 실기 (PC 직결, 상세는 실기 기록): 6대 W350 · ID {11, 12, 13, 16, 14, 15} (joint4 = 16 은 사용자 지시로 13 → 16) · ARM_DIR 모두 +1 ·
@@ -68,7 +68,7 @@ i=$(mktemp) && GIT_INDEX_FILE=$i git read-tree --empty && GIT_INDEX_FILE=$i git 
   - 그리퍼 결합이 바뀌어 0/4095 경계를 지남 (닫힘 611 · 열림 −1293 누적) → 열린 상태에서 "한바퀴안" ≈ 1100 으로 다시 결합 필요.
   - 주행 자세 (시뮬 `~/GIT/FreeCAD/TeamRobot/Sim3D/sim3d.html` `poseFor('drive')` = J2 −1.4356 · J3 +1.1497 · J4 +0.8094) — 경로 확인 후 도구 `--pose drive|start`.
 - 주행 보드: 실물 미시험. 실물 작업 — 모터 ID 3 → 2 · 4 → 3 · 6 → 4 (한 대씩), `WHEEL_DIR` 실측 (바퀴 띄우고).
-- 다음: PR 승인 대기 · 게인 · A안 · 그리퍼 → 주행 자세 → Jetson 세팅 (dialout · udev · aarch64 업로드 도구 없음 · 두 보드 ros2_control 시험).
+- 다음: PR #6 승인 대기 · 게인 · A안 · 그리퍼 → 주행 자세 → Jetson 세팅 (dialout · udev · aarch64 업로드 도구 없음 · 두 보드 ros2_control 시험).
   그 밖: v5 팀 승인 요청, D3 · D4 · D6 결정, 주행용 벤치 도구 (나중에).
 - Jetson `cart11@cart11.local` (Orin Nano Super, Ubuntu 24.04 aarch64, JetPack 7.2.1). OpenCR by-id `usb-ROBOTIS_OpenCR_Virtual_ComPort_in_FS_Mode_FFFFFFFEFFFF-if00`
   (두 보드가 같음). cart11 dialout 아님 · ModemManager 동작 · OpenCR 업로드 도구가 aarch64 용으로 없음.
