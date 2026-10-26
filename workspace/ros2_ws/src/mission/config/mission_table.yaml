@@ -1,0 +1,25 @@
+# 미션표 (Mission 팀) — 공통 시작 pose(TAG_VIEW) → read_tag 뒤에 붙는다
+#   navigate <위치>            주행 + 팔 STOW (병렬)
+#   search                     STOW → OFF → SEARCH_FRONT | SEARCH_REAR, 못 찾으면 45°씩 최대 4번 회전
+#   approach <거리>            STOW → COARSE (align.coarse_distance) → READY → FINE <거리> (m, TFmini 기준, >= 0.10)
+#   pick                       SEARCH_FRONT | ARM_ALIGN 유지, grasped 확인
+#   pose <자세>                STOW · READY · PLACE · TAG_VIEW
+#   skill <drive|manipulator> <정책> [timeout] [mode=이름+이름] [fallback=단계]
+#     mode 없으면 SEARCH_FRONT+ARM_ALIGN, 숫자 불가. fallback의 공백은 ':' (예: fallback=navigate:home)
+# TODO(Mission): 위치는 지도 작성 후, 태그 ID별 단계는 문제 확정 후 정할 것
+mission_node:
+  ros__parameters:
+    locations:
+      names: [home, station_A]
+      home: [0.0, 0.0, 0.0]          # = slam_toolbox map_start_pose
+      station_A: [1.0, 0.0, 0.0]
+    missions:
+      tag_ids: [7, 12]
+      tag_7: ["navigate station_A",
+              "search",
+              "approach 0.15",
+              "skill manipulator pick_cup_v1 fallback=pick",
+              "navigate home"]
+      tag_12: ["skill drive slalom_v1 40 mode=SEARCH_FRONT fallback=navigate:station_A",
+               "pose STOW",
+               "navigate home"]

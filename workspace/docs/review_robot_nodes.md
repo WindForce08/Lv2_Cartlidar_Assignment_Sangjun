@@ -1,7 +1,7 @@
 # robot_nodes.html 대비 소스 검토 · 개선 (2026-10-22)
 
 > **저장소 통합 뒤 이름 대응 (2026-10-22)**: 이 검토는 `robot_ws` 시절 작성. 지금 패키지는
-> `robot_perception` → `perception`, `robot_control` → `control` (drive · manipulator) + `center` (mission),
+> `robot_perception` → `perception`, `robot_control` → `control` (drive · manipulator) + `center` (mission — 2026-10-25 `mission` 패키지로 교체),
 > `controller_bringup.launch.py` → `bringup/launch/bringup.launch.py`. STATE 패킷은 191 B (`fw_version` 추가).
 
 

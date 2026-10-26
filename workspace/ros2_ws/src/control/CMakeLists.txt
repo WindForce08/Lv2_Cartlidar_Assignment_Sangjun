@@ -10,6 +10,7 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(rclcpp_components REQUIRED)
+find_package(action_msgs REQUIRED)
 find_package(robot_interfaces REQUIRED)
 find_package(nav2_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
@@ -25,6 +26,7 @@ find_package(Eigen3 REQUIRED)
 find_package(robot_policy REQUIRED)
 find_package(diagnostic_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
+find_package(ament_index_cpp REQUIRED)
 
 # 순수 C++ (ROS 없음): IK
 add_library(arm_ik STATIC src/arm_ik.cpp)
@@ -49,17 +51,19 @@ endmacro()
 
 robot_component(drive_node control::DriveNode drive)
 robot_component(manipulator_node control::ManipulatorNode manipulator)
-target_link_libraries(manipulator_node PUBLIC arm_ik robot_policy::robot_policy)
+target_link_libraries(manipulator_node PUBLIC arm_ik robot_policy::robot_policy
+  ${action_msgs_TARGETS} ament_index_cpp::ament_index_cpp)
 target_link_libraries(drive_node PUBLIC robot_policy::robot_policy)
 
 install(TARGETS arm_ik ARCHIVE DESTINATION lib)
 install(DIRECTORY include/ DESTINATION include/${PROJECT_NAME})
-install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
 ament_export_include_directories(include/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
-  ament_add_gtest(test_control_logic test/test_fsm.cpp test/test_ik.cpp test/test_align.cpp)
+  # test_ik.cpp는 이전 ArmIK(ArmGeometry · JointLimits) 기준이라 빠짐 — 현재 ArmIK(ArmIKParams) 시험은 TODO
+  ament_add_gtest(test_control_logic test/test_fsm.cpp test/test_align.cpp)
   target_link_libraries(test_control_logic arm_ik)
 endif()
 

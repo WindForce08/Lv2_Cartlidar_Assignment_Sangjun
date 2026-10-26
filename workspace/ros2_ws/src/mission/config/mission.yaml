@@ -1,0 +1,51 @@
+# mission_node 설정 (Mission 팀) — 미션표는 mission_table.yaml
+# 시작 · 정지: ros2 service call /mission/start std_srvs/srv/Trigger  (조이스틱 버튼은 joy_teleop이 같은 서비스 호출)
+#             ros2 service call /mission/stop std_srvs/srv/Trigger
+# E-stop · 진단 오류로 PAUSED가 되면 리셋 후 /mission/start로 재개 (자동 재개 없음)
+# 자세 값은 manipulator가 정한다. 정렬 거리(align.coarse_distance · 미션표 approach <거리>)는 여기서 drive에 넘긴다
+mission_node:
+  ros__parameters:
+    auto_start: false            # true면 서버가 모두 준비되는 즉시 시작 (테스트용)
+
+    map_frame: map
+    base_frame: base_link
+    behavior_tree: ""            # 빈 문자열 = nav2 기본 BT
+
+    # 단계별 타임아웃 (s) · 재시도
+    timeout:
+      pose: 20.0
+      read_tag: 90.0             # 회전 탐색 포함
+      navigate: 120.0
+      search: 60.0               # STOW + 회전 탐색 포함
+      approach: 90.0             # STOW → COARSE → READY → FINE
+      pick: 60.0
+    skill:
+      default_timeout: 30.0      # skill 단계에 timeout을 안 쓰면
+      timeout_margin: 5.0        # mission 쪽 타임아웃 = skill timeout + margin
+    max_retries: 2               # 단계별 재시도 횟수 (총 시도 = 1 + max_retries), 넘으면 FAILED
+    retry_delay: 1.0             # cancel 후 재시도까지 대기 (s)
+
+    stale_timeout: 0.3           # 300ms 규칙 (계약)
+
+    tag:
+      confirm_count: 2           # 같은 tag_id 연속 N회 → 확정
+      view_wait: 2.0             # 이 시간 안에 안 보이면 회전 (s)
+      rotate_step_deg: 30.0
+      max_rotations: 11          # 30° × 11 + 처음 = 한 바퀴
+
+    search:
+      confirm_count: 3           # object_found 연속 N회 → 찾음
+      view_wait: 2.0             # 이 시간 안에 없으면 회전 (s)
+      rotate_step_deg: 45.0
+      max_rotations: 4           # 앞뒤 D435 각 ~87° → 45° × 4 = 180°면 한 바퀴
+
+    align:
+      tolerance: 0.0             # 0 = drive 기본값 (align.default_tolerance)
+      coarse_distance: 0.45      # 먼 거리 정렬 목표 (m, 범퍼 기준, >= 0.3). TODO Controller와 맞출 것
+    pick:
+      require_grasped: true      # grasped=false면 실패 → 직전 search부터 재시도
+
+    diagnostics:
+      name_prefix: "opencr/"     # 이 이름으로 시작하는 진단만 본다 (계약)
+      # TODO(Firmware): opencr_hardware의 /diagnostics 발행이 확인되면 3.0 (확인 전에는 0 = 끔)
+      timeout: 0.0
