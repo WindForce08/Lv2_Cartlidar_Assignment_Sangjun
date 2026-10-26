@@ -22,7 +22,7 @@ i=$(mktemp) && GIT_INDEX_FILE=$i git read-tree --empty && GIT_INDEX_FILE=$i git 
   - `OPENCR_BOARD_ROLE=1` 주행 보드: 바퀴 Dynamixel ID 1~4, Velocity Mode, 바퀴 칸 0~3 (칸 4 · 5 는 STATE 0) · IMU · 배터리
   - `OPENCR_BOARD_ROLE=2` 팔 보드: Dynamixel ID 11~16, Position Mode, 팔 칸 6~11
 - 호스트: `workspace/ros2_ws/src/opencr_hardware/` (ros2_control SystemInterface 플러그인). 후보 포트 2개를 열고 STATE.role 로 보드를 판별한다.
-  `wheel_count` 기본 4 (xacro · launch), `config/controllers_4wd.yaml`.
+  주행 4륜 고정 (`wheel_count` 옵션 · 6륜 설정 삭제), `config/controllers_4wd.yaml`. URDF = CAD `cartridar_01` (아래).
 - `opencr_firmware/opencr_protocol.h` 와 `opencr_hardware/include/opencr_hardware/opencr_protocol.hpp` 는 바이트 단위로 같아야 한다 (`test_protocol` 이 비교). 한쪽을 고치면 둘 다 복사한다.
 - 프로토콜: `FF FD | TYPE | LEN | PAYLOAD | CRC16-LE`, CMD 0x01 55 B · STATE 0x81 192 B, CRC-16/BUYPASS (다항식 0x8005, 초기값 0, 헤더~페이로드 끝).
   - 코드는 **v5** (2026-10-26, 사용자 결정 "전체 v5 전환"): v4 와 길이 · 오프셋 같고 CMD `FLAG_REARM 0x08`, STATE `ERR_HOLD 0x40` · `ERR_FAULT 0x80` 추가.
@@ -58,18 +58,46 @@ i=$(mktemp) && GIT_INDEX_FILE=$i git read-tree --empty && GIT_INDEX_FILE=$i git 
     95eff5f 주행 4륜 · 역할별 빌드 · 문서 → 6b6dcd9 origin/dev 병합 (충돌 0) → 892e8f4 AI 메모 ignore. colcon test 77 실패 0 (병합 뒤).
     이 이력은 AI 메모를 뺀 채 다시 만든 것 — 예전 이력 (메모 포함) 은 `archive/feature-firmware-with-notes` (로컬 · backup).
   - **PR #6** (2026-10-26 사용자가 웹에서 올림): origin `feature/firmware` → `dev`. interfaces.md 변경이 있어 **Controller 팀장 승인 뒤에만 병합**. gh CLI 없음.
-  - 팔 보드 바이너리는 커밋 전후 같음 (sha256 ab02c1cc…). xacro 미설치라 URDF 전개는 확인 못 함.
+  - 2026-10-26 밤 (사용자 지시 "backup 에만 커밋 푸쉬"): cf91a64 `feat: switch URDF to cartridar_01 CAD model` → 4cc4569 `feat: write arm position gains at boot`.
+    **backup/feature/firmware = 4cc4569, origin/feature/firmware = 892e8f4 (PR #6 에는 아직 없음)** — origin 에 올릴지는 사용자 결정.
+    colcon test 80 실패 0 (cf91a64 만 따로 79). 사용자가 작업 끝에 PC 전원을 끄라고 함 (Isaac 결과는 /tmp 가 아니라 CAD 저장소에 남김).
+  - 팔 보드 바이너리는 커밋 전후 같음 (sha256 ab02c1cc…). 그 뒤 xacro 설치 → URDF 전개는 test_robot_description 이 확인.
   - dev (80c3d3d) 의 mission · perception 은 이 PC 에 nav2_msgs · libzbar-dev 가 없어 빌드 안 됨 (dev 와 같은 파일).
 - 팔 실기 (PC 직결, 상세는 실기 기록): 6대 W350 · ID {11, 12, 13, 16, 14, 15} (joint4 = 16 은 사용자 지시로 13 → 16) · ARM_DIR 모두 +1 ·
   모터 EEPROM 위치 한계 = config 범위 (부팅 점검 `checkArmLimits` 가 확인). J1~J5 ±0.1 rad 명령 추종 확인. 보드에는 ARM 펌웨어 (sha256 ab02c1cc…) 가 올라가 있음.
 - 미결 (실기):
-  - 중력 처짐 · 래칫 (P 게인만) → 게인 개선 계획 제시함 (P↑ + 작은 I, 펌웨어 부팅 때 RAM 쓰기, config ★, 그리퍼 칸 I = 0, 안전 (a) 추천) — **승인 대기**.
+  - 중력 처짐 · 래칫 (P 게인만) → 게인 개선 **승인 (2026-10-26, 안전 (a): 벤치는 도구 감시만, 펌웨어 추종 오차 감시는 D4 와 함께 나중에)**.
+    구현 (2026-10-26 밤 커밋 · **backup 에만** 푸시, origin · PR #6 에는 없음): config `ARM_POS_P/I/D_GAIN[6]` (지금 공장값 800/0/0) ·
+    ino `writeArmGains` (부팅 때 쓰고 다시 읽음, 다르면 CONFIG · FAULT, 토크 유지 때도 씀) · SIL 대역 게인 항목 · 시험 ArmGainsWrittenAtBoot
+    (게인 쓰기 빼면 실패 확인) · 도구 `--log FILE` (STATE 마다 CSV). colcon test 78 실패 0. ARM bin sha256 6ec152b2… (주행 bin 그대로 910931b1…).
+    다음: 업로드 (공장값 그대로 — 부팅 게인 쓰기 확인) → 기준 기록 P800/I0 → 후보별 config 수정 · 업로드 · 기록 (실기 기록 6 장).
   - 시작 자세 (J1 +90° · J2 −2.083 · J3 +1.546 · J4 −1.865 rad) 가 범위 밖 → A안 (J2 최소 −2.14 · J3 최대 +1.60 · J4 최소 −1.92 ★) 선택, 그리퍼 범위 측정 후 승인 예정.
   - 그리퍼 결합이 바뀌어 0/4095 경계를 지남 (닫힘 611 · 열림 −1293 누적) → 열린 상태에서 "한바퀴안" ≈ 1100 으로 다시 결합 필요.
   - 주행 자세 (시뮬 `~/GIT/FreeCAD/TeamRobot/Sim3D/sim3d.html` `poseFor('drive')` = J2 −1.4356 · J3 +1.1497 · J4 +0.8094) — 경로 확인 후 도구 `--pose drive|start`.
+- **URDF = CAD `cartridar_01` (2026-10-26 사용자 "1안", 커밋 · backup 에만 푸시)**: CAD 저장소 `~/GIT/FreeCAD` (원격 PA-Backup, 사용자 허락으로 수정 · **커밋 안 함**).
+  - 1안 = 4륜 · 바퀴 직결 (사용자: "벨트 증속은 무시") · RealSense 브래킷 v2 (`~/GIT/FreeCAD/intel_cam_bracket v2.stl`, 받침판 10°, 등판 나사 없음) ·
+    팔 한계 = 보관함 계획 (J1 ±π, J4 위 2.164 = 손목 실제 접촉 126° − 2°). robot 이름 · 파일 `cartridar_01`.
+  - CAD: `6WD_Chassis/build_rover.py` RS 상수 v2 (trimesh 측정, v1 상수 재현으로 검증, 판 v 19.804) → `run_build.sh` 자동 검사 모두 통과 · verify 56/56.
+    v1 판 결과물은 `6WD_Chassis/archive_2026-10-22_v16/` (+ URDF 폴더). 도감 · BOM 은 v1 문구 그대로.
+    `URDF/make_urdf.py`: 변형 `cartridar_01` (`run_urdf.sh cartridar_01`) · **겉모양 메시 줄이기 (decimate) 제거** — Jetson · 바퀴 모터가 Isaac 에서 깨져 보이던 원인 (115만 삼각형).
+    6wd · 4wd URDF · Sim3D · IsaacLab 기본 USD 는 다시 만들지 않음 (v1 브래킷 · 줄인 메시 그대로).
+  - 저장소: `scripts/import_cad_urdf.py` (겉모양 뺌, D435 이름 d435_* → top_camera_front/rear_* 바꿈 = realsense camera_name) → `urdf/cartridar_01.urdf`.
+    `robot.urdf.xacro` (robot 이름 cartridar_01) = include + ros2_control + 별칭 `arm_base_link` + 가상 `gripper_motor_joint` (그리퍼 모터 각 rad, 칸 5).
+    `gripper_controller` → gripper_motor_joint 늘 켬 (use_gripper 삭제). ros2_control 자르기 = URDF ∩ 펌웨어 (J1 ±2.8 · J4 ≤ 2.0) — `test_robot_description` 이 확인.
+    colcon test 80 실패 0 (URDF 커밋만 따로 79).
+  - 알림 (변경 요청서): Controller — manipulator.yaml 관절 이름 · gripper.joint_name (rad) · arm_base_link · TFmini 는 차체 · 경로가 피할 기구 간섭 /
+    Perception — D435 35° → 10° · LDS frame_id. 미결 ★: 펌웨어 `WHEEL_GEAR 1.5` (벨트 가정) vs 직결, 보관함용 펌웨어 · EEPROM 한계 넓히기 (J1 2.98 · J4 2.16, 장치 쓰기 승인).
+  - 주의: 그리퍼 결합이 0/4095 를 지나는 동안 호스트로 팔 보드 켜지 말 것.
+- **Isaac 보관함 물리 시험 (2026-10-26)**: `~/GIT/FreeCAD/TeamRobot/IsaacLab/cartridar_01/` (README, `storage_test.py`, `run_storage_tests.sh`, 결과 `c01_*.log/json`, `img/`).
+  자기 충돌 + 접촉 센서 (팔 링크끼리는 끔 - 상자 형상이 커서 J4 115° 에서 막힘), 퍽 30 g · μ 0.5 · 손가락 400 N/m 가정 ★.
+  Sim3D 계획 그대로 (컵 높이에서 J1 을 돌려 옆으로 넣고 빼기) 는 열린 손가락이 컵 속 퍽을 쓸고 지나감 (계획 충돌 검사가 컵 속 퍽을 안 봄) ·
+  0.019 로 열면 옆 · 뒤 줄 컵 벽에 걸림 → 수정 경로 (컵 위 lift 자세로 올라가 빠지고 위에서 내려가 꺼냄, 이동 중 손가락 닫음, 놓는 폭 0.004) 로 시험.
+  결과: 수정 경로 + 처짐 없음 → 원기둥 6/6 · 접촉 0, 사각기둥 2/4 (놓을 때 기울어 끼임, 매번 다름). 지금 게인 (P 800) → 넣기 1/10 (J2 약 2° 처짐) → 게인 개선이 먼저.
+  창 시연 그림 `img/c01_window_demo_*`, 주행 `img/drive_*`, 메시 전후 `img/mesh_fix_compare.png`.
 - 주행 보드: 실물 미시험. 실물 작업 — 모터 ID 3 → 2 · 4 → 3 · 6 → 4 (한 대씩), `WHEEL_DIR` 실측 (바퀴 띄우고).
-- 다음: PR #6 승인 대기 · 게인 · A안 · 그리퍼 → 주행 자세 → Jetson 세팅 (dialout · udev · aarch64 업로드 도구 없음 · 두 보드 ros2_control 시험).
-  그 밖: v5 팀 승인 요청, D3 · D4 · D6 결정, 주행용 벤치 도구 (나중에).
+- 다음: PR #6 승인 대기 (origin 에 cartridar_01 · 게인 커밋을 올릴지 사용자 결정) · 게인 업로드 · A안 · 그리퍼 → 주행 자세 → Jetson 세팅
+  (dialout · udev · aarch64 업로드 도구 없음 · 두 보드 ros2_control 시험). 그 밖: v5 팀 승인 요청, D3 · D4 · D6 결정, 주행용 벤치 도구 (나중에),
+  WHEEL_GEAR 결정, Isaac 학습 준비 (robot_cfg 를 cartridar_01 로, 학습용 과제 환경 · 겉모양 끈 USD - 분석만 함).
 - Jetson `cart11@cart11.local` (Orin Nano Super, Ubuntu 24.04 aarch64, JetPack 7.2.1). OpenCR by-id `usb-ROBOTIS_OpenCR_Virtual_ComPort_in_FS_Mode_FFFFFFFEFFFF-if00`
   (두 보드가 같음). cart11 dialout 아님 · ModemManager 동작 · OpenCR 업로드 도구가 aarch64 용으로 없음.
 - 브랜치: `feature/firmware`
@@ -124,7 +152,8 @@ tools/build_firmware.sh wheel && tools/build_firmware.sh arm && tools/build_firm
 환경은 머신마다 다르므로 새 머신에서는 다시 확인한다 (`uname -m`, `ls /dev/ttyACM*`, `command -v arduino-cli`, `ls /opt/ros/lyrical/share | grep hardware_interface`).
 
 - 회사 노트북 (2026-10-22): x86_64 Ubuntu 24.04.5, ROS 2 lyrical. OpenCR 미연결, Arduino 도구 없음, ros2_control · xacro 미설치 → `colcon build` 의 opencr_hardware 실패.
-- 같은 노트북 (2026-10-26): 사용자가 `ros-lyrical-hardware-interface` 6.9.0 설치 → opencr_hardware 빌드 · 시험 가능. xacro · 컨트롤러 패키지는 여전히 없음.
+- 같은 노트북 (2026-10-26): 사용자가 `ros-lyrical-hardware-interface` 6.9.0 · xacro 설치 → opencr_hardware 빌드 · 시험 가능 (test_robot_description 포함). 컨트롤러 패키지는 없음.
+  Isaac Sim 6.1 / Isaac Lab 3.0: `~/pa-course/IsaacLab-6.1/.venv/bin/python` (창: `--viz kit`, 창 없이: `HEADLESS=1`), GPU RTX 5060 8 GB. FreeCAD 1.1.4 · Bambu Studio AppImage `~/Application`.
   사용자 영역 설치 (승인): arduino-cli 1.5.1 (`~/.local/opt/arduino-cli-1.5.1`), OpenCR 보드 패키지 1.5.3 (`~/.arduino15`, 툴체인 gcc 5.4 는 32비트지만 그대로 실행됨),
   Dynamixel2Arduino 0.8.2 (`~/Arduino/libraries`). sudo 는 암호 필요 — 시스템 설치는 사용자가 직접 한다.
   PC 에 dialout · udev 규칙 적용 완료 (2026-10-26). OpenCR 은 업로드 때 부트로더로 자동 전환되지 않아 Recovery Mode 필요.
