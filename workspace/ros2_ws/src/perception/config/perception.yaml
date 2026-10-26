@@ -1,54 +1,139 @@
+# perception_node 설정. ★ = 실물·현장에서 다시 확인할 값
+# 카메라 토픽: 실물은 realsense2_camera(camera_name 을 top_camera_front · top_camera_rear 로 실행)와 UVC 드라이버,
+#   시뮬레이션은 Isaac Sim 이 같은 이름으로 발행한다. frame_id 를 비우면 영상 header.frame_id 를 쓴다.
+#   realsense2_camera 의 컬러 header.frame_id 는 <camera_name>_color_optical_frame 이라 URDF(261022_2119) 이름과 같다.
 perception_node:
   ros__parameters:
-    publish_rate: 15.0          # 활성 모드에서 15 Hz 이상 (ARM_ALIGN 필수)
-    frame_max_age_s: 0.3        # 300 ms 규칙 — 이보다 오래된 프레임은 쓰지 않음
-    d435:
-      front_serial: ""          # ★ rs-enumerate-devices 로 확인 (두 대면 둘 다 필수)
-      rear_serial: ""
-      width: 640
-      height: 480
-      fps: 15
-      depth_min: 0.15
-      depth_max: 4.0
-      depth_window: 3           # 깊이 중앙값 창 반폭 (7×7)
-      white_balance: 4600.0     # K 고정 (≤0 = 자동) — 색 검출 안정
-      exposure: 0.0             # µs (≤0 = 자동) ★ 조명 보고 고정
-    arm_cam:
-      device: /dev/arm_cam
-      width: 1280
-      height: 720
-      fps: 30
-      detect_width: 640         # ARM_ALIGN 검출 해상도 (줄여서 SEARCH_FRONT | ARM_ALIGN 15 Hz 확보)
+    publish_rate: 15.0          # [Hz] 이 주기로 새 영상이 있는지 보고 결과를 낸다 (ARM_ALIGN 은 15 Hz 이상 필요)
+    frame_max_age_s: 0.3        # [s] 이보다 오래된 영상은 쓰지 않는다 (받는 쪽 300 ms 규칙과 같게)
+    image_qos: sensor_data      # sensor_data(best effort) | reliable. best effort 구독은 어느 발행자와도 연결된다
+    image_qos_depth: 2
+    cameras:
+      front:
+        color_topic: /top_camera_front/color/image_raw
+        depth_topic: /top_camera_front/aligned_depth_to_color/image_raw   # 컬러에 맞춘 깊이 (크기가 컬러와 같아야 함)
+        info_topic: /top_camera_front/color/camera_info
+        frame_id: ""            # 비우면 영상 header (top_camera_front_color_optical_frame)
+      rear:
+        color_topic: /top_camera_rear/color/image_raw
+        depth_topic: /top_camera_rear/aligned_depth_to_color/image_raw
+        info_topic: /top_camera_rear/color/camera_info
+        frame_id: ""
+      arm:
+        image_topic: /arm_camera/image_raw
+        info_topic: /arm_camera/camera_info     # 왜곡 보정·태그 자세에 쓴다. 없으면 보정 없이 태그 id 만
+        frame_id: ""            # 비우면 영상 header (URDF camera_optical_frame 으로 발행해야 함)
+    depth:
+      min_m: 0.15               # [m] 이보다 가까운 깊이는 버림
+      max_m: 4.0
+      window: 3                 # 깊이 중앙값 창 반폭 (7×7 px)
+      sync_tol_s: 0.02          # [s] 컬러와 깊이 stamp 차이 허용 (이전 모듈 2026-10-06 Pi 실측: D435 640x480 30 Hz, 미리보기 끔에서 짝 놓침 0.4 %)
+    arm:
+      detect_width: 640         # ARM_ALIGN 검출 해상도 (줄여서 15 Hz 확보, 오차는 정규화 값이라 해상도와 무관)
     detector:
       type: auto                # auto | tensorrt | color
-      engine_path: ""           # ★ 예: /home/jetson/models/puck_yolov8n.engine
-      score_threshold: 0.3      # 검출기 1차 문턱 (최종 선택은 target.min_confidence)
-      nms_threshold: 0.45
+      engine_path: ""           # ★ TensorRT 엔진 (.engine). 비우면 색 검출기
+      score_threshold: 0.3      # 색 검출 점수 = 0.5·채움 + 0.5·가로세로비. 퍽 끝면(태그 때문에 채움 약 0.44)도 0.7 이상
+      nms_threshold: 0.45       # TensorRT(YOLOv8) 겹침 제거, YOLOv8 기본값
       target_class: -1
       target_color: any
-      min_area_ratio: 0.002
-      blur_ksize: 5             # 가우시안 블러 (0 = 끔)
-      morph_kernel: 5           # open · close 커널 (px)
-      min_fill_ratio: 0.5       # 컨투어 / bbox — 낮으면 조각 · 무늬
+      min_area_ratio: 0.0004    # 화면 넓이 대비 최소 영역 (640×480 에서 약 120 px). D435 로 2 m 의 퍽 30 × 60 mm 가 약 9 × 18 px
+      blur_ksize: 3             # 2 m 의 퍽 폭 약 9 px 이라 큰 블러·열림 연산은 퍽을 지운다
+      morph_kernel: 3
+      min_fill_ratio: 0.35      # 끝면은 가운데 태그(흰 여백 포함 22.5 mm)가 30 mm 면의 56 % 를 가려 채움 약 0.44
+      depth_split:              # 색 덩어리를 깊이가 끊긴 곳에서 나눠 조각마다 퍽 하나 (include/perception/depth_split.hpp). TensorRT 면 안 씀
+        enabled: true           # 근거: R4 렌더(2026-10-25) 선반 위 같은 색 퍽이 겹쳐 보이면 한 덩어리가 되어 284개 중 134개를 놓침
+        tol_m: 0.01             # ★ 이웃 화소 깊이 차 상한. 렌더 깊이(잡음 없음) 기준 — 실물 D435 깊이 잡음에서 다시 맞춤
+        min_face_ratio: 0.3     # 조각 화소 수 하한 = 그 깊이 30 × 30 mm 면 화소 수 × 이 값 (가려 남은 작은 조각을 버림)
       hsv:                      # [H(0~179), S, V] ★ 현장 조명에서 다시 맞춤
-        red:   {lower: [0, 90, 60],    upper: [10, 255, 255]}
-        red2:  {lower: [170, 90, 60],  upper: [179, 255, 255]}
-        green: {lower: [40, 90, 60],   upper: [85, 255, 255]}
-        blue:  {lower: [98, 190, 25],  upper: [118, 255, 230]}   # 이전 실습 검증값
+        # 근거(2026-10-23): 파란 퍽 실사진 3장(640×480) 퍽 화소 H 97~115 · S 1 % 값 82~87 · V 1 % 값 24~98.
+        #   현장 사진(휴대폰) 벽판 S 약 30, 카펫 S 37 이하 → S 하한 80 으로 뺀다. 파란 출력 기둥은 H 113 · S 87~190 으로
+        #   퍽 파랑과 겹친다(크기 · 선반 높이 · 태그로 거름). 빨강 · 초록은 실물 사진이 없어 가상 월드 색 기준이고,
+        #   합성 영상 어두움(0.625)에서 빛 반대쪽 면 V 약 54 → V 하한 35
+        red:   {lower: [0, 80, 35],    upper: [10, 255, 255]}
+        red2:  {lower: [170, 80, 35],  upper: [179, 255, 255]}
+        green: {lower: [40, 80, 35],   upper: [85, 255, 255]}
+        # 파랑 끔(사용자 2026-10-25): 과제 퍽은 빨강 · 초록뿐이고, 파란 기둥 받침이 파란 퍽으로 검출됨
+        #   (R4 렌더 120장에 163개, 신뢰도 0.5 이상 143개 → 집을 후보로 뽑힐 수 있음). 하한 > 상한이면 빈 범위.
+        #   파란 퍽을 다시 쓰면 lower [95, 80, 25] · upper [120, 255, 255] (위 근거)
+        blue:  {lower: [1, 0, 0],      upper: [0, 0, 0]}
     target:                     # 물체 하나만 따라가기
-      exclude_min: [-0.30, -0.25, -0.10]   # base_link 상자 (차체 footprint + 그리퍼 작업 영역) ★
+      exclude_min: [-0.30, -0.25, -0.10]   # ★ base_link 기준 버리는 상자: 차체(0.445 × 0.306 m) + 여유, 앞 0.35 m 는 집게에 든 퍽 자리(가정)
       exclude_max: [ 0.35,  0.25,  0.60]
       min_confidence: 0.5
-      gate: 0.3                 # 고른 뒤 같은 물체로 보는 거리 (odom, m)
-      lost_timeout: 1.0         # 이만큼 안 보이면 다시 고름
-      size_min_m: 0.015         # 뎁스로 본 짧은 변 하한 (퍽 30 mm) — 0 = 끔
-      size_max_m: 0.09          # 긴 변 상한 (퍽 60 mm)
-    tag:
-      family: tag36h11          # ★ 추정
-      size: 0.10                # ★ 태그 한 변 (m) — 자세 추정에 필요
+      gate: 0.06                # [m] 고른 뒤 같은 물체로 보는 거리 (odom). 한 선반(0.2 m) 위 퍽 사이가 수 cm 라 퍽 폭 2개
+      lost_timeout: 1.0         # [s] 이만큼 안 보이면 다시 고름 (15 Hz 로 15 장)
+      size_min_m: 0.015         # 깊이로 본 짧은 변 하한 (퍽 30 mm 의 반, 일부 가림 허용. 0 = 끔)
+      size_max_m: 0.09          # 긴 변 상한 (퍽 60 mm, 누운 퍽 대각 67 mm + 여유)
+    tag:                        # 퍽 태그 (과제 자료 2026-10-23: tag36h11, 윗면 · 아랫면, 검은 사각형 16 mm)
+      family: tag36h11
+      size: 0.016               # 태그 한 변 [m] (검은 테두리 바깥)
+      ids: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]   # 퍽 번호만. 같은 계열 장소 태그(12~14)를 퍽 크기로 계산하지 않게
+    puck:                       # 태그 → 퍽 (include/perception/puck_estimator.hpp). 퍽 30 × 30 × 60 mm
+      half_width: 0.015         # [m] 짧은 변 / 2 (원기둥 반지름)
+      half_length: 0.030        # [m] 긴 변 / 2
+      ring_in: 0.0125           # [m] 색을 보는 띠: 라벨 20 mm(태그 16 + 흰 여백, 반 0.010) 바깥 · 면(0.015) 안
+      ring_out: 0.0145
+      ring2_in: 0.016           # [m] 띠에 색이 없을 때(면 전체가 스티커) 한 번 더 보는 바깥 띠
+      ring2_out: 0.020
+      axis_probe: 0.022         # [m] 긴 축 확인 지점 (옆면 긴 축 방향은 면 안, 짧은 축 방향은 면 밖)
+      corner_probe: 0.0127      # [m] 끝면 모양 확인 지점(태그 축 성분, 대각 18 mm): 직육면체 면 안 · 원기둥 면 밖
+      min_votes: 6              # 색을 정할 최소 화소 수
+      merge_dist: 0.04          # [m] D435 퍽이 태그 퍽과 이보다 가까우면 같은 퍽으로 보고 뺀다
+      upright_gap_px: 1.0       # 태그 PnP 두 해의 재투영 오차 차가 이 이하면 법선이 수직 · 수평에 가까운 해를 씀 (tag_upright.hpp, 0 = 끔)
+                                # 근거: R6 렌더(2026-10-25) 0.14 m 의 16 mm 태그에서 오차 차 0.002~0.04 px 로 46° 기운 해를 골라 퍽 중심 23 mm 밀림
+    marker:                     # 장소 태그 L1~L3 (READ_MARKER). 과제 자료 2026-10-23: tag36h11 ID 12~14
+      family: tag36h11
+      size: 0.048               # ★ 검은 사각형 한 변 [m]. 인쇄물 축척이 틀려 다시 받을 예정, 그때까지 48 mm(사용자 결정)
+      ids: [12, 13, 14]         # 이 번호만 씀. 빼면 모든 번호 (빈 목록은 yaml 에서 타입을 알 수 없어 쓰지 않음)
+    signal:                     # 신호등 점멸 순서 (READ_SIGNAL). include/perception/signal_light.hpp · signal_sequence.hpp
+      # 켜진 등 후보: 밝기 · 채도 하한과 색상(H) 범위 ★ Isaac Sim 렌더(R1) · 실물 영상으로 다시 정함 (지금은 가정값)
+      v_min: 200
+      s_min: 90
+      red_h_max: 10
+      red2_h_min: 170
+      yellow_h_min: 15
+      yellow_h_max: 35
+      green_h_min: 40
+      green_h_max: 90
+      min_area_px: 4            # 3 m 의 등 한 칸이 D435 640 × 480(fx 약 606)에서 약 8 × 7 px
+      segment_width_m: 0.0396   # 등 한 칸: 원통 지름 39.6 mm × 길이 34.9 mm (사용자 실측 2026-10-23)
+      segment_height_m: 0.0349
+      area_ratio_min: 0.15      # 후보 화소 수 / 그 거리의 등 한 칸 화소 수. 가운데가 하얗게 날아가면 작아짐
+      area_ratio_max: 2.5       # 빛 번짐
+      height_min_m: 0.05        # base_link 높이: 등은 바닥 위 68.9~173.6 mm (실측), 여유 포함
+      height_max_m: 0.20
+      queue_frames: 30          # 처리 전에 쌓아 두는 카메라별 프레임 수 (30 fps 로 1 s)
+      lock_dist_m: 0.10         # 같은 자리로 보는 거리 (빨강 · 초록 칸 중심이 위아래 0.07 m, 어느 색을 먼저 봐도 한 자리)
+      lock_blinks: 3            # 같은 자리에서 켜졌다 꺼지기를 이만큼 보면 신호등으로 고정
+      min_off_frames: 2         # 꺼짐으로 세는 연속 프레임 수
+      forget_s: 10.0
+      occlusion_margin_m: 0.10  # 켜진 등이 없는 프레임에서 칸 중심 깊이가 그 칸보다 이만큼 넘게 가까우면 가려짐 → 꺼짐이 아니라 모름
+      # 점멸 세기 (판정 기준 v1 U1 · U2 통과 값, Cartlidar/results/unit_signal_dice_261023_1859_5p)
+      blinks_per_cycle: 12      # 과제: 한 묶음 12회
+      term_ratio: 2.0           # 텀 = 점멸 사이 꺼짐 중앙값의 이 배수와
+      term_margin_frames: 4.0   #      중앙값 + 이 프레임 수 중 긴 것보다 긴 꺼짐
+      on_ratio: 0.5             # 켜짐 중앙값의 이 배수보다 짧은 점멸은 잡음
+      merge_ratio: 0.5          # 같은 색 사이 꺼짐이 꺼짐 중앙값의 이 배수보다 짧으면 한 점멸
+      max_gap_s: 0.5            # 신호등이 이보다 오래 안 보이면 세던 묶음을 버림
+      confirm_cycles: 2
+    dice:                       # 주사위 확인 (/perception/check_dice)
+      tolerance_m: 0.015        # 요청 tolerance 가 0 일 때 칸 중심 허용 오차 (판정 기준 U3 값)
+      region_margin_m: 0.04     # 칸 범위 밖 이만큼까지의 퍽을 판정에 넣음 (그 밖은 다른 선반 · 바닥)
+      max_age_s: 1.0            # 이보다 오래된 퍽 목록으로는 판정하지 않음
+    barcode:                    # 바코드 라벨 (READ_BARCODE, /perception/barcode). include/perception/barcode_locator.hpp · barcode_reader.hpp
+      # 찾기 문턱은 barcode.<이름> 으로 덮어쓴다(이름 · 기본값은 BarcodeLocatorConfig = R3 설계 45차 locate_v2.py CFG2, sha256 앞 16자 21f7ddbd7ec1fdd5).
+      # 근거 · 판정 결과: Cartlidar/sim_render/README.md R3 절 (모의). 예: thr: 0.65, white_ring_min: 0.98, max_blur: 20.0
+      template_path: ""         # 라벨 그림. 비우면 share/perception/data/barcode_P2-01.png (설계 · 판정 렌더에 쓴 그림과 같음)
+      camera: front             # 라벨을 찾는 D435 (front | rear)
+      base_frame: base_footprint  # 찾기의 높이 · 거리 규칙(min_z 0.06 m, wall_min_top 0.20 m, rng 1.2 m)의 기준 = 바닥
+      depth_frames: 5           # 멈춰서 평균하는 깊이 장수 (설계 전제: 판정은 '5장 평균' 모의 깊이로 함)
+      depth_min_valid: 0        # 평균에 넣을 화소의 최소 유효 장수. 0 = 모든 장에 값이 있어야 함
+      max_motion_m: 0.01        # ★ 평균 중 차체(odom)가 이만큼 넘게 움직이면 다시 모음 (설계값, 실물에서 다시 정함)
+      max_rotation_deg: 1.0     # ★ 위와 같음 (회전)
+      read_scale: 1.0           # 팔 카메라(640 × 480) 영상을 zbar 로 읽기 전 확대 배율. 1 = 원본
+      read_gamma: 2.0           # 읽기 전 감마 (흐려진 좁은 흰 칸을 살림, R3 설계 44차: 설계 자료 5 벌에서 1.5~2.5 같은 판정)
+      read_min_quality: 4       # zbar quality(읽은 스캔 수) 하한: 체크섬 상쇄 잘못 읽기(P2-0x → PF-&x)는 최대 3 (44차)
     frames:
       base: base_link
       odom: odom
-      front: camera_front_link
-      rear: camera_rear_link
-      arm: arm_camera_link

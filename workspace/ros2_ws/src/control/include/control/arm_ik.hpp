@@ -1,69 +1,52 @@
-// ArmIK — 5축 해석적 IK + 롤 (joint1 요 · joint2~4 피치 · joint5 손목 롤 · gripper_roll)
-// 좌표: arm_base_link (x 앞 · y 왼 · z 위). 피치 관절 축 = +y (양수 = 앞으로 숙임), URDF 와 같은 규약.
-// 0 자세: 위팔은 (l2x, l2z) 방향, 아래팔 · 공구는 +x.
+// ArmIK — 5축 해석적 IK (+ gripper_roll은 IK 밖에서 고정값)
+//
+// TODO(Controller): 기구 구조는 (추정)이다. URDF가 확정되면 아래 가정을 확인할 것.
+//   joint1: arm_base_link z축 회전 (0 = +x 방향)
+//   joint2: 어깨 pitch, 수평 기준 각도 (위로 +)
+//   joint3: 팔꿈치 pitch, 상완 연장선 기준 상대 각도 (위로 +)
+//   joint4: 손목 pitch, 상대 각도. 끝단 pitch = q2 + q3 + q4 (0 = 수평, -pi/2 = 아래를 향함)
+//   joint5: 손목 roll (끝단 축 회전)
+// 실제 관절 명령 = sign * q_ik + offset (manipulator.yaml의 ik.joint_signs · ik.joint_offsets)
+
 #pragma once
 
 #include <array>
 #include <optional>
-#include <string>
-#include <vector>
 
 #include <Eigen/Core>
 
 namespace control
 {
 
-struct ArmGeometry
+struct ArmIKParams
 {
-  double d1 = 0.077;     // arm_base_link → joint2 높이
-  double l2x = 0.024;    // joint2 → joint3 (0 자세에서 x, z)
-  double l2z = 0.128;
-  double l3 = 0.124;     // joint3 → joint4
-  double l_tool = 0.167; // joint4 → 공구 끝 (tool_link)
+  double base_height{0.0};    // arm_base_link 원점 → joint2 축 높이 (m)
+  double upper_arm{0.0};      // joint2 → joint3 (m)
+  double forearm{0.0};        // joint3 → joint4 (m)
+  double wrist_to_tool{0.0};  // joint4 → 파지점 (m)
+  std::array<double, 5> joint_offsets{};
+  std::array<double, 5> joint_signs{1.0, 1.0, 1.0, 1.0, 1.0};
 };
 
-using Joints = std::array<double, 6>;   // joint1~5, gripper_roll
-
-struct JointLimits
-{
-  Joints lower{{-2.8, -1.8, -1.6, -1.8, -2.8, -2.8}};
-  Joints upper{{2.8, 1.6, 1.5, 2.0, 2.8, 2.8}};
-  bool within(const Joints & q, double margin = 0.0) const;
-  std::string violation(const Joints & q, double margin = 0.0) const;   // 빈 문자열 = 정상
-};
-
-struct IkRequest
-{
-  Eigen::Vector3d position;      // 공구 끝 목표 (arm_base_link)
-  double tool_pitch = -1.5708;   // 공구 방향 앙각 (rad, -π/2 = 바로 아래)
-  double object_yaw = 0.0;       // 물체 방향 (arm_base_link z 회전) — joint5 로 맞춤
-  double gripper_roll = 0.0;
-  std::vector<double> pitch_fallbacks{-1.3, -1.1, -0.9};   // 위 앙각으로 해가 없을 때 차례로 시도
-  bool elbow_up = true;
-};
+using ArmJoints = std::array<double, 5>;  // joint1..joint5 명령값 (rad)
 
 class ArmIK
 {
 public:
-  ArmIK(ArmGeometry g, JointLimits lim)
-  : g_(g), lim_(lim) {}
+  explicit ArmIK(const ArmIKParams & params);
 
-  // 공구 끝 위치 (arm_base_link)
-  Eigen::Vector3d fk_position(const Joints & q) const;
-  // 공구 방향 앙각 = -(q2+q3+q4)
-  static double tool_pitch(const Joints & q) {return -(q[1] + q[2] + q[3]);}
+  // 파지점 위치 p (arm_base_link), 끝단 pitch, 손목 roll → 관절 명령값. 도달 불가면 nullopt.
+  std::optional<ArmJoints> solve(
+    const Eigen::Vector3d & p, double pitch, double wrist_roll, bool elbow_up) const;
 
-  // 해가 없거나 관절 한계를 넘으면 nullopt, why 에 이유
-  std::optional<Joints> solve(const IkRequest & req, std::string & why) const;
+  // 관절 명령값 → 파지점 위치 (arm_base_link)
+  Eigen::Vector3d forward(const ArmJoints & q_cmd) const;
 
-  const JointLimits & limits() const {return lim_;}
-  const ArmGeometry & geometry() const {return g_;}
+  // 끝단(접근) 방향 단위 벡터
+  static Eigen::Vector3d approachDirection(double yaw, double pitch);
 
 private:
-  std::optional<Joints> solve_pitch(const Eigen::Vector3d & p, double pitch, double yaw_obj,
-    double roll, bool elbow_up, std::string & why) const;
-  ArmGeometry g_;
-  JointLimits lim_;
+  ArmIKParams p_;
 };
 
 }  // namespace control

@@ -12,7 +12,7 @@
 |---|---|---|---|
 | 공동 | `robot_interfaces` | 메시지 · 서비스 · 액션, `names.hpp` (토픽 · 액션 이름과 QoS 를 한곳에) | — |
 | Perception | `perception` | `perception_node` (D435 × 2 · Arducam · 검출 · 대상 추적 · AprilTag), `tfmini_node` | ⑦ perception_container / ⑧ |
-| Controller | `center` | `mission_node` (미션표 · PAUSED 재개) | ⑧ control_container |
+| Controller | `mission` | `mission_node` (미션표 순서 실행 · 재시도 · fallback · PAUSED 재개) | ⑧ control_container |
 | Controller | `control` | `drive_node` (nav2 · 정렬 · skill), `manipulator_node` (IK · 집기 · skill), 공용 `fsm.hpp` | ⑧ control_container |
 | Controller | `robot_policy` | 정책 추론 라이브러리 (ONNX Runtime 선택) | ⑧ (drive · manipulator 안) |
 | Firmware | `opencr_hardware` | ros2_control SystemInterface (잠금식 E-stop · /diagnostics · 펌웨어 버전 확인), URDF · 컨트롤러 설정 | ① ros2_control_node |
@@ -49,7 +49,7 @@ nav2 · slam_toolbox 는 기존 launch 를 쓰고, nav2 체인의 마지막 출�
 
 E-stop · 진단 오류가 나면 미션이 PAUSED 가 된다. 원인 해결 → 리셋 → 시작 버튼이면 현재 단계부터 다시 한다. 끝내려면 정지 버튼 (`/mission/stop`).
 
-설정: 미션표 `center/config/mission.yaml`, 인식 `perception/config/perception.yaml` (HSV 범위 · 크기 검증 · D435 화이트밸런스), 정책 `robot_policy/config/policies.yaml`.
+설정: 미션 `mission/config/mission.yaml` · 미션표 `mission/config/mission_table.yaml`, 인식 `perception/config/perception.yaml` (HSV 범위 · 크기 검증 · D435 화이트밸런스), 정책 `robot_policy/config/policies.yaml`.
 
 ## 시험
 

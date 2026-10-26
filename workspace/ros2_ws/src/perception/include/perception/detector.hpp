@@ -27,14 +27,14 @@ struct HsvRange
   cv::Scalar lower, upper;
 };
 
-// 기본 범위. 파랑은 이전 실습(Lv1 파란 목표 · D435 640×480)에서 검증한 값
+// 기본 범위 (근거는 config/perception.yaml detector.hsv 주석)
 inline std::vector<HsvRange> default_hsv()
 {
   return {
-    {0, "red", cv::Scalar(0, 90, 60), cv::Scalar(10, 255, 255)},
-    {0, "red", cv::Scalar(170, 90, 60), cv::Scalar(179, 255, 255)},
-    {1, "green", cv::Scalar(40, 90, 60), cv::Scalar(85, 255, 255)},
-    {2, "blue", cv::Scalar(98, 190, 25), cv::Scalar(118, 255, 230)},
+    {0, "red", cv::Scalar(0, 80, 35), cv::Scalar(10, 255, 255)},
+    {0, "red", cv::Scalar(170, 80, 35), cv::Scalar(179, 255, 255)},
+    {1, "green", cv::Scalar(40, 80, 35), cv::Scalar(85, 255, 255)},
+    {2, "blue", cv::Scalar(95, 80, 25), cv::Scalar(120, 255, 255)},
   };
 }
 

@@ -1,6 +1,8 @@
 // 색 검출기 · 기하 계산 시험 (합성 영상)
 #include <gtest/gtest.h>
 
+#include <limits>
+
 #include <cmath>
 
 #include <opencv2/imgproc.hpp>
@@ -9,6 +11,20 @@
 #include "perception/geometry.hpp"
 
 using namespace perception;
+
+// 검출기는 입력 영상을 바꾸지 않는다 (노드는 같은 영상으로 태그 · 마커도 찾음)
+TEST(ColorDetector, KeepsInputImage)
+{
+  cv::Mat img(480, 640, CV_8UC3, cv::Scalar(90, 90, 90));
+  cv::rectangle(img, cv::Rect(100, 200, 60, 60), cv::Scalar(0, 0, 220), cv::FILLED);
+  const cv::Mat before = img.clone();
+  DetectorConfig c;
+  c.type = "color";
+  c.blur_ksize = 5;
+  std::string info;
+  ASSERT_EQ(make_detector(c, info)->detect(img).size(), 1u);
+  EXPECT_EQ(cv::norm(before, img, cv::NORM_INF), 0.0);
+}
 
 TEST(ColorDetector, FindsColoredPucks)
 {
@@ -72,19 +88,37 @@ TEST(Geometry, SizePlausible)
   EXPECT_TRUE(size_plausible(cv::Rect2f(0, 0, 5, 5), 0.0, k, 0.015, 0.09));        // 깊이 없음 → 통과
 }
 
-TEST(Geometry, DeprojectAndFrames)
+TEST(Geometry, DeprojectOptical)
 {
   PinholeK k{600, 600, 320, 240};
-  // 화면 중심 → 정면
-  auto p = optical_to_link(deproject(k, 320, 240, 1.0));
-  EXPECT_NEAR(p.x, 1.0, 1e-12);
+  // 화면 중심 → 광축 위 (x 오른쪽 · y 아래 · z 앞)
+  auto p = deproject(k, 320, 240, 1.0);
+  EXPECT_NEAR(p.x, 0.0, 1e-12);
   EXPECT_NEAR(p.y, 0.0, 1e-12);
-  EXPECT_NEAR(p.z, 0.0, 1e-12);
-  // 화면 오른쪽 · 아래 → 링크 기준 오른쪽(y-) · 아래(z-)
-  p = optical_to_link(deproject(k, 380, 300, 2.0));
-  EXPECT_NEAR(p.x, 2.0, 1e-12);
-  EXPECT_NEAR(p.y, -0.2, 1e-12);
-  EXPECT_NEAR(p.z, -0.2, 1e-12);
+  EXPECT_NEAR(p.z, 1.0, 1e-12);
+  // 화면 오른쪽 · 아래 → x+ · y+
+  p = deproject(k, 380, 300, 2.0);
+  EXPECT_NEAR(p.x, 0.2, 1e-12);
+  EXPECT_NEAR(p.y, 0.2, 1e-12);
+  EXPECT_NEAR(p.z, 2.0, 1e-12);
+}
+
+TEST(Geometry, DepthScaleForEncoding)
+{
+  EXPECT_DOUBLE_EQ(depth_scale_for_encoding("16UC1"), 0.001);   // realsense2_camera (mm)
+  EXPECT_DOUBLE_EQ(depth_scale_for_encoding("32FC1"), 1.0);     // Isaac Sim (m)
+  EXPECT_DOUBLE_EQ(depth_scale_for_encoding("rgb8"), 0.0);
+}
+
+TEST(Geometry, MedianDepthFloatMeters)
+{
+  cv::Mat d(100, 100, CV_32F, cv::Scalar(0.0f));
+  d(cv::Rect(45, 45, 11, 11)).setTo(1.25f);
+  d.at<float>(50, 50) = std::numeric_limits<float>::quiet_NaN();   // 깊이 없음
+  d.at<float>(49, 49) = std::numeric_limits<float>::infinity();
+  EXPECT_NEAR(median_depth(d, {50, 50}, 3, 1.0, 0.15, 4.0), 1.25, 1e-6);
+  cv::Mat bad(10, 10, CV_8U, cv::Scalar(1));
+  EXPECT_TRUE(std::isnan(median_depth(bad, {5, 5}, 2, 1.0, 0.0, 4.0)));   // 모르는 형식
 }
 
 TEST(Geometry, MedianDepthIgnoresHoles)

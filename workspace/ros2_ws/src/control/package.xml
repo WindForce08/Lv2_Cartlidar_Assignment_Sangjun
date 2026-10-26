@@ -5,12 +5,14 @@
   <version>0.1.0</version>
   <description>Controller 팀 — 제어: drive_node(바퀴) · manipulator_node(팔 · 그리퍼) · ArmIK (rclcpp component)</description>
   <maintainer email="kanichong@gmail.com">pa8</maintainer>
+  <maintainer email="developlcy@gmail.com">pa3</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
   <depend>rclcpp</depend>
   <depend>rclcpp_action</depend>
   <depend>rclcpp_components</depend>
+  <depend>action_msgs</depend>
   <depend>robot_interfaces</depend>
   <depend>nav2_msgs</depend>
   <depend>geometry_msgs</depend>
@@ -26,6 +28,11 @@
   <depend>robot_policy</depend>
   <depend>diagnostic_msgs</depend>
   <depend>nav_msgs</depend>
+  <depend>ament_index_cpp</depend>
+
+  <exec_depend>perception</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
 
   <test_depend>ament_cmake_gtest</test_depend>
 

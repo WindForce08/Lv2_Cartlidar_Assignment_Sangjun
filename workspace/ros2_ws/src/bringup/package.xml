@@ -14,7 +14,7 @@
   <exec_depend>opencr_hardware</exec_depend>
   <exec_depend>perception</exec_depend>
   <exec_depend>control</exec_depend>
-  <exec_depend>center</exec_depend>
+  <exec_depend>mission</exec_depend>
   <exec_depend>robot_policy</exec_depend>
   <exec_depend>robot_localization</exec_depend>
 

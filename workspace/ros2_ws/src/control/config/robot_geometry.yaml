@@ -1,0 +1,13 @@
+# 로봇 기하 (Controller 팀) — drive_node · manipulator_node가 같이 읽는다
+# mission은 이 값을 모른다 (COARSE 거리 0 = 이 기본값)
+# TODO(Controller): 1주차 실측 — 범퍼 위치, READY 자세에서 팔 끝이 범퍼보다 앞으로 나오는 거리
+/**:
+  ros__parameters:
+    base:
+      front_offset: 0.25         # base_link → 전방 범퍼 (m)
+      rear_offset: 0.25          # base_link → 후방 범퍼 (m)
+    align:
+      # COARSE 기본 거리 (범퍼 → 물체) = max(READY 팔 끝 돌출 + 정밀 목표 + 0.1m, coarse_min)
+      #   예: 돌출 0.20 + 정밀 0.15 + 0.1 = 0.45
+      coarse_distance: 0.45
+      coarse_min: 0.3            # 이보다 가까운 COARSE 요청은 거절 (팔을 펴면 물체에 닿음)
