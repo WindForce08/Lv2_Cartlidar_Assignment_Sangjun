@@ -15,6 +15,7 @@
 //              → TF 로 base_link · odom → TargetTracker → object_pose
 //   ARM_ALIGN: camera_info 로 왜곡 보정한 영상을 detect_width 로 줄여 검출 → 화면 중심 대비 arm_offset
 //   READ_TAG : 왜곡 보정 원본에서 AprilTag → tag_id · tag_pose (Arducam 광학 프레임 기준, x 오른쪽 · y 아래 · z 앞)
+//              퍽 태그(tag.*)와 장소 태그(marker.*)를 각자 크기로 찾아 가장 크게 보이는 것 하나 (read_tag.hpp)
 //   /perception/pucks (토픽, PuckArray): SEARCH_* 또는 READ_TAG 가 켜져 있으면 result 와 같은 주기로 발행한다
 //      Arducam 태그 → 번호 · 색 · 중심 · 긴 축(puck_estimator.hpp), D435 색 검출 → 색 · 중심(번호 -1)
 //      카메라 사이 같은 퍽(같은 색 · 한쪽 모름, merge_dist 안)은 일대일로 하나만 남긴다(puck_merge.hpp): 앞 · 뒤 D435 끼리,
@@ -70,6 +71,7 @@
 #include "perception/geometry.hpp"
 #include "perception/puck_estimator.hpp"
 #include "perception/puck_merge.hpp"
+#include "perception/read_tag.hpp"
 #include "perception/signal_light.hpp"
 #include "perception/signal_sequence.hpp"
 #include "perception/tag_depth.hpp"
@@ -1352,14 +1354,15 @@ private:
     if (!newK_.empty() && ((mode & SetMode::Request::READ_TAG) || want_marker)) {
       T = lookup_at(base_frame_, frame, rclcpp::Time(img->header.stamp, get_clock()->get_clock_type()));
     }
+    std::vector<TagDetection> places;   // 장소 태그: READ_TAG 결과 후보 · READ_MARKER 가 같이 씀
+    if (((mode & SetMode::Request::READ_TAG) && marker_->ok()) || (want_marker && T)) {
+      places = marker_->detect(u, newK_, cv::Mat());
+      keep_tag_ids(places, marker_ids_);
+    }
     if (mode & SetMode::Request::READ_TAG) {
       auto tags = tag_->detect(u, newK_, cv::Mat());
-      if (!tag_ids_.empty()) {   // 같은 계열 장소 태그는 크기가 달라 퍽 자세가 틀리므로 뺀다
-        tags.erase(std::remove_if(tags.begin(), tags.end(), [this](const TagDetection & t) {
-            return std::find(tag_ids_.begin(), tag_ids_.end(), t.id) == tag_ids_.end();}), tags.end());
-      }
-      const TagDetection * best = nullptr;
-      for (const auto & t : tags) {if (!best || t.area > best->area) {best = &t;}}
+      keep_tag_ids(tags, tag_ids_);   // 같은 계열 장소 태그는 크기가 달라 퍽 자세가 틀리므로 뺀다 (장소 태그는 places 로)
+      const TagDetection * best = largest_tag(tags, places);
       if (best) {
         r.tag_found = true;
         r.tag_id = best->id;
@@ -1379,7 +1382,7 @@ private:
       if (T) {arm_.pucks = pucks_from_tags(tags, u, newK_, *T);}
     }
     if (want_marker && T) {
-      arm_.marker = best_marker(marker_->detect(u, newK_, cv::Mat()), *T, img->header.stamp, Puck::CAMERA_ARM);
+      arm_.marker = best_marker(places, *T, img->header.stamp, Puck::CAMERA_ARM);
     }
   }
 
