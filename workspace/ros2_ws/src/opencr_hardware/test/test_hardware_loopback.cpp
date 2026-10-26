@@ -47,6 +47,7 @@ public:
   }
   std::string path() const {return slave_path_;}
   void set_silent(bool s) {silent_ = s;}
+  void set_error_bits(uint8_t e) {error_bits_ = e;}   // STATE error 에 항상 OR (예: 모터 없는 보드)
   Cmd last_cmd()
   {
     std::lock_guard<std::mutex> lk(m_);
@@ -71,6 +72,7 @@ private:
             last_ = c;
             ++cmds_;
             if (c.role != role_) {continue;}
+            last_own_cmd_ = std::chrono::steady_clock::now();
             if (c.flags & FLAG_TORQUE_ON) {++torque_cmds_;}
             if (c.flags & FLAG_TORQUE_ON) {
               for (int k = 0; k < ARM_JOINTS; ++k) {arm_now_[k] = c.arm_pos[k];}   // 이상적인 위치 추종
@@ -91,6 +93,9 @@ private:
           }
           s.quat[0] = 1.f;
           s.accel[2] = 9.8f;
+          // 펌웨어 계약: 자기 역할 CMD 가 200 ms 없으면 ERR_CMD_TIMEOUT (호스트는 활성화 전에 이를 기다림)
+          if (std::chrono::steady_clock::now() - last_own_cmd_ > 200ms) {s.error = ERR_CMD_TIMEOUT;}
+          s.error |= error_bits_;
           s.fw_version = version_;
           s.seq = seq_++;
           uint8_t f[MAX_FRAME];
@@ -106,18 +111,22 @@ private:
   std::string slave_path_;
   std::thread th_;
   std::atomic<bool> run_{true}, silent_{false};
+  std::atomic<uint8_t> error_bits_{0};
   std::mutex m_;
   Cmd last_{};
   std::atomic<int> cmds_{0};
   std::atomic<int> torque_cmds_{0};
   float arm_now_[ARM_JOINTS]{};
   float wheel_vel_[MAX_WHEELS]{};
+  std::chrono::steady_clock::time_point last_own_cmd_{};
   uint8_t seq_ = 0;
   uint8_t role_;
   uint8_t version_;
 };
 
-static std::string make_urdf(const std::string & ports)
+// joint1_limits: joint1 command_interface 안에 넣을 <param name="min"/max> (빈 값이면 한계 없음)
+static std::string make_urdf(const std::string & ports, const std::string & extra_params = "",
+  const std::string & joint1_limits = "")
 {
   std::string joints;
   const char * wheels[6] = {"wheel_left_front_joint", "wheel_left_mid_joint", "wheel_left_rear_joint",
@@ -129,8 +138,10 @@ static std::string make_urdf(const std::string & ports)
   }
   const char * arm[6] = {"joint1", "joint2", "joint3", "joint4", "joint5", "gripper_roll"};
   for (int i = 0; i < 6; ++i) {
+    const std::string cmd_if = (i == 0 && !joint1_limits.empty()) ?
+      "<command_interface name=\"position\">" + joint1_limits + "</command_interface>" : "<command_interface name=\"position\"/>";
     joints += std::string("<joint name=\"") + arm[i] + "\"><param name=\"role\">arm</param><param name=\"slot\">" +
-      std::to_string(i) + "</param><command_interface name=\"position\"/><state_interface name=\"position\"/>"
+      std::to_string(i) + "</param>" + cmd_if + "<state_interface name=\"position\"/>"
       "<state_interface name=\"velocity\"/><state_interface name=\"effort\"/></joint>";
   }
   std::string imu = "<sensor name=\"imu\">";
@@ -156,7 +167,7 @@ static std::string make_urdf(const std::string & ports)
   return "<?xml version=\"1.0\"?><robot name=\"t\">" + links + urdf_joints +
          "<ros2_control name=\"OpenCRSystem\" type=\"system\"><hardware><plugin>opencr_hardware/OpenCRHardware</plugin>"
          "<param name=\"ports\">" + ports + "</param><param name=\"comm_timeout_s\">0.5</param>"
-         "<param name=\"joy_required\">false</param></hardware>" + joints + imu +
+         "<param name=\"joy_required\">false</param>" + extra_params + "</hardware>" + joints + imu +
          "</ros2_control></robot>";
 }
 
@@ -252,9 +263,144 @@ TEST(OpenCRHardware, RejectsFirmwareVersionMismatch)
   EXPECT_EQ(arm.cmd_count_torque_on(), 0);
 }
 
+// 이 아래 FakeOpenCR 시험은 호스트 동작만 본다 — FakeOpenCR 은 이상화된 테스트 더블이고 실제 펌웨어가 아니다
+static std::string component_state(hardware_interface::ResourceManager & rm)
+{
+  const auto st = rm.get_components_status();
+  return st.count("OpenCRSystem") ? st.at("OpenCRSystem").state.label() : "";
+}
+
+TEST(OpenCRHardware, RejectsV4Firmware)
+{
+  FakeOpenCR wheel(ROLE_WHEEL), arm(ROLE_ARM, 4);   // v5 호스트 + v4 팔 펌웨어
+  auto clock = std::make_shared<rclcpp::Clock>(RCL_STEADY_TIME);
+  hardware_interface::ResourceManager rm(make_urdf(wheel.path() + "," + arm.path()), clock, rclcpp::get_logger("rm"), true, 100);
+  EXPECT_NE(component_state(rm), "active");
+  EXPECT_EQ(wheel.cmd_count_torque_on(), 0);
+  EXPECT_EQ(arm.cmd_count_torque_on(), 0);
+}
+
+TEST(OpenCRHardware, RejectsDuplicateRole)
+{
+  FakeOpenCR a(ROLE_WHEEL), b(ROLE_WHEEL);
+  auto clock = std::make_shared<rclcpp::Clock>(RCL_STEADY_TIME);
+  hardware_interface::ResourceManager rm(make_urdf(a.path() + "," + b.path()), clock, rclcpp::get_logger("rm"), true, 100);
+  EXPECT_NE(component_state(rm), "active") << "바퀴 역할 두 개 = 팔 보드 없음";
+  EXPECT_EQ(a.cmd_count_torque_on() + b.cmd_count_torque_on(), 0);
+}
+
+TEST(OpenCRHardware, RejectsMissingBoard)
+{
+  FakeOpenCR wheel(ROLE_WHEEL), arm(ROLE_ARM);
+  arm.set_silent(true);   // 포트는 열리지만 STATE 가 없음
+  auto clock = std::make_shared<rclcpp::Clock>(RCL_STEADY_TIME);
+  hardware_interface::ResourceManager rm(make_urdf(wheel.path() + "," + arm.path()), clock, rclcpp::get_logger("rm"), true, 100);
+  EXPECT_NE(component_state(rm), "active");
+  EXPECT_EQ(wheel.cmd_count_torque_on(), 0);
+}
+
+TEST(OpenCRHardware, PortOrderDoesNotMatter)
+{
+  FakeOpenCR wheel(ROLE_WHEEL), arm(ROLE_ARM);
+  auto clock = std::make_shared<rclcpp::Clock>(RCL_STEADY_TIME);
+  hardware_interface::ResourceManager rm(make_urdf(arm.path() + "," + wheel.path()), clock, rclcpp::get_logger("rm"), true, 100);
+  ASSERT_EQ(component_state(rm), "active");
+  rclcpp::Time t = clock->now();
+  for (int i = 0; i < 5; ++i) {
+    rm.read(t, rclcpp::Duration::from_seconds(0.01));
+    rm.write(t, rclcpp::Duration::from_seconds(0.01));
+    std::this_thread::sleep_for(10ms);
+    t = clock->now();
+  }
+  EXPECT_EQ(wheel.last_cmd().role, ROLE_WHEEL);
+  EXPECT_EQ(arm.last_cmd().role, ROLE_ARM);
+  EXPECT_NEAR(arm.last_cmd().arm_pos[0], 0.3, 1e-5);
+}
+
+// 통신 확인 전용: 활성화 · read/write 를 돌려도 어떤 CMD 도 (토크 OFF · ESTOP 도) 보내지 않음
+TEST(OpenCRHardware, ListenOnlySendsNoCommand)
+{
+  FakeOpenCR wheel(ROLE_WHEEL), arm(ROLE_ARM);
+  auto clock = std::make_shared<rclcpp::Clock>(RCL_STEADY_TIME);
+  hardware_interface::ResourceManager rm(make_urdf(wheel.path() + "," + arm.path(), "<param name=\"listen_only\">true</param>"),
+    clock, rclcpp::get_logger("rm"), true, 100);
+  ASSERT_EQ(component_state(rm), "active") << "STATE 만으로 역할 · 버전 확인";
+  rclcpp::Time t = clock->now();
+  for (int i = 0; i < 30; ++i) {
+    EXPECT_EQ(rm.read(t, rclcpp::Duration::from_seconds(0.01)).result, hardware_interface::return_type::OK);
+    EXPECT_EQ(rm.write(t, rclcpp::Duration::from_seconds(0.01)).result, hardware_interface::return_type::OK);
+    std::this_thread::sleep_for(10ms);
+    t = clock->now();
+  }
+  EXPECT_EQ(wheel.cmd_count(), 0);
+  EXPECT_EQ(arm.cmd_count(), 0);
+}
+
+// D5-2: 활성화 중에는 CMD (토크 OFF 포함) 를 보내지 않음 — 첫 CMD 는 write() 의 TORQUE_ON
+TEST(OpenCRHardware, ActivationSendsNoCommand)
+{
+  FakeOpenCR wheel(ROLE_WHEEL), arm(ROLE_ARM);
+  auto clock = std::make_shared<rclcpp::Clock>(RCL_STEADY_TIME);
+  hardware_interface::ResourceManager rm(make_urdf(wheel.path() + "," + arm.path()), clock, rclcpp::get_logger("rm"), true, 100);
+  ASSERT_EQ(component_state(rm), "active");
+  std::this_thread::sleep_for(50ms);
+  EXPECT_EQ(wheel.cmd_count(), 0);
+  EXPECT_EQ(arm.cmd_count(), 0);
+  rm.write(clock->now(), rclcpp::Duration::from_seconds(0.01));
+  std::this_thread::sleep_for(50ms);
+  EXPECT_EQ(arm.cmd_count(), 1);
+  EXPECT_TRUE(arm.last_cmd().flags & FLAG_TORQUE_ON);
+}
+
+// 리뷰 R2: 팔이 명령 한계 밖에 있어도 한계로 잘라 보냄 (펌웨어는 범위 밖 CMD 를 통째로 거부)
+TEST(OpenCRHardware, ArmCommandClampedToUrdfLimits)
+{
+  FakeOpenCR wheel(ROLE_WHEEL), arm(ROLE_ARM);   // FakeOpenCR 팔 초기 위치: joint1 0.3, joint2 0.4
+  auto clock = std::make_shared<rclcpp::Clock>(RCL_STEADY_TIME);
+  hardware_interface::ResourceManager rm(make_urdf(wheel.path() + "," + arm.path(), "",
+    "<param name=\"min\">-0.2</param><param name=\"max\">0.2</param>"), clock, rclcpp::get_logger("rm"), true, 100);
+  ASSERT_EQ(component_state(rm), "active");
+  rclcpp::Time t = clock->now();
+  for (int i = 0; i < 5; ++i) {
+    rm.read(t, rclcpp::Duration::from_seconds(0.01));
+    rm.write(t, rclcpp::Duration::from_seconds(0.01));
+    std::this_thread::sleep_for(10ms);
+    t = clock->now();
+  }
+  EXPECT_NEAR(arm.last_cmd().arm_pos[0], 0.2, 1e-6) << "현재 위치 0.3 이 한계 밖 → 0.2 로 잘라 보냄";
+  EXPECT_NEAR(arm.last_cmd().arm_pos[1], 0.4, 1e-5) << "한계가 없는 관절은 그대로";
+}
+
+// 모터 없이 OpenCR 만 연결 (부팅 점검 실패 = MOTOR_CONFIG · FAULT): 일반 모드는 거부, listen_only 는 STATE 확인용으로 활성화
+TEST(OpenCRHardware, ListenOnlyActivatesWithoutMotors)
+{
+  for (const bool listen : {false, true}) {
+    FakeOpenCR wheel(ROLE_WHEEL), arm(ROLE_ARM);
+    wheel.set_error_bits(ERR_MOTOR_CONFIG | ERR_FAULT);
+    arm.set_error_bits(ERR_MOTOR_CONFIG | ERR_FAULT);
+    auto clock = std::make_shared<rclcpp::Clock>(RCL_STEADY_TIME);
+    hardware_interface::ResourceManager rm(make_urdf(wheel.path() + "," + arm.path(),
+      listen ? "<param name=\"listen_only\">true</param>" : ""), clock, rclcpp::get_logger("rm"), true, 100);
+    if (listen) {
+      ASSERT_EQ(component_state(rm), "active");
+      rclcpp::Time t = clock->now();
+      for (int i = 0; i < 20; ++i) {
+        EXPECT_EQ(rm.read(t, rclcpp::Duration::from_seconds(0.01)).result, hardware_interface::return_type::OK);
+        rm.write(t, rclcpp::Duration::from_seconds(0.01));
+        std::this_thread::sleep_for(10ms);
+        t = clock->now();
+      }
+      EXPECT_EQ(wheel.cmd_count() + arm.cmd_count(), 0);
+    } else {
+      EXPECT_NE(component_state(rm), "active");
+      EXPECT_EQ(wheel.cmd_count_torque_on() + arm.cmd_count_torque_on(), 0);
+    }
+  }
+}
+
 TEST(SerialPort, ExclusiveOpen)
 {
-  FakeOpenCR fw;
+  FakeOpenCR fw(ROLE_WHEEL);
   opencr_hardware::SerialPort a, b;
   std::string err;
   ASSERT_TRUE(a.open(fw.path(), B115200, err)) << err;

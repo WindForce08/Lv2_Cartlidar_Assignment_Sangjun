@@ -12,6 +12,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <string>
 #include <utility>
@@ -50,6 +51,8 @@ private:
     std::string name;
     Role role;
     int slot;            // WHEEL 0~5 · ARM 0~5 · GRIPPER 0
+    double lo = -std::numeric_limits<double>::infinity();   // 팔 명령 한계 (URDF command_interface min/max)
+    double hi = std::numeric_limits<double>::infinity();
   };
 
   bool poll_serial();
@@ -79,6 +82,8 @@ private:
   int reset_button_ = 7;
   double battery_warn_v_ = 11.1;
   double battery_error_v_ = 10.5;
+  bool listen_only_ = false;   // true: CMD 를 한 번도 보내지 않음 — 토크 · 모션 없이 STATE 수신만 확인
+  bool auto_rearm_ = false;    // true: 잠금이 풀리면 리셋 버튼 없이 REARM (조이스틱 없는 벤치 전용, 실기 운용 금지)
 
   struct BoardLink
   {
@@ -99,6 +104,10 @@ private:
 
   // E-stop (실시간 루프 ↔ 노드 콜백, atomic 만)
   EstopLatch latch_;
+  RearmPulse rearm_;              // v5: 운용자 리셋 → 팔 보드에 REARM 펄스
+  bool rearm_flag_ = false;       // 이번 주기 팔 CMD 에 FLAG_REARM
+  bool prev_arm_hold_ = false;    // STATE ERR_HOLD 상승 → 잠금 trip
+  bool prev_reset_btn_ = false;
   std::atomic<bool> estop_{true};
   std::atomic<int64_t> joy_rx_ns_{0};
   std::atomic<bool> joy_estop_btn_{false};
@@ -108,7 +117,7 @@ private:
   std::atomic<uint8_t> fw_version_{0};
   std::atomic<float> battery_v_{0.f};
   std::atomic<uint32_t> bad_frames_{0};
-  std::atomic<int> estop_reason_code_{1};   // 0 없음 · 1 시작 · 2 링크 · 3 물리 · 4 버튼 · 5 joy
+  std::atomic<int> estop_reason_code_{1};   // 0 없음 · 1 시작 · 2 링크 · 3 물리 · 4 버튼 · 5 joy · 6 팔 HOLD
 
   rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_sub_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr estop_pub_;
