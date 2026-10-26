@@ -17,7 +17,8 @@
 //   READ_TAG : 왜곡 보정 원본에서 AprilTag → tag_id · tag_pose (Arducam 광학 프레임 기준, x 오른쪽 · y 아래 · z 앞)
 //   /perception/pucks (토픽, PuckArray): SEARCH_* 또는 READ_TAG 가 켜져 있으면 result 와 같은 주기로 발행한다
 //      Arducam 태그 → 번호 · 색 · 중심 · 긴 축(puck_estimator.hpp), D435 색 검출 → 색 · 중심(번호 -1)
-//      같은 퍽(merge_dist 안)이면 태그로 읽은 것을 남긴다. 새 영상이 없는 카메라는 그 영상으로 낸 결과를 다시 쓴다
+//      카메라 사이 같은 퍽(같은 색 · 한쪽 모름, merge_dist 안)은 일대일로 하나만 남긴다(puck_merge.hpp): 앞 · 뒤 D435 끼리,
+//      그다음 태그로 읽은 퍽과. 태그 퍽이 있으면 그것을 남긴다. 새 영상이 없는 카메라는 그 영상으로 낸 결과를 다시 쓴다
 //   /perception/task_marker (토픽, TaskMarker): READ_MARKER 가 켜져 있으면 앞 · 뒤 D435 (팔 카메라가 켜져 있으면 그것도)
 //      에서 장소 태그(marker.family · ids)를 찾아 가장 크게 보이는 것 하나. 없으면 found = false
 //   /perception/signal (토픽, SignalSequence): READ_SIGNAL 이 켜져 있으면 앞 · 뒤 D435 의 컬러 프레임을 모두(빠짐 없이)
@@ -68,6 +69,7 @@
 #include "perception/frame_gate.hpp"
 #include "perception/geometry.hpp"
 #include "perception/puck_estimator.hpp"
+#include "perception/puck_merge.hpp"
 #include "perception/signal_light.hpp"
 #include "perception/signal_sequence.hpp"
 #include "perception/tag_depth.hpp"
@@ -899,24 +901,21 @@ private:
     }
   }
 
-  // 태그로 읽은 퍽(팔)을 먼저 넣고, D435 퍽은 그 merge_dist 안이면 뺀다. 수평 거리 순 정렬, 집을 후보 고르기
+  // 카메라 사이 같은 퍽을 하나로 묶고(puck_merge.hpp), 수평 거리 순 정렬, 집을 후보 고르기
   void publish_pucks(const std::vector<const std::vector<Puck> *> & lists, const rclcpp::Time & stamp)
   {
     PuckArray msg;
     msg.header.stamp = stamp;
     msg.header.frame_id = base_frame_;
+    std::vector<const Puck *> all;
+    std::vector<PuckObs> obs;
     for (const auto * l : lists) {
       for (const auto & p : *l) {
-        bool dup = false;
-        for (const auto & q : msg.pucks) {
-          if (q.tag_id < 0 || p.tag_id >= 0) {continue;}
-          const double dx = p.pose.position.x - q.pose.position.x, dy = p.pose.position.y - q.pose.position.y,
-            dz = p.pose.position.z - q.pose.position.z;
-          dup = dup || std::sqrt(dx * dx + dy * dy + dz * dz) < merge_dist_;
-        }
-        if (!dup) {msg.pucks.push_back(p);}
+        all.push_back(&p);
+        obs.push_back({p.pose.position.x, p.pose.position.y, p.pose.position.z, p.color, p.tag_id, p.camera, p.confidence});
       }
     }
+    for (size_t i : merge_pucks(obs, merge_dist_)) {msg.pucks.push_back(*all[i]);}
     auto hd = [](const Puck & p) {return std::hypot(p.pose.position.x, p.pose.position.y);};
     std::stable_sort(msg.pucks.begin(), msg.pucks.end(), [&](const Puck & a, const Puck & b) {return hd(a) < hd(b);});
     msg.target_index = -1;

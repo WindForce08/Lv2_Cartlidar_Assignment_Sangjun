@@ -88,7 +88,7 @@ if(BUILD_TESTING)
   ament_add_gtest(test_perception_logic test/test_tfmini.cpp test/test_vision.cpp test/test_tracker_tag.cpp
     test/test_inputs.cpp test/test_lidar.cpp test/test_puck.cpp test/test_signal.cpp test/test_dice.cpp
     test/test_signal_light.cpp test/test_depth_split.cpp
-    test/test_tag_upright.cpp test/test_barcode.cpp)
+    test/test_tag_upright.cpp test/test_barcode.cpp test/test_puck_merge.cpp)
   target_link_libraries(test_perception_logic perception_detector perception_barcode)
   target_compile_definitions(test_perception_logic PRIVATE
     PERCEPTION_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data" PERCEPTION_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/data")
