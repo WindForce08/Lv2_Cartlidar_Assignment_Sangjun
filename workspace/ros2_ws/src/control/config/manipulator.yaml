@@ -51,6 +51,7 @@ manipulator_node:
       policies: [pick_cup_v1]    # 이 노드가 로드할 policies.yaml 이름
       policies_file: ""          # 빈 문자열 = <robot_policy share>/config/policies.yaml (bringup이 같은 파일을 넘김)
       horizon: 1.5               # 스트리밍 1점 궤적 time_from_start = horizon / rate_hz (떨리면 조정)
+      max_joint_velocity: 0.5    # rad/s, 정책 목표 한 tick 변화량 ≤ 이 값 / rate_hz ★ 학습 환경 관절 속도 한계와 맞출 것
 
     arm_base_frame: arm_base_link
     fixed_frame: odom            # 측정 시각 → 현재 변환 기준
