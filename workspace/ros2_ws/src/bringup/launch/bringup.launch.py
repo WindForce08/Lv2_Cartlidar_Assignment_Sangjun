@@ -4,6 +4,7 @@
 #   ros2 launch bringup bringup.launch.py use_hardware:=false    # OpenCR 없이 (판단 · 제어 · 인식만)
 #   ros2 launch bringup bringup.launch.py use_perception:=false  # 카메라 없이
 #   ros2 launch bringup bringup.launch.py skill_enabled:=true    # ONNX Runtime 빌드에서만 (정책 실행)
+#   ros2 launch bringup bringup.launch.py use_hardware:=false use_sim_time:=true   # 시뮬레이션 (Isaac Sim 이 /clock 발행)
 #
 # ① ros2_control_node · ② base_container : opencr_hardware/base_bringup.launch.py
 # ⑦ perception_container                  : perception/perception.launch.py
@@ -30,6 +31,8 @@ def generate_launch_description():
     pol = FindPackageShare('robot_policy')
     me = FindPackageShare('bringup')
     ipc = [{'use_intra_process_comms': True}]
+    # 모든 노드가 같은 시계를 쓰게: 시뮬레이션이면 /clock (영상 · 라이다 stamp 가 시뮬레이션 시각이라 300 ms 규칙에 필요)
+    sim = {'use_sim_time': ParameterValue(LaunchConfiguration('use_sim_time'), value_type=bool)}
     skill = {'skill.enabled': ParameterValue(LaunchConfiguration('skill_enabled'), value_type=bool),
              'skill.policies_file': LaunchConfiguration('policies_file')}
 
@@ -39,13 +42,13 @@ def generate_launch_description():
         composable_node_descriptions=[
             ComposableNode(package='mission', plugin='mission::MissionNode', name='mission_node',
                            parameters=[PathJoinSubstitution([mis, 'config', 'mission.yaml']),
-                                       PathJoinSubstitution([mis, 'config', 'mission_table.yaml'])], extra_arguments=ipc),
+                                       PathJoinSubstitution([mis, 'config', 'mission_table.yaml']), sim], extra_arguments=ipc),
             ComposableNode(package='control', plugin='control::DriveNode', name='drive_node',
-                           parameters=[PathJoinSubstitution([ctl, 'config', 'drive.yaml']), skill], extra_arguments=ipc),
+                           parameters=[PathJoinSubstitution([ctl, 'config', 'drive.yaml']), skill, sim], extra_arguments=ipc),
             ComposableNode(package='control', plugin='control::ManipulatorNode', name='manipulator_node',
-                           parameters=[PathJoinSubstitution([ctl, 'config', 'manipulator.yaml']), skill], extra_arguments=ipc),
+                           parameters=[PathJoinSubstitution([ctl, 'config', 'manipulator.yaml']), skill, sim], extra_arguments=ipc),
             ComposableNode(package='perception', plugin='perception::TFminiNode', name='tfmini_node',
-                           parameters=[PathJoinSubstitution([per, 'config', 'tfmini.yaml'])], extra_arguments=ipc),
+                           parameters=[PathJoinSubstitution([per, 'config', 'tfmini.yaml']), sim], extra_arguments=ipc),
         ])
 
     return LaunchDescription([
@@ -58,6 +61,7 @@ def generate_launch_description():
         DeclareLaunchArgument('skill_enabled', default_value='false',
                               description='정책 실행 — ONNX Runtime 빌드에서만 true (없으면 거절 → 미션 fallback)'),
         DeclareLaunchArgument('policies_file', default_value=PathJoinSubstitution([pol, 'config', 'policies.yaml'])),
+        DeclareLaunchArgument('use_sim_time', default_value='false', description='시뮬레이션 시계(/clock) 사용 — 모든 노드에 전달'),
 
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(PathJoinSubstitution([hw, 'launch', 'base_bringup.launch.py'])),
@@ -65,9 +69,10 @@ def generate_launch_description():
             condition=IfCondition(LaunchConfiguration('use_hardware'))),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(PathJoinSubstitution([per, 'launch', 'perception.launch.py'])),
+            launch_arguments={'use_sim_time': LaunchConfiguration('use_sim_time')}.items(),
             condition=IfCondition(LaunchConfiguration('use_perception'))),
         control_container,
         Node(package='robot_localization', executable='ekf_node', name='ekf_filter_node', output='screen',
-             parameters=[PathJoinSubstitution([me, 'config', 'ekf.yaml'])],
+             parameters=[PathJoinSubstitution([me, 'config', 'ekf.yaml']), sim],
              condition=IfCondition(LaunchConfiguration('use_ekf'))),
     ])
