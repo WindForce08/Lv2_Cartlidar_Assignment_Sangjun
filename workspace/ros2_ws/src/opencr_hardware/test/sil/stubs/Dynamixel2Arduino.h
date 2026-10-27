@@ -4,7 +4,8 @@
 //     timeout_ms(기본 10 ms) 만큼 시계가 흐른다 (master.cpp Master::syncRead · rxStatusPacket).
 //   - readControlTableItem: 응답 없으면 0 을 돌려주고 timeout(기본 100 ms) 만큼 시계가 흐른다. getLastLibErrCode 로 구분.
 //   - writeControlTableItem: 브로드캐스트(0xFE)는 응답을 기다리지 않고 모든 모터에 적용.
-//   - syncWrite: 토크 ON 모터는 목표에 즉시 도달 (motors_follow_goals). Bus Watchdog 만료 동작은 흉내 내지 않음.
+//   - syncWrite: 토크 ON 모터는 목표에 즉시 도달 (motors_follow_goals) — 시험이 max_step (속도) · stop_min/max (막힘) 을 주면 그만큼만.
+//     Bus Watchdog 만료 동작은 흉내 내지 않음.
 //     Min/Max Position Limit 밖 Goal Position 은 모터가 버린다 (e-Manual Data Limit — SyncWrite 라 응답 없음).
 #ifndef SIL_DYNAMIXEL2ARDUINO_H_
 #define SIL_DYNAMIXEL2ARDUINO_H_
@@ -17,7 +18,7 @@ namespace ControlTableItem
 {
 enum ControlTableItemIndex { HOMING_OFFSET, RETURN_DELAY_TIME, BUS_WATCHDOG, PROFILE_VELOCITY, PROFILE_ACCELERATION,
   HARDWARE_ERROR_STATUS, TORQUE_ENABLE, GOAL_POSITION, GOAL_VELOCITY, OPERATING_MODE, MIN_POSITION_LIMIT, MAX_POSITION_LIMIT,
-  POSITION_P_GAIN, POSITION_I_GAIN, POSITION_D_GAIN };
+  POSITION_P_GAIN, POSITION_I_GAIN, POSITION_D_GAIN, PWM_LIMIT };
 }
 
 namespace DYNAMIXEL
@@ -85,6 +86,7 @@ public:
       case ControlTableItem::POSITION_P_GAIN: return m->pos_p_gain;
       case ControlTableItem::POSITION_I_GAIN: return m->pos_i_gain;
       case ControlTableItem::POSITION_D_GAIN: return m->pos_d_gain;
+      case ControlTableItem::PWM_LIMIT: return m->pwm_limit;
       default: return 0;
     }
   }
@@ -140,7 +142,16 @@ public:
       if (p->addr == 116) {   // Goal Position
         if (v < m->min_position_limit || v > m->max_position_limit) {continue;}
         m->goal_position = v;
-        if (m->torque && g_board.motors_follow_goals) {m->position = v;}
+        if (m->torque && g_board.motors_follow_goals) {
+          int32_t p = v;
+          if (m->max_step > 0) {
+            if (p > m->position + m->max_step) {p = m->position + m->max_step;}
+            if (p < m->position - m->max_step) {p = m->position - m->max_step;}
+          }
+          if (p > m->stop_max) {p = m->stop_max;}
+          if (p < m->stop_min) {p = m->stop_min;}
+          m->position = p;
+        }
       } else if (p->addr == 104) {   // Goal Velocity
         m->goal_velocity = v;
         if (m->torque && g_board.motors_follow_goals) {m->velocity = v;}

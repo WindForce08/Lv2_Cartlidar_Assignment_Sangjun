@@ -17,7 +17,8 @@
 | 바퀴 | 4륜, ID 1~4, 슬롯 0~3 (4 · 5 는 0) | **같음** (주행 보드에서) | — |
 | 팔 | ID 11~16 | ID 11~16 (팔 보드에서), 슬롯 6~11 | — |
 | 포트 | (1대) | `ports` 에 후보 2개, STATE.role 로 연결 | |
-| 부팅 점검 | ping · 모델 · Homing 0, Return Delay 0 | + 팔 모터 위치 한계가 관절 범위를 덮는지 | 실기에서 모터 한계 때문에 목표가 응답 없이 무시됨 |
+| 부팅 점검 | ping · 모델 · Homing 0, Return Delay 0 | + 팔 모터 위치 한계가 관절 범위를 덮는지 · 위치 게인 · 그리퍼 PWM 한계 ≤ 400 | 실기에서 모터 한계 때문에 목표가 응답 없이 무시됨, 그리퍼 과부하 |
+| 그리퍼 막힘 보호 | 없음 | 6 번째 칸이 막히면 펌웨어가 "막힌 자리 + 33 tick" 으로 약하게 쥠, ESTOP 에도 쥔 채 (필드 변화 없음) | 2026-10-27 실기: 퍽을 PWM 100 % 로 쥐다 MOTOR_HW |
 
 프레임 (`FF FD | TYPE | LEN | PAYLOAD | CRC16-LE`), 필드 순서 (role 뒤는 v3 와 같음), 다른 팀이 쓰는 ROS 토픽 · Action 은 바뀌지 않는다.
 버전이 다른 조합 (v3/v4 호스트 + v5 펌웨어, 또는 반대) 은 활성화되지 않는다 — 안전한 쪽 실패. 호스트와 두 펌웨어를 함께 바꾼다.
@@ -44,7 +45,7 @@ v5 에서 팔은 토크를 유지한 채 HOLD 하고, 운용자 리셋 버튼 �
 | 11 | gripper_roll → **gripper_motor_joint** (모터 각 rad, 가상 관절) | **그리퍼 개폐 모터** (회전 → 손가락 벌림) | **15** |
 
 - 그리퍼 개폐를 (a) 6 번째 팔 칸 (관절각 rad) 으로 둘지, (b) `gripper_pos` 필드 + `GRIPPER_VALID` 로 옮기고 6 번째 칸을 비울지.
-  지금 펌웨어는 벤치용으로 (a) 를 쓰고, 범위를 그리퍼 끝에서 0.1 rad 안쪽으로 묶어 두었다.
+  지금 펌웨어는 벤치용으로 (a) 를 쓴다. 범위는 2026-10-27 다시 결합한 실측 (열림 1550 · 닫힘 2650 tick) 의 양 끝 20 tick 여유 = −0.7946 ~ 0.9541 rad.
 - 손가락 관절 (`gripper_left/right_joint`, m) 과 그리퍼 모터 각 (rad) 의 변환 · `gripper_controller` 연결 방식.
 
 ## Controller 팀 확인 요청 — dev 의 새 `manipulator.yaml` 과 펌웨어 · ros2_control
@@ -53,11 +54,11 @@ v5 에서 팔은 토크를 유지한 채 HOLD 하고, 운용자 리셋 버튼 �
 
 | 항목 | dev `manipulator.yaml` | 펌웨어 · ros2_control (`opencr.ros2_control.xacro`) | 영향 |
 |---|---|---|---|
-| 관절 한계 | J1 ±3.14 · J2 ±1.57 · J3 ±2.5 · J4 ±2.0 · J5 ±3.14 | 펌웨어 J1 ±2.8 · J2 −1.8~1.6 · J3 −1.6~1.5 · J4 −1.8~2.0 · J5 ±2.8. URDF (cartridar_01) J1 ±π · J2 ±1.5 · J3 −1.5~1.4 · J4 −1.7~2.164 · 손목 롤 ±π. 호스트 자르기 = 둘이 겹치는 구간 (J1 ±2.8 · J4 −1.7~2.0 · 손목 ±2.8) | 펌웨어는 범위 밖 CMD 를 통째로 거부, 호스트는 겹치는 구간으로 자름 (`test_robot_description` 이 확인) |
-| STOW | [0, 1.2, **−2.3**, 1.1, 0, 0] | J3 최소 −1.5 (URDF) | 호스트가 J3 를 −1.5 로 잘라 다른 자세가 됨 |
+| 관절 한계 | J1 ±3.14 · J2 ±1.57 · J3 ±2.5 · J4 ±2.0 · J5 ±3.14 | 펌웨어 (2026-10-27 실물) J1 ±π · J2 −2.14~1.6 · J3 −1.6~1.6 · J4 −1.92~2.0 · J5 ±2.8. 호스트 자르기 (`opencr.ros2_control.xacro`) = 펌웨어 범위 (로봇 URDF 가 오면 그 한계와도 겹치는 구간) | 펌웨어는 범위 밖 CMD 를 통째로 거부, 호스트는 겹치는 구간으로 자름 (`test_robot_description` 이 확인) |
+| STOW | [0, 1.2, **−2.3**, 1.1, 0, 0] | J3 최소 −1.6 (펌웨어 · 호스트 자르기) | 호스트가 J3 를 −1.5 로 잘라 다른 자세가 됨 |
 | 부호 · 영점 | `joint_signs` · `joint_offsets` TODO | 실물에서 URDF + 방향 · 영점 확인 끝 (실기 기록 2장) | IK 의 부호 · 0점이 URDF 와 같아야 함 |
-| 그리퍼 | `enabled: true`, `gripper_joint` 0~0.02 m (ParallelGripperCommand) | `gripper_controller` (ParallelGripperCommand, 늘 켬) → `gripper_motor_joint` = 6 번째 팔 칸, 목표는 **모터 각 rad** (−0.83~1.27) | `gripper.joint_name` 을 `gripper_motor_joint` 로, 열림 · 닫힘 값을 rad 로. 범위는 그리퍼 결합을 다시 맞춘 뒤 다시 잼 ★ |
-| 시작 자세 | — | 전원 켜기 전 접어 둔 자세 J2 −2.08 · J3 +1.55 · J4 −1.87 rad 가 범위 밖 | 범위를 넓히는 안 검토 중 (실기 기록 4-5) |
+| 그리퍼 | `enabled: true`, `gripper_joint` 0~0.02 m (ParallelGripperCommand) | `gripper_controller` (ParallelGripperCommand, 늘 켬) → `gripper_motor_joint` = 6 번째 팔 칸, 목표는 **모터 각 rad** (−0.7946~0.9541, 열림 1550 tick = −0.764 · 닫힘 2650 tick = 0.924) | `gripper.joint_name` 을 `gripper_motor_joint` 로, 열림 · 닫힘 값을 rad 로. 물체에 막히면 펌웨어가 약하게 쥠 (닫힘 값을 끝까지 줘도 됨) |
+| 시작 자세 | — | 전원 켜기 전 접어 둔 자세 (J2 691 · J3 3057 · J4 835 tick) 를 펌웨어 범위에 넣음 (A안, 2026-10-27) | 그 자세에서 바로 토크 ON 가능. 차체 2안이 오면 다시 봄 |
 | **TFmini 위치** | `tfmini_frame: tfmini_link` · `/arm_range` 로 팔 끝 거리 센서처럼 씀 (pick ① 정밀 정렬) | 실물 TFmini 는 **차체 하판 앞쪽 아래** (Perception `lidar.yaml` 은 앞쪽 비상 정지로 씀). `tfmini_link` 위치는 차체 2안 URDF 에서 (1안 폐기, ★ 실측) | pick 정밀 정렬 (TFmini 거리) 설계를 실물에 맞게 다시 봐야 함 |
 
 ## 로봇 URDF — 차체 2안 대기 (2026-10-27, Firmware 팀)

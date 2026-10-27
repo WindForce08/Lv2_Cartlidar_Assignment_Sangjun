@@ -55,22 +55,20 @@
       <xacro:opencr_wheel name="wheel_fr_joint" slot="2"/>
       <xacro:opencr_wheel name="wheel_rr_joint" slot="3"/>
 
-      <!-- 팔 관절 한계 (rad): 호스트가 명령을 이 범위로 자른다 = URDF 한계와 펌웨어 config.h ARM_MIN/MAX_RAD 가 겹치는 구간
-           (펌웨어는 범위 밖 CMD 를 통째로 거부하므로 넘으면 안 됨 - test_robot_description 이 확인).
-           URDF (cartridar_01) 는 보관함 계획 값 J1 ±π · J4 위 2.164 라 joint1 · joint4 는 펌웨어 범위 (±2.8 · 2.0) 에서 잘림.
-           보관함 앞 줄 (J1 최대 2.98 · J4 최대 2.16) 을 쓰려면 펌웨어 범위 · 모터 EEPROM 위치 한계를 넓힌 뒤 (장치 쓰기, 승인) 여기도 넓힘 ★.
-           기구 간섭 (홈 자세 J1 > 137° 면 뒤 프로파일, 롤 180° 근처 J4 > 112° 면 카메라) 은 경로 계획이 피해야 함 -->
-      <xacro:opencr_arm_joint name="joint1"           slot="0" lower="-2.8"    upper="2.8"/>
-      <xacro:opencr_arm_joint name="joint2"           slot="1" lower="-1.5"    upper="1.5"/>
-      <xacro:opencr_arm_joint name="joint3"           slot="2" lower="-1.5"    upper="1.4"/>
-      <xacro:opencr_arm_joint name="joint4"           slot="3" lower="-1.7"    upper="2.0"/>
-      <xacro:opencr_arm_joint name="wrist_roll_joint" slot="4" lower="-2.8"    upper="2.8"/>
-      <!-- 6 번째 칸 = 그리퍼 개폐 모터 (ID 15, 모터 각 rad). robot.urdf.xacro 의 가상 관절 (빈 링크) 이라 다른 좌표에 영향 없음.
+      <!-- 팔 관절 한계 (rad): 호스트가 명령을 이 범위로 자른다. 펌웨어 config.h ARM_MIN/MAX_RAD 안이어야 하고
+           (펌웨어는 범위 밖 CMD 를 통째로 거부 - test_robot_description 이 확인), 로봇 URDF 가 오면 그 <limit> 안이기도 해야 함.
+           2026-10-27 (arm_bench 실물): 펌웨어 범위를 실물에 맞춰 넓힘 (대기 자세 포함 · J1 ±180°) → 여기도 펌웨어 범위 그대로 -->
+      <xacro:opencr_arm_joint name="joint1"           slot="0" lower="-3.14159" upper="3.14159"/>
+      <xacro:opencr_arm_joint name="joint2"           slot="1" lower="-2.14"    upper="1.6"/>
+      <xacro:opencr_arm_joint name="joint3"           slot="2" lower="-1.6"     upper="1.6"/>
+      <xacro:opencr_arm_joint name="joint4"           slot="3" lower="-1.92"    upper="2.0"/>
+      <xacro:opencr_arm_joint name="wrist_roll_joint" slot="4" lower="-2.8"     upper="2.8"/>
+      <!-- 6 번째 칸 = 그리퍼 개폐 모터 (ID 15, 모터 각 rad). 로봇 URDF 에 가상 관절 (빈 링크) 로 둬야 함 (hardware_interface 는 URDF 에 없는 관절을 거부).
            칸이 비면 호스트가 0 을 보내므로 반드시 둔다 — 명령하는 컨트롤러가 없으면 켤 때 위치를 유지.
            범위 = 펌웨어 config.h 6 번째 칸. gripper_controller 가 이 관절 (모터 각 rad) 을 직접 명령한다.
            손가락 (gripper_left/right_joint, m) 과의 변환은 미정 ★
-           ⚠ 그리퍼 결합이 0/4095 경계를 지나는 동안 (docs/arm_bench_test_2026-10-26.md 4-4) 은 호스트로 팔 보드를 켜지 않는다 -->
-      <xacro:opencr_arm_joint name="gripper_motor_joint" slot="5" lower="-0.83" upper="1.27"/>
+           2026-10-27 다시 결합해 0/4095 경계를 지나지 않음 (열림 1550 · 닫힘 2650 tick, 닫을수록 증가). 막힘 보호는 펌웨어 GripGuard -->
+      <xacro:opencr_arm_joint name="gripper_motor_joint" slot="5" lower="-0.7946" upper="0.9541"/>
 
       <sensor name="imu">
         <state_interface name="orientation.x"/>

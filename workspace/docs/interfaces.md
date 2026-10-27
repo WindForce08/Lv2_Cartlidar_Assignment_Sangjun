@@ -84,9 +84,14 @@
     0x40 HOLD (팔이 토크를 유지한 채 멈춤, REARM 으로만 풀림) · 0x80 FAULT (부팅 점검 실패, 토크 거부)
 - `PROTOCOL_VERSION = 5`: 버전이 다르면 호스트가 활성화를 거부한다 (v3 은 길이도 다름). 호스트는 역할별 STATE를 하나씩 받고 두 보드 모두 v5인지 확인해야 활성화한다.
 - 명령이 끊기거나 (200 ms) ESTOP: 바퀴 0, 팔은 토크를 유지한 채 HOLD (무수신은 마지막 승인 목표, ESTOP 은 현재 위치). 팔 HOLD 는 운용자 리셋 → 호스트 REARM 펄스로만 풀린다.
+  단 그리퍼 (팔 6 번째 칸) 는 쥐는 중이면 (목표가 현재에서 45 tick 안) ESTOP 에도 쥔 목표를 유지한다 — 물체를 놓치지 않게.
+- 그리퍼 막힘 보호 (팔 6 번째 칸, 2026-10-27): 목표가 현재보다 45 tick 넘게 앞서 있는데 0.3 s 동안 거의 못 움직이면 (물체를 잡음)
+  펌웨어가 목표를 "막힌 자리 + 33 tick" 으로 고정해 약하게 쥔다 (계속 밀면 과부하로 모터가 토크를 끔). 호스트가 덜 닫는 쪽 (열기) 을 명령하면 풀린다.
+  STATE 에 표시 비트는 없다 — 그리퍼 위치가 명령보다 덜 닫히고 전류가 있으면 쥐는 중. 값은 `opencr_firmware/config.h` 의 `GRIP_*`.
 - OpenCR 빌드: `OPENCR_BOARD_ROLE=1` 주행, `=2` 팔 — 빌드 옵션으로만 정한다 (기본값 없음, `opencr_firmware/tools/build_firmware.sh wheel|arm`).
 - 포트: `ports` 파라미터에 두 후보 경로를 쉼표로 전달한다. `/dev/ttyACM0`과 `/dev/ttyACM1`은 후보일 뿐이며, 실제 역할은 STATE.role로 연결한다.
-- 부팅 점검 (펌웨어): ping · 모델 번호 · Homing Offset 0 확인, Return Delay 0 기록, (팔) 모터 Min/Max Position Limit 가 관절 범위를 덮는지 확인.
+- 부팅 점검 (펌웨어): ping · 모델 번호 · Homing Offset 0 확인, Return Delay 0 기록, (팔) 모터 Min/Max Position Limit 가 관절 범위를 덮는지 확인,
+  (팔) 위치 게인 쓰기 · 다시 읽기, (팔) 그리퍼 모터 PWM Limit ≤ 400 (45 %).
   하나라도 실패면 0x10 · 0x80 → 토크 켜기 거부
 - Bus Watchdog 500 ms (25 단위): 토크 켤 때 모든 모터에 설정 — OpenCR 이 멈춰도 모터가 스스로 정지
 - 시리얼은 `flock` + `TIOCEXCL` 로 한 프로세스만 연다

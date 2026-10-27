@@ -46,7 +46,8 @@ imu_sensor_broadcaster:
     sensor_name: imu
     frame_id: imu_link
 
-# 그리퍼 = 팔 6 번째 칸 (ID 15). 목표 단위는 모터 각 rad (범위 -0.83 ~ 1.27, opencr.ros2_control.xacro) — 손가락 간격 m 아님 ★
+# 그리퍼 = 팔 6 번째 칸 (ID 15). 목표 단위는 모터 각 rad (범위 -0.7946 ~ 0.9541 = 1530 ~ 2670 tick, 열림 1550 · 닫힘 2650,
+#   opencr.ros2_control.xacro) — 손가락 간격 m 아님 ★. 막혀서 못 닫으면 펌웨어 GripGuard 가 약하게 쥠 (config.h GRIP_*)
 gripper_controller:
   ros__parameters:
     type: parallel_gripper_action_controller/GripperActionController

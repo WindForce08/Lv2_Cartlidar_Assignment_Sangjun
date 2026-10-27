@@ -12,6 +12,10 @@
 //   i <id> <new>   ID 변경 (EEPROM)
 //   b <id> <baud>  통신 속도 변경 (EEPROM). 바꾼 뒤 포트도 그 속도로 바꿔 다시 확인한다
 //   m <id> <min> <max>  위치 한계 변경 (EEPROM Min/Max Position Limit, tick 0~4095). 쓴 뒤 다시 읽어 확인
+//   o <id> <offset>     Homing Offset 변경 (EEPROM, tick, 음수 가능). 현재 위치 읽는 값 = 실제 + offset. 쓴 뒤 다시 읽어 확인
+//                       위치 모드 (3) 에서는 ±1024 만 받음 (2026-10-27 실물: 2048 은 무시됨)
+//   w <id> <pwm>        PWM Limit 변경 (EEPROM, 0~885 = 0~100 %). 출력 (힘) 상한 - 그리퍼가 막혀 과부하 나지 않게. 쓴 뒤 다시 읽어 확인
+//                       (arm_bench 2026-10-27: 그리퍼 결합이 0/4095 를 지나 위치 모드로 못 여는 것을 반 바퀴 밀어 해결)
 //   h              도움말
 #include <Dynamixel2Arduino.h>
 
@@ -159,6 +163,38 @@ static void changeLimits(uint8_t id, uint32_t lo, uint32_t hi)
   }
 }
 
+static void changeOffset(uint8_t id, int32_t off)
+{
+  if (off < -1044479 || off > 1044479) {Serial.println("ERR offset 은 -1044479 ~ 1044479"); return;}
+  if (!dxl.ping(id)) {Serial.println("ERR 응답 없음"); return;}
+  if (!torqueIsOff(id)) {Serial.println("ERR 토크가 켜져 있거나 읽기 실패 — EEPROM 을 바꾸지 않음"); return;}
+  if (!dxl.writeControlTableItem(HOMING_OFFSET, id, off)) {Serial.println("ERR 쓰기 실패 — r 로 다시 확인"); return;}
+  delay(20);
+  const int32_t r = dxl.readControlTableItem(HOMING_OFFSET, id);
+  const int32_t pos = dxl.readControlTableItem(PRESENT_POSITION, id);
+  if (r == off) {
+    Serial.print("OK id ");
+    Serial.print(id);
+    Serial.print(" homing_offset ");
+    Serial.print(r);
+    Serial.print(" present_position ");
+    Serial.println(pos);
+  } else {
+    Serial.println("ERR 확인 실패 — r 로 다시 확인");
+  }
+}
+
+static void changePwmLimit(uint8_t id, uint32_t pwm)
+{
+  if (pwm > 885) {Serial.println("ERR pwm 은 0~885"); return;}
+  if (!dxl.ping(id)) {Serial.println("ERR 응답 없음"); return;}
+  if (!torqueIsOff(id)) {Serial.println("ERR 토크가 켜져 있거나 읽기 실패 — EEPROM 을 바꾸지 않음"); return;}
+  if (!dxl.writeControlTableItem(PWM_LIMIT, id, (int32_t)pwm)) {Serial.println("ERR 쓰기 실패 — x 로 다시 확인"); return;}
+  const int32_t r = dxl.readControlTableItem(PWM_LIMIT, id);
+  if (r == (int32_t)pwm) {Serial.print("OK id "); Serial.print(id); Serial.print(" pwm_limit "); Serial.println(r);}
+  else {Serial.println("ERR 확인 실패 — x 로 다시 확인");}
+}
+
 static void changeId(uint8_t id, uint32_t nid)
 {
   if (nid >= DXL_BROADCAST_ID) {Serial.println("ERR 새 ID 는 0~252"); return;}
@@ -198,7 +234,7 @@ static void changeBaud(uint8_t id, uint32_t nb)
 
 static void help()
 {
-  Serial.println("dxl_setup — s 탐색 | p <baud> | r <id> | x <id> | l <id> <0|1> | i <id> <new> | b <id> <baud> | m <id> <min> <max> | h");
+  Serial.println("dxl_setup — s 탐색 | p <baud> | r <id> | x <id> | l <id> <0|1> | i <id> <new> | b <id> <baud> | m <id> <min> <max> | o <id> <offset> | w <id> <pwm> | h");
   Serial.println("  토크 ON 명령 없음. EEPROM 쓰기 (i, b) 는 모터를 한 대씩 연결한 상태에서만. m 은 ID 가 겹치지 않으면 체인 그대로.");
   Serial.print("  현재 포트 baud=");
   Serial.println(g_baud);
@@ -228,6 +264,12 @@ static void handle(char * line)
     case 'i': if (n == 3) {changeId((uint8_t)a, b);} else {Serial.println("ERR i <id> <new>");} break;
     case 'b': if (n == 3) {changeBaud((uint8_t)a, b);} else {Serial.println("ERR b <id> <baud>");} break;
     case 'm': if (n == 4) {changeLimits((uint8_t)a, b, c);} else {Serial.println("ERR m <id> <min> <max>");} break;
+    case 'w': if (n == 3) {changePwmLimit((uint8_t)a, b);} else {Serial.println("ERR w <id> <pwm>");} break;
+    case 'o': {
+      long off = 0;
+      if (sscanf(line, " %c %lu %ld", &cmd, &a, &off) == 3) {changeOffset((uint8_t)a, (int32_t)off);} else {Serial.println("ERR o <id> <offset>");}
+      break;
+    }
     default: help(); break;
   }
 }

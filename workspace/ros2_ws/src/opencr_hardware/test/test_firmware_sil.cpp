@@ -105,6 +105,7 @@ struct Bench
   {
     for (uint8_t id : WHEEL_IDS) {w.motors[id] = SilMotor{}; w.motors[id].model = WHEEL_MODEL;}
     for (uint8_t id : ARM_IDS) {a.motors[id] = SilMotor{}; a.motors[id].model = ARM_MODEL;}
+    a.motors[ARM_IDS[GRIP_SLOT]].pwm_limit = GRIP_PWM_LIMIT_MAX;   // 실물 설정 (dxl_setup w 15 400)
   }
   void boot() {w.setup(); a.setup();}
   // 1 ms 씩 두 보드를 함께 돌림
@@ -809,5 +810,146 @@ TEST(FirmwareSil, ArmIgnoresSingleTorqueOffCmd)
     EXPECT_TRUE(b.ha.last().error & ERR_HOLD);
     b.drive(ARM_TORQUE_OFF_CMDS * 10 + 20, NO_CMD, 0);
     for (uint8_t id = 11; id <= 16; ++id) {EXPECT_FALSE(b.a.motors[id].torque) << "HOLD + 연속 요청이면 끔 " << int(id);}
+  });
+}
+
+// ---- 그리퍼 막힘 보호 (2026-10-27 arm_bench, config.h GRIP_* · safety_core.h GripGuard) ----
+//   실물: 퍽을 쥔 채 PWM 100 % 로 1.5 s → MOTOR_HW (과부하 추정). 모터 PWM Limit 400 + 펌웨어가 막힘을 보고 약하게 쥔다.
+//   그리퍼 칸 (GRIP_SLOT) 은 닫을수록 tick 증가 (실측 열림 1550 · 닫힘 2650).
+
+// G1. 퍽에 막힘 → GRIP_STALL_MS 뒤 목표 = 막힌 자리 + 쥐는 힘. 계속 닫으라 해도 유지, 열기 명령이면 풀림. 다른 관절은 그대로
+TEST(FirmwareSil, GripperStallSqueezesLightly)
+{
+  isolated([] {
+    Bench b;
+    b.boot();
+    b.arm_activate();
+    SilMotor & g = b.arm_motor(GRIP_SLOT);
+    const int32_t puck = arm_tick(0.3f);
+    g.stop_max = puck;
+    b.ha.arm[GRIP_SLOT] = ARM_MAX_RAD[GRIP_SLOT];   // 끝까지 닫으라는 명령
+    b.drive(static_cast<int>(GRIP_STALL_MS) - 100, NO_CMD, FLAG_TORQUE_ON);
+    EXPECT_EQ(g.position, puck);
+    EXPECT_EQ(b.arm_goal(GRIP_SLOT), arm_tick(ARM_MAX_RAD[GRIP_SLOT])) << "판정 시간 전에는 명령 그대로";
+    b.drive(200, NO_CMD, FLAG_TORQUE_ON);
+    EXPECT_EQ(b.arm_goal(GRIP_SLOT), puck + GRIP_SQUEEZE_TICKS) << "막힌 자리 + 쥐는 힘";
+    b.drive(2000, NO_CMD, FLAG_TORQUE_ON);
+    EXPECT_EQ(b.arm_goal(GRIP_SLOT), puck + GRIP_SQUEEZE_TICKS) << "계속 닫으라 해도 더 조이지 않음";
+    EXPECT_FALSE(b.ha.last().error & (ERR_HOLD | ERR_FAULT | ERR_MOTOR_CONFIG));
+    b.ha.arm[GRIP_SLOT] = ARM_MIN_RAD[GRIP_SLOT];   // 열기
+    b.drive(50, NO_CMD, FLAG_TORQUE_ON);
+    EXPECT_EQ(b.arm_goal(GRIP_SLOT), arm_tick(ARM_MIN_RAD[GRIP_SLOT]));
+    EXPECT_EQ(g.position, arm_tick(ARM_MIN_RAD[GRIP_SLOT]));
+    // 호스트가 직접 문턱 안 (GRIP_STALL_TICKS) 으로 약하게 쥐면 그대로 둠
+    b.ha.arm[GRIP_SLOT] = static_cast<float>((puck + GRIP_STALL_TICKS - TICK_CENTER) * RAD_PER_TICK);
+    b.drive(1000, NO_CMD, FLAG_TORQUE_ON);
+    EXPECT_NEAR(b.arm_goal(GRIP_SLOT), puck + GRIP_STALL_TICKS, 1);
+    // 그리퍼 칸만: 다른 관절이 막혀도 목표를 바꾸지 않음 (그 관절은 호스트 · 벤치 도구의 추종 오차 감시)
+    b.arm_motor(1).stop_max = arm_tick(0.2f);
+    b.ha.arm[1] = 0.5f;
+    b.drive(1000, NO_CMD, FLAG_TORQUE_ON);
+    EXPECT_EQ(b.arm_goal(1), arm_tick(0.5f));
+  });
+}
+
+// G2. 빈 손으로 끝에서 끝까지 한 번에 (gripper action · 정책처럼 계단 명령) → 판정 시간보다 오래 걸려도 막힘 아님.
+//   가는 중 ESTOP → 그리퍼도 현재 위치에서 멈춤 (쥐는 중일 때만 목표 유지)
+TEST(FirmwareSil, GripperFreeMoveNotTreatedAsStall)
+{
+  isolated([] {
+    Bench b;
+    b.boot();
+    b.arm_activate();
+    SilMotor & g = b.arm_motor(GRIP_SLOT);
+    g.max_step = 15;    // 10 ms 마다 15 tick ≈ 2.3 rad/s (PWM 45 % 빈 손 추정 ★) → 1140 tick 에 0.76 s
+    b.ha.arm[GRIP_SLOT] = ARM_MIN_RAD[GRIP_SLOT];
+    b.drive(1500, NO_CMD, FLAG_TORQUE_ON);
+    ASSERT_EQ(g.position, arm_tick(ARM_MIN_RAD[GRIP_SLOT]));
+    b.ha.arm[GRIP_SLOT] = ARM_MAX_RAD[GRIP_SLOT];
+    b.drive(1500, NO_CMD, FLAG_TORQUE_ON);
+    EXPECT_EQ(g.position, arm_tick(ARM_MAX_RAD[GRIP_SLOT])) << "끝까지 감";
+    EXPECT_EQ(b.arm_goal(GRIP_SLOT), arm_tick(ARM_MAX_RAD[GRIP_SLOT]));
+    b.ha.arm[GRIP_SLOT] = ARM_MIN_RAD[GRIP_SLOT];
+    b.drive(200, NO_CMD, FLAG_TORQUE_ON);
+    const int32_t mid = g.position;
+    EXPECT_LT(mid, arm_tick(ARM_MAX_RAD[GRIP_SLOT]) - 100);
+    EXPECT_GT(mid, arm_tick(ARM_MIN_RAD[GRIP_SLOT]) + 100);
+    b.drive(10, NO_CMD, FLAG_TORQUE_ON | FLAG_ESTOP);
+    b.drive(300, NO_CMD, FLAG_TORQUE_ON | FLAG_ESTOP);
+    EXPECT_TRUE(b.ha.last().error & ERR_HOLD);
+    EXPECT_EQ(b.arm_goal(GRIP_SLOT), g.position);
+    EXPECT_NEAR(g.position, mid, 30) << "ESTOP 순간 위치에서 멈춤";
+  });
+}
+
+// G3. 쥔 채 ESTOP · 무수신 HOLD → 쥔 목표 유지 (현재 위치로 바꾸면 쥐는 힘 0 → 퍽을 놓칠 수 있음). REARM 뒤에도 같음, 열면 풀림
+TEST(FirmwareSil, GripperKeepsGripThroughHold)
+{
+  isolated([] {
+    Bench b;
+    b.boot();
+    b.arm_activate();
+    SilMotor & g = b.arm_motor(GRIP_SLOT);
+    const int32_t puck = arm_tick(0.3f);
+    const int32_t hold = puck + GRIP_SQUEEZE_TICKS;
+    g.stop_max = puck;
+    b.ha.arm[GRIP_SLOT] = ARM_MAX_RAD[GRIP_SLOT];
+    b.drive(600, NO_CMD, FLAG_TORQUE_ON);
+    ASSERT_EQ(b.arm_goal(GRIP_SLOT), hold);
+    b.drive(30, NO_CMD, FLAG_TORQUE_ON | FLAG_ESTOP);
+    EXPECT_TRUE(b.ha.last().error & ERR_HOLD);
+    EXPECT_EQ(b.arm_goal(GRIP_SLOT), hold) << "ESTOP HOLD 에서도 쥔 채";
+    EXPECT_EQ(b.arm_goal(0), b.arm_motor(0).position) << "다른 관절은 현재 위치";
+    b.run(1000);   // 무수신
+    b.ha.poll();
+    EXPECT_TRUE(b.ha.last().error & ERR_CMD_TIMEOUT);
+    EXPECT_EQ(b.arm_goal(GRIP_SLOT), hold);
+    b.drive(50, NO_CMD, FLAG_TORQUE_ON);
+    b.drive(30, NO_CMD, FLAG_TORQUE_ON | FLAG_REARM);
+    b.drive(100, NO_CMD, FLAG_TORQUE_ON);
+    EXPECT_FALSE(b.ha.last().error & ERR_HOLD);
+    EXPECT_EQ(b.arm_goal(GRIP_SLOT), hold) << "REARM 뒤 계속 닫으라 하면 그대로 쥠";
+    b.ha.arm[GRIP_SLOT] = 0.0f;
+    b.drive(50, NO_CMD, FLAG_TORQUE_ON);
+    EXPECT_EQ(b.arm_goal(GRIP_SLOT), arm_tick(0.0f));
+  });
+  // 닫던 중 호스트가 끊김 (무수신 HOLD = 마지막 목표 유지) → 막히면 그래도 약하게 쥠
+  isolated([] {
+    Bench b;
+    b.boot();
+    b.arm_activate();
+    SilMotor & g = b.arm_motor(GRIP_SLOT);
+    g.stop_max = arm_tick(0.3f);
+    b.ha.arm[GRIP_SLOT] = ARM_MAX_RAD[GRIP_SLOT];
+    b.drive(20, NO_CMD, FLAG_TORQUE_ON);
+    b.run(1000);
+    b.ha.poll();
+    EXPECT_TRUE(b.ha.last().error & (ERR_CMD_TIMEOUT | ERR_HOLD));
+    EXPECT_EQ(b.arm_goal(GRIP_SLOT), arm_tick(0.3f) + GRIP_SQUEEZE_TICKS);
+  });
+}
+
+// G4. 부팅 점검: 그리퍼 모터 PWM Limit 가 GRIP_PWM_LIMIT_MAX 보다 크면 (공장값 885) FAULT — 토크를 켜지 않음
+TEST(FirmwareSil, GripperPwmLimitCheckedAtBoot)
+{
+  isolated([] {
+    Bench b;
+    b.arm_motor(GRIP_SLOT).pwm_limit = 885;
+    b.boot();
+    for (int t = 0; t < 1000; t += 100) {
+      b.drive(50, NO_CMD, FLAG_TORQUE_ON);
+      b.drive(50, NO_CMD, FLAG_TORQUE_ON | FLAG_REARM);
+    }
+    const State sa = b.ha.last();
+    EXPECT_TRUE(sa.error & ERR_FAULT);
+    EXPECT_TRUE(sa.error & ERR_MOTOR_CONFIG);
+    for (uint8_t id : ARM_IDS) {EXPECT_FALSE(b.a.motors[id].torque) << int(id);}
+  });
+  isolated([] {
+    Bench b;   // 그리퍼 = GRIP_PWM_LIMIT_MAX, 다른 팔 모터 = 공장값 885 (관계없음)
+    b.boot();
+    b.arm_activate();
+    EXPECT_FALSE(b.ha.last().error & (ERR_FAULT | ERR_MOTOR_CONFIG));
+    EXPECT_TRUE(b.arm_motor(0).torque);
   });
 }

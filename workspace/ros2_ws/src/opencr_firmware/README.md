@@ -70,17 +70,23 @@ tools/build_firmware.sh wheel --upload /dev/ttyACM0    # 빌드 후 업로드 �
 
   | 칸 | 관절 | ID | 범위 (rad) |
   |---|---|---|---|
-  | 6 | joint1 (허리) | 11 | −2.8 ~ 2.8 |
-  | 7 | joint2 (어깨) | 12 | −1.8 ~ 1.6 |
-  | 8 | joint3 (팔꿈치) | 13 | −1.6 ~ 1.5 |
-  | 9 | joint4 (손목 굽힘) | 16 | −1.8 ~ 2.0 |
+  | 6 | joint1 (허리) | 11 | −π ~ π (2026-10-27 arm_bench) |
+  | 7 | joint2 (어깨) | 12 | −2.14 ~ 1.6 (대기 자세 포함, A안) |
+  | 8 | joint3 (팔꿈치) | 13 | −1.6 ~ 1.60 |
+  | 9 | joint4 (손목 굽힘) | 16 | −1.92 ~ 2.0 |
   | 10 | wrist_roll_joint (손목 롤) | 14 | −2.8 ~ 2.8 |
-  | 11 | gripper_motor_joint = **그리퍼 개폐 모터** (각도 rad, 손가락 m 과의 변환 미정) | 15 | −0.83 ~ 1.27 ★ |
+  | 11 | gripper_motor_joint = **그리퍼 개폐 모터** (열림 1550 · 닫힘 2650 tick, 닫을수록 증가) | 15 | −0.7946 ~ 0.9541 (양 끝 20 tick 여유) |
 
 - 모터 EEPROM 의 Min/Max Position Limit 도 위 범위와 같게 맞춰 두었다. **부팅 점검이 이를 확인**한다 —
   모터 한계가 펌웨어 범위보다 좁으면 범위 밖 목표를 모터가 조용히 버리기 때문에 (실제로 joint2 가 그랬음) FAULT 로 막는다.
 - 위치 게인 (P/I/D, 모터 RAM) 은 `config.h` 의 `ARM_POS_*_GAIN` 을 부팅 때마다 쓰고 다시 읽어 확인한다 (다르면 FAULT).
   지금은 공장값 (P 800 · I 0 · D 0) — 중력 처짐 때문에 실물 튜닝 예정 ★. 6 번째 칸 (그리퍼) 은 I = 0 고정.
+- **그리퍼 막힘 보호 (2026-10-27 arm_bench, `safety_core.h` GripGuard)**: 그리퍼 목표가 현재보다 `GRIP_STALL_TICKS` (45) 넘게 앞서 있는데
+  `GRIP_STALL_MS` (300 ms) 동안 `GRIP_PROGRESS_TICKS` (8) 도 못 움직이면 = 물체를 잡음 → 목표를 "막힌 자리 + `GRIP_SQUEEZE_TICKS` (33)" 로 고정해 약하게 쥔다.
+  호스트가 그보다 덜 닫는 쪽 (열기) 을 명령하면 풀린다. 빈 손으로 멀리 움직이는 중에는 (계단 명령이라도) 막힘이 아니다. HOLD 중에도 돈다.
+  ESTOP · 토크 OFF 요청 HOLD 때 그리퍼 목표가 현재에서 45 tick 안이면 (쥐는 중) 그대로 둔다 — 퍽을 놓치지 않게.
+  실물에서 퍽을 PWM 100 % 로 1.5 s 쥐다가 MOTOR_HW (과부하 추정) 가 나서 넣음. 위치 P 800 기준 1 tick ≈ PWM 6.25 (33 tick ≈ 23 %).
+- 부팅 점검: 그리퍼 모터 EEPROM **PWM Limit ≤ `GRIP_PWM_LIMIT_MAX` (400 = 45 %)** — 공장값 885 면 FAULT (`tools/dxl_setup` 의 `w 15 400`).
 - 팔은 명령이 끊기거나 ESTOP 이 와도 **토크를 끄지 않고 그 자리에서 HOLD** 한다 (무거운 그리퍼가 떨어지지 않게).
   HOLD 는 호스트의 REARM (리셋 버튼) 으로만 풀린다. 팔 토크를 끄는 방법은 사실상 전원 차단뿐 — 팔을 받친 뒤 끈다.
 - 실기 시험 기록 · 알려진 문제 (중력 처짐, 시작 자세가 범위 밖, 그리퍼 결합): `../../../docs/arm_bench_test_2026-10-26.md`.
@@ -109,9 +115,9 @@ tools/build_firmware.sh wheel --upload /dev/ttyACM0    # 빌드 후 업로드 �
 | `opencr_firmware.ino` | 펌웨어 본체 (두 역할 공용, `OPENCR_BOARD_ROLE` 로 나뉨) |
 | `config.h` | ID · 방향 · 한계 · 주소 · 단위 (공통 / 주행 전용 / 팔 전용 구역) |
 | `opencr_protocol.h` | 패킷 정의 — `../opencr_hardware/include/opencr_hardware/opencr_protocol.hpp` 와 **바이트 단위로 같아야 함** (시험이 비교) |
-| `safety_core.h` | 안전 판단 (CMD 검증 · 타임아웃 · ESTOP · HOLD/REARM · FAULT), Arduino 의존 없음 |
+| `safety_core.h` | 안전 판단 (CMD 검증 · 타임아웃 · ESTOP · HOLD/REARM · FAULT · 그리퍼 막힘 GripGuard), Arduino 의존 없음 |
 | `tools/build_firmware.sh` | 역할별 빌드 · 업로드 |
-| `tools/dxl_setup/` | 모터 사전 설정 도구 (탐색 `s` · 정보 `r` · 진단 덤프 `x` · ID `i` · 통신 속도 `b` · 위치 한계 `m`). 토크 ON 명령 없음 |
+| `tools/dxl_setup/` | 모터 사전 설정 도구 (탐색 `s` · 정보 `r` · 진단 덤프 `x` · ID `i` · 통신 속도 `b` · 위치 한계 `m` · Homing Offset `o` · PWM 한계 `w`). 토크 ON 명령 없음 |
 
 ## 시험
 

@@ -67,8 +67,14 @@ static const uint16_t WHEEL_MODEL = 1030;  // 부팅 점검: 바퀴 XM430-W210 (
 //   6 번째 칸 범위는 결합을 다시 맞춘 뒤의 측정 (닫힘 1440 = -0.93 rad, 열림 2945 = +1.38 rad) 기준.
 //   그 뒤 결합이 바뀌어 지금 실물과 맞지 않음 (닫힘 611 · 열림 -1293, 0/4095 경계를 지남) → 다시 결합 · 측정 필요 ★
 static const uint8_t ARM_IDS[ARM_COUNT]     = {11, 12, 13, 16, 14, 15};
-static const float   ARM_MIN_RAD[ARM_COUNT] = {-2.8f, -1.8f, -1.6f, -1.8f, -2.8f, -0.83f};   // URDF 와 같게 ★ (6 번째: 그리퍼 끝에서 0.1 rad 안쪽)
-static const float   ARM_MAX_RAD[ARM_COUNT] = { 2.8f,  1.6f,  1.5f,  2.0f,  2.8f,  1.27f};
+//   2026-10-27 (arm_bench, 사용자 "펌웨어 범위를 수정하자"): 전원 끌 때 접어 두는 대기 자세 (J2 691 · J3 3057 · J4 835 · 그리퍼 603 tick) 에서
+//   바로 시작하도록 J2 최소 -1.8 → -2.14 · J3 최대 1.5 → 1.60 · J4 최소 -1.8 → -1.92 (A안, 여유 약 3°),
+//   6 번째 칸 (그리퍼): 2026-10-27 다시 결합 → 실측 (사용자) 끝까지 열림 1550 · 완전히 닫힘 2650 tick (닫을수록 tick 증가, 이동량 1100).
+//   범위 1530 ~ 2670 tick = -0.7946 ~ 0.9541 rad (양 끝 20 tick 여유 - 닫힘 읽는 값이 조금씩 흔들려도 시작 검사 통과).
+//   슬라이더 명령은 monitor/gripper_map.py 로 1550 ~ 2650 안에서만 나감. 모터 한계도 1530 ~ 2670 (dxl_setup m 15)
+//   2026-10-27 사용자 "J1 범위를 -180 ~ +180 으로": J1 ±2.8 → ±3.14159 (모터 한계 0 ~ 4095 = 한 바퀴 전체). 배선 꼬임 · 차체 간섭은 확인 필요 ★
+static const float   ARM_MIN_RAD[ARM_COUNT] = {-3.14159f, -2.14f, -1.6f, -1.92f, -2.8f, -0.7946f};   // URDF 와 같게 ★
+static const float   ARM_MAX_RAD[ARM_COUNT] = { 3.14159f,  1.6f,  1.60f,  2.0f,  2.8f,  0.9541f};
 //   모터 EEPROM Min/Max Position Limit 도 이 범위와 같게 (부팅 점검이 확인, tools/dxl_setup 의 m 명령)
 static const int8_t  ARM_DIR[ARM_COUNT]     = {+1, +1, +1, +1, +1, +1};   // 2026-10-26 J1~J5 손으로 확인 (URDF + 방향과 같음)
 static const uint16_t ARM_MODEL = 1020;    // XM430-W350 (2026-10-26 실물 확인: 팔 모터 6대 모두 W350). W210 이면 1030
@@ -79,6 +85,21 @@ static const uint16_t ARM_MODEL = 1020;    // XM430-W350 (2026-10-26 실물 확�
 static const uint16_t ARM_POS_P_GAIN[ARM_COUNT] = {800, 800, 800, 800, 800, 800};
 static const uint16_t ARM_POS_I_GAIN[ARM_COUNT] = {  0,   0,   0,   0,   0,   0};
 static const uint16_t ARM_POS_D_GAIN[ARM_COUNT] = {  0,   0,   0,   0,   0,   0};
+
+// 그리퍼 (6 번째 칸) 막힘 보호 (2026-10-27 arm_bench): 퍽을 쥐다가 MOTOR_HW (과부하 추정, 막힌 채 PWM 885 로 1.5 s) →
+//   모터 EEPROM PWM Limit 400 (dxl_setup w 15 400) + 펌웨어가 막힘을 보고 약하게 쥔다 (safety_core.h GripGuard).
+//   막힘 = 목표가 현재보다 GRIP_STALL_TICKS 넘게 앞서 있는데 GRIP_STALL_MS 동안 GRIP_PROGRESS_TICKS 도 못 움직임
+//   → 목표 = 현재 + GRIP_SQUEEZE_TICKS (목표 쪽) 로 고정 (쥐기). 호스트 목표가 그 자리보다 덜 가는 쪽 (보통 열기) 이면 풀고 따른다.
+//   ESTOP · 토크 OFF 요청 HOLD 에서도 그리퍼 목표가 현재에서 GRIP_STALL_TICKS 안이면 (쥐는 중) 그대로 둔다 (퍽을 놓치지 않음).
+//   그리퍼 위치 P 800 기준 1 tick ≈ PWM 6.25: 쥐는 힘 33 tick ≈ PWM 206 (23 %), 막힘 문턱 45 tick ≈ 281 (32 %) — 오래 미는 힘의 상한.
+#define GRIP_SLOT 5                                 // 그리퍼 개폐 = 팔 6 번째 칸 (ID 15)
+static const int32_t  GRIP_STALL_TICKS    = 45;     // 이보다 큰 목표 - 현재 가 이어지면 막힘 후보 ★
+static const int32_t  GRIP_PROGRESS_TICKS = 8;      // GRIP_STALL_MS 안에 이만큼도 못 움직이면 막힘 (빈 손 이동은 수십 tick 씩 움직임)
+static const uint32_t GRIP_STALL_MS       = 300;    // 막힘 판정 시간 ★
+static const int32_t  GRIP_SQUEEZE_TICKS  = 33;     // 막힌 자리에서 더 닫는 양 = 쥐는 힘 (슬라이더 기본값과 같음, 사용자 실측으로 확정 ★)
+static const int32_t  GRIP_PWM_LIMIT_MAX  = 400;    // 부팅 점검: 그리퍼 모터 EEPROM PWM Limit (공장값 885) 가 이보다 크면 FAULT
+static_assert(GRIP_SQUEEZE_TICKS < GRIP_STALL_TICKS, "쥐는 중 (오차 = 쥐는 힘) 을 다시 막힘으로 보지 않게");
+static_assert(GRIP_SLOT < ARM_COUNT, "그리퍼 칸은 팔 칸 안");
 
 // 그리퍼 개폐 전용 경로 (미정). 실물 개폐 모터는 지금 6 번째 칸 (위) 으로 다룸
 #define GRIPPER_ID        0                // 0 = 없음. 정해지면 ID 와 아래 변환을 맞춤 ★
