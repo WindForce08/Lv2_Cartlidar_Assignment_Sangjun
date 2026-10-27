@@ -15,7 +15,7 @@
 | Controller | `mission` | `mission_node` (미션표 순서 실행 · 재시도 · fallback · PAUSED 재개) | ⑧ control_container |
 | Controller | `control` | `drive_node` (nav2 · 정렬 · skill), `manipulator_node` (IK · 집기 · skill), 공용 `fsm.hpp` | ⑧ control_container |
 | Controller | `robot_policy` | 정책 추론 라이브러리 (ONNX Runtime 선택) | ⑧ (drive · manipulator 안) |
-| Firmware | `opencr_hardware` | ros2_control SystemInterface (잠금식 E-stop · /diagnostics · 펌웨어 버전 확인), URDF · 컨트롤러 설정 | ① ros2_control_node |
+| Firmware | `opencr_hardware` | ros2_control SystemInterface (잠금식 E-stop · /diagnostics · 펌웨어 버전 확인), ros2_control 정의 · 컨트롤러 설정 (로봇 URDF 는 차체 2안 대기) | ① ros2_control_node |
 | Firmware | `opencr_firmware` | OpenCR Arduino 스케치 (colcon 제외) | OpenCR |
 | 공동 | `bringup` | 전체 실행 launch, ekf 설정 | — |
 

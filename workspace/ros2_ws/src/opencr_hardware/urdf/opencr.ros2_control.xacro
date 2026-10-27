@@ -1,7 +1,8 @@
 <?xml version="1.0"?>
-<!-- OpenCRHardware ros2_control 블록 (Firmware 팀).
+<!-- OpenCRHardware ros2_control 블록 (Firmware 팀). 형상 없음 - 로봇 URDF (차체 2안, 대기) 가 이 매크로를 include 해서 쓴다.
      바퀴 칸 0~3 = 주행 펌웨어 config.h 의 WHEEL_IDS 순서 (왼쪽 앞 · 왼쪽 뒤 · 오른쪽 앞 · 오른쪽 뒤).
-     팔 칸 0~5 = 팔 펌웨어 ARM_IDS 순서 (joint1~4 · wrist_roll_joint · gripper_motor_joint). -->
+     팔 칸 0~5 = 팔 펌웨어 ARM_IDS 순서 (joint1~4 · wrist_roll_joint · gripper_motor_joint).
+     2026-10-27: 1안 차체 (cartridar_01) 폐기 → 로봇 URDF · CAD 가져오기 도구를 지움. 관절 이름은 2안 URDF 이름에 맞춰 다시 볼 것 ★ -->
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 
   <xacro:macro name="opencr_wheel" params="name slot">
@@ -30,8 +31,9 @@
   </xacro:macro>
 
   <!-- 두 OpenCR의 순서는 고정하지 않고 STATE.role로 역할을 판별한다. -->
-  <!-- 관절 이름은 CAD URDF (cartridar_01.urdf) 와 같다. 바퀴 칸 (왼앞 0 · 왼뒤 1 · 오른앞 2 · 오른뒤 3) 은 주행 펌웨어 config.h WHEEL_IDS ·
-       WHEEL_DIR 와, 팔 칸 0~5 는 팔 펌웨어 ARM_IDS {11, 12, 13, 16, 14, 15} 순서와 같다. -->
+  <!-- 바퀴 칸 (왼앞 0 · 왼뒤 1 · 오른앞 2 · 오른뒤 3) 은 주행 펌웨어 config.h WHEEL_IDS · WHEEL_DIR 와,
+       팔 칸 0~5 는 팔 펌웨어 ARM_IDS {11, 12, 13, 16, 14, 15} 순서와 같다.
+       바퀴 이름 · 개수는 차체 2안 확정 뒤 그 URDF 에 맞춤 ★ (지금 이름 wheel_fl/rl/fr/rr_joint 는 폐기된 1안 것) -->
   <xacro:macro name="opencr_ros2_control" params="name:=OpenCRSystem ports:=/dev/ttyACM0,/dev/ttyACM1 joy_required:=true">
     <ros2_control name="${name}" type="system">
       <hardware>

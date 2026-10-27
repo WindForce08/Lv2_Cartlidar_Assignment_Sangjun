@@ -1,4 +1,6 @@
-# 컨트롤러 (Firmware 팀) — 주행 4륜 · 팔. 관절 이름 = CAD URDF (cartridar_01.urdf) · urdf/opencr.ros2_control.xacro
+# 컨트롤러 (Firmware 팀) — 주행 4륜 · 팔. 관절 이름 = urdf/opencr.ros2_control.xacro
+# 2026-10-27: 1안 차체 (cartridar_01) 폐기 → 차체 치수 (바퀴 간격 · 반지름) 를 지움. 차체 2안 확정 뒤 넣을 것 ★
+#   (값이 없으면 diff_drive_controller 가 시작을 거부한다 - 틀린 치수로 오도메트리를 내지 않게 일부러 비움)
 controller_manager:
   ros__parameters:
     update_rate: 100
@@ -6,17 +8,17 @@ controller_manager:
 diff_drive_controller:
   ros__parameters:
     type: diff_drive_controller/DiffDriveController
-    left_wheel_names: ["wheel_fl_joint", "wheel_rl_joint"]
+    left_wheel_names: ["wheel_fl_joint", "wheel_rl_joint"]      # 이름은 2안 URDF 에 맞춤 ★
     right_wheel_names: ["wheel_fr_joint", "wheel_rr_joint"]
-    wheel_separation: 0.2744         # 바퀴 중심 사이 = CAD 바퀴 y ±0.1372 ★ 실측. 4WD 미끄럼 보정은 wheel_separation_multiplier 로
+    # wheel_separation: (2안)        # 바퀴 중심 사이 [m] ★. 4WD 미끄럼 보정은 wheel_separation_multiplier 로
     wheel_separation_multiplier: 1.0
-    wheel_radius: 0.033
+    # wheel_radius: (2안)            # [m] ★
     odom_frame_id: odom
     base_frame_id: base_link
     enable_odom_tf: false            # odom→base_link TF 는 ekf 만 발행
     publish_rate: 50.0
     cmd_vel_timeout: 0.5
-    linear.x.max_velocity: 0.34
+    linear.x.max_velocity: 0.34      # 아래 속도 · 가속 한계는 예전 바퀴 · 기어 기준 - 2안 확정 뒤 다시 ★
     linear.x.min_velocity: -0.34
     linear.x.max_acceleration: 1.5
     linear.x.min_acceleration: -1.5

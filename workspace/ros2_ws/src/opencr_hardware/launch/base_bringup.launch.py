@@ -1,14 +1,26 @@
 # 프로세스 ① ros2_control_node (+ 컨트롤러 spawner) · ② base_container (robot_state_publisher · twist_mux · joy · teleop)
-# ros2 launch opencr_hardware base_bringup.launch.py   (주행 4륜 · CAD URDF, 2026-10-26)
+# ros2 launch opencr_hardware base_bringup.launch.py   (주행 4륜)
+# 로봇 URDF (urdf/robot.urdf.xacro = 차체 URDF + opencr.ros2_control.xacro) 가 있어야 한다.
+#   2026-10-27 1안 차체 (cartridar_01) 폐기로 지움 → 차체 2안 URDF 가 올 때까지는 이 런치가 이유를 알리고 끝낸다.
+import os
+
+from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, LogInfo, OpaqueFunction, Shutdown
 from launch.substitutions import Command, LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
 
+ROBOT_XACRO = os.path.join(get_package_share_directory('opencr_hardware'), 'urdf', 'robot.urdf.xacro')
+NO_URDF = ('로봇 URDF 없음 (opencr_hardware/urdf/robot.urdf.xacro) — 1안 차체 폐기 (2026-10-27), 차체 2안 URDF 대기. '
+           'OpenCR · 컨트롤러 없이 실행하려면 bringup 의 use_hardware:=false')
+
+
 def _setup(context):
+    if not os.path.exists(ROBOT_XACRO):
+        return [LogInfo(msg='[opencr_hardware] ' + NO_URDF), Shutdown(reason=NO_URDF)]
     pkg = FindPackageShare('opencr_hardware')
     use_teleop = LaunchConfiguration('use_teleop').perform(context).lower() == 'true'
 

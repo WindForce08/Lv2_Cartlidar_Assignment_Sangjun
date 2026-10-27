@@ -53,7 +53,7 @@ static const float ACCEL_FACTOR     = 0.000598550415f; // ±2 g → m/s^2
 #define WHEEL_COUNT       4
 static const uint8_t WHEEL_IDS[WHEEL_COUNT] = {1, 2, 3, 4};      // 6륜 때 ID 1 · 3 · 4 · 6 → 1 · 2 · 3 · 4 로 다시 매김 (tools/dxl_setup) ★
 static const int8_t  WHEEL_DIR[WHEEL_COUNT] = {+1, +1, -1, -1};  // 왼쪽 +1 · 오른쪽 -1 (모터가 마주 보게 장착 가정) — 실물 회전 확인 필수 ★
-static const float   WHEEL_GEAR     = 1.5f;   // 바퀴 각속도 / 모터 각속도 (증속벨트 36T→24T). 직결이면 1.0
+static const float   WHEEL_GEAR     = 1.5f;   // 바퀴 각속도 / 모터 각속도. 1.5 = 예전 증속벨트 (36T→24T) 가정 — 차체 2안 구동계 확정 전 미정 ★ (직결이면 1.0)
 static const int32_t WHEEL_VEL_LIMIT_RAW = 330;   // Goal Velocity 한계 (0.229 rpm 단위, XM430-W210 12 V 무부하 ≈ 77 rpm) ★
 static const uint16_t WHEEL_MODEL = 1030;  // 부팅 점검: 바퀴 XM430-W210 (= 1030, 확정 2026-10-22). W350 이면 1020
 

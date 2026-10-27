@@ -44,7 +44,8 @@ if(BUILD_TESTING)
   target_include_directories(test_hardware_loopback PRIVATE include)
   target_link_libraries(test_hardware_loopback gtest hardware_interface::hardware_interface rclcpp::rclcpp)
 
-  # 로봇 설명: robot.urdf.xacro (CAD URDF + ros2_control) 를 펼쳐 ros2_control 파서 · 펌웨어 칸 · 컨트롤러 이름 확인 (xacro 없으면 건너뜀)
+  # 로봇 설명: ros2_control 블록 (opencr.ros2_control.xacro) 의 칸 · 명령 한계 · 컨트롤러 이름 확인 (xacro 없으면 건너뜀).
+  #   로봇 URDF (robot.urdf.xacro) 가 있으면 다른 노드가 쓰는 좌표까지 확인, 없으면 그 시험은 건너뜀 (차체 2안 대기)
   ament_add_gtest(test_robot_description test/test_robot_description.cpp)
   target_compile_definitions(test_robot_description PRIVATE PKG_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
   target_link_libraries(test_robot_description hardware_interface::hardware_interface)
