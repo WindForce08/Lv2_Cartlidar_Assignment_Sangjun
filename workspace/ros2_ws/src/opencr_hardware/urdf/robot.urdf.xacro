@@ -10,28 +10,41 @@
   <xacro:include filename="$(find opencr_hardware)/urdf/opencr.ros2_control.xacro"/>
 
   <xacro:property name="wheel_count" value="$(arg wheel_count)"/>
-  <xacro:property name="wheel_y" value="0.1585"/>     <!-- 바퀴 중심 |y| (증속벨트 바깥 15 mm 이동 후) ★ -->
-  <xacro:property name="wheel_x" value="0.0925"/>     <!-- 앞바퀴 x (뒤 = 0.025 - 0.0925) -->
-  <xacro:property name="wheel_z" value="0.02625"/>
+  <!-- 바퀴 · 차체 높이 · IMU 는 기준 URDF urdfv2/urdf/teamrobot.urdf (teamrobot_4wd, 직결) 값 (2026-10-26).
+       base_link 원점 = urdfv2 와 같음 (하판 윗면 중심, 바닥 위 56.25 mm). 관절 이름은 ros2_control · 컨트롤러 설정 때문에 기존 이름 유지:
+       wheel_left_front = wheel_fl · wheel_left_rear = wheel_rl · wheel_right_front = wheel_fr · wheel_right_rear = wheel_rr -->
+  <xacro:property name="wheel_y" value="0.1372"/>     <!-- 바퀴 중심 |y| (직결, 바퀴 간격 0.2744) -->
+  <xacro:property name="wheel_x" value="0.100"/>      <!-- 앞바퀴 x, 뒤바퀴 x = -0.100 (앞뒤 대칭) -->
+  <xacro:property name="wheel_z" value="-0.02325"/>   <!-- 바퀴 중심 z (base_link 아래) -->
+  <xacro:property name="wheel_radius" value="0.033"/> <!-- Ø66. controllers_4wd.yaml wheel_radius 와 같게 -->
 
   <link name="base_link"/>
+  <!-- 바닥 투영 (urdfv2 와 같음): base_link 아래 = 바퀴 중심 아래 반지름만큼 -->
+  <link name="base_footprint"/>
+  <joint name="base_footprint_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="base_footprint"/>
+    <origin xyz="0 0 ${wheel_z - wheel_radius}" rpy="0 0 0"/>
+  </joint>
 
+  <!-- 바퀴 축 = +y (4개 모두) → + 회전 = 앞으로 굴러감 (urdfv2 와 같음). 오른쪽 모터 반전은 펌웨어 WHEEL_DIR 가 한다 -->
   <xacro:macro name="wheel" params="name x y">
     <link name="${name}_link"/>
     <joint name="${name}_joint" type="continuous">
       <parent link="base_link"/>
       <child link="${name}_link"/>
-      <origin xyz="${x} ${y} ${wheel_z}" rpy="-1.5708 0 0"/>
-      <axis xyz="0 0 1"/>
+      <origin xyz="${x} ${y} ${wheel_z}" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <limit effort="3.0" velocity="8.063421"/>   <!-- XM430-W210 12 V: 3.0 N·m, 무부하 77 rpm (직결) -->
     </joint>
   </xacro:macro>
   <xacro:wheel name="wheel_left_front"  x="${wheel_x}"  y="${wheel_y}"/>
-  <xacro:wheel name="wheel_left_rear"   x="${0.025 - wheel_x}" y="${wheel_y}"/>
+  <xacro:wheel name="wheel_left_rear"   x="${-wheel_x}" y="${wheel_y}"/>
   <xacro:wheel name="wheel_right_front" x="${wheel_x}"  y="${-wheel_y}"/>
-  <xacro:wheel name="wheel_right_rear"  x="${0.025 - wheel_x}" y="${-wheel_y}"/>
+  <xacro:wheel name="wheel_right_rear"  x="${-wheel_x}" y="${-wheel_y}"/>
   <xacro:if value="${wheel_count == 6}">
-    <xacro:wheel name="wheel_left_mid"  x="0.0125" y="${wheel_y}"/>
-    <xacro:wheel name="wheel_right_mid" x="0.0125" y="${-wheel_y}"/>
+    <xacro:wheel name="wheel_left_mid"  x="0" y="${wheel_y}"/>
+    <xacro:wheel name="wheel_right_mid" x="0" y="${-wheel_y}"/>
   </xacro:if>
 
   <!-- 센서 (정적) ★ 장착 위치 -->
@@ -43,7 +56,9 @@
       <origin xyz="${xyz}" rpy="${rpy}"/>
     </joint>
   </xacro:macro>
-  <xacro:fixed_link name="imu_link"          parent="base_link" xyz="0 0 0.068" rpy="0 0 0"/>
+  <!-- OpenCR 내장 IMU (주행 보드): urdfv2 imu_link — 하판 아래에 뒤집어 단 보드 축 (z 아래). ekf 가 이 TF 로 yaw rate 를 base_link 로 돌린다.
+       뒤집어 장착 실물 확인 (2026-10-26). 위에서 봐서 반시계로 돌리면 /imu/data angular_velocity.z 는 음수 (보드 z 가 아래) -->
+  <xacro:fixed_link name="imu_link"          parent="base_link" xyz="0 0 -0.0192" rpy="3.141593 0 1.570796"/>
   <xacro:fixed_link name="laser_front"       parent="base_link" xyz="0.15 0 0.08" rpy="0 0 0"/>
   <xacro:fixed_link name="laser_rear"        parent="base_link" xyz="-0.15 0 0.08" rpy="0 0 3.14159"/>
   <xacro:fixed_link name="camera_front_link" parent="base_link" xyz="0.16 0 0.13" rpy="0 0.35 0"/>

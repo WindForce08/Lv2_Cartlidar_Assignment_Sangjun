@@ -13,7 +13,7 @@
 //   sendState()    상태 + IMU + 배터리 전압 + 오류 · HOLD · FAULT 비트
 //
 // 부팅 점검 (Xmen opencr_control.ino prepareAxis 참고): ping · 모델 번호 · Homing Offset 0 · Return Delay 0
-//   · (팔) 모터 Min/Max Position Limit 가 config 범위를 덮는지. 하나라도 어긋나면 ERR_MOTOR_CONFIG · ERR_FAULT → 호스트가 활성화를 거부. 토크 ON 때 Bus Watchdog 500 ms 를 켬.
+//   · (팔) 모터 Min/Max Position Limit 가 config 범위를 덮는지 · (바퀴) Drive Mode 반전 0 · Velocity Limit ≥ WHEEL_VEL_LIMIT_RAW (다르면 맞춰 씀, prepareWheelConfig). 하나라도 어긋나면 ERR_MOTOR_CONFIG · ERR_FAULT → 호스트가 활성화를 거부. 토크 ON 때 Bus Watchdog 500 ms 를 켬.
 // 필요 라이브러리: OpenCR 보드 패키지 (Arduino IDE), Dynamixel2Arduino ≥ 0.6, OpenCR IMU (보드 패키지 내장)
 
 // 역할은 빌드 옵션으로만 정한다 (기본값 없음 — 팔 보드에 주행 펌웨어가 잘못 올라가는 것을 막음)
@@ -137,6 +137,37 @@ static void checkArmLimits(int i)
   const int32_t hi = dxl.readControlTableItem(MAX_POSITION_LIMIT, id);
   if (dxl.getLastLibErrCode() != DXL_LIB_OK) {g_config_error = true; return;}
   if (lo > (a < b ? a : b) || hi < (a < b ? b : a)) {g_config_error = true;}
+}
+
+// 바퀴: 모터 EEPROM 설정을 펌웨어 가정에 맞춘다 (Return Delay · Operating Mode 를 setupMotor 가 쓰는 것과 같은 방식).
+//   Drive Mode bit0 (Reverse) = 0: 방향 반전은 WHEEL_DIR 로만 한다. 모터에서도 반전하면 오른쪽이 거꾸로 돈다
+//     → 켜져 있으면 bit0 만 끈다 (다른 비트는 그대로).
+//   Velocity Limit ≥ WHEEL_VEL_LIMIT_RAW: 넘는 Goal Velocity 는 모터가 거부하고 SyncWrite 라 펌웨어가 알 수 없다
+//     → 작으면 WHEEL_VEL_LIMIT_RAW 로 올린다 (크면 그대로).
+//   EEPROM 은 토크 OFF 에서만 써진다 — 바퀴는 setupMotor 가 토크를 이미 껐다. 다를 때만 쓰고 (EEPROM 수명),
+//   쓴 뒤 다시 읽어 맞지 않으면 (토크가 안 꺼짐 · 통신 실패) 부팅 점검 실패로 알린다.
+static bool readWheelItem(uint8_t item, uint8_t id, int32_t & v)
+{
+  v = dxl.readControlTableItem(item, id);
+  return dxl.getLastLibErrCode() == DXL_LIB_OK;
+}
+
+static void prepareWheelConfig(int i)
+{
+  const uint8_t id = WHEEL_IDS[i];
+  if (!dxl.ping(id)) {return;}   // 응답 없음은 setupMotor 가 이미 알림
+  int32_t drive_mode = 0;
+  if (!readWheelItem(DRIVE_MODE, id, drive_mode)) {g_config_error = true; return;}
+  if (drive_mode & 0x01) {
+    dxl.writeControlTableItem(DRIVE_MODE, id, drive_mode & ~0x01);
+    if (!readWheelItem(DRIVE_MODE, id, drive_mode) || (drive_mode & 0x01)) {g_config_error = true; return;}
+  }
+  int32_t vel_limit = 0;
+  if (!readWheelItem(VELOCITY_LIMIT, id, vel_limit)) {g_config_error = true; return;}
+  if (vel_limit < WHEEL_VEL_LIMIT_RAW) {
+    dxl.writeControlTableItem(VELOCITY_LIMIT, id, WHEEL_VEL_LIMIT_RAW);
+    if (!readWheelItem(VELOCITY_LIMIT, id, vel_limit) || vel_limit < WHEEL_VEL_LIMIT_RAW) {g_config_error = true; return;}
+  }
 }
 
 static void setupSync()
@@ -272,8 +303,14 @@ static void handleCmd()
   if (!g_torque_on || !g_safety.apply_targets()) {return;}
 
   if (BOARD_ROLE == opencr_proto::ROLE_WHEEL) {
+    // 한 바퀴라도 한계를 넘으면 모든 바퀴를 같은 비율로 줄여 좌우 속도비 (회전 반경) 를 유지한다.
+    //   바퀴마다 따로 자르면 회전하며 달릴 때 바깥 바퀴만 잘려 명령보다 덜 돈다. 개별 clamp 는 안전망으로 남김
+    const float lim = WHEEL_VEL_LIMIT_RAW * RADS_PER_VEL_RAW * WHEEL_GEAR;   // 바퀴 rad/s
+    float peak = 0.f;
+    for (int i = 0; i < WHEEL_COUNT; ++i) {peak = fmaxf(peak, fabsf(cmd.wheel_vel[i]));}
+    const float k = (peak > lim) ? lim / peak : 1.f;
     for (int i = 0; i < WHEEL_COUNT; ++i) {
-      g_wheel_goal_raw[i] = wheelRadsToRaw(cmd.wheel_vel[i], WHEEL_DIR[i]);
+      g_wheel_goal_raw[i] = wheelRadsToRaw(cmd.wheel_vel[i] * k, WHEEL_DIR[i]);
     }
   } else {
     for (int i = 0; i < ARM_COUNT; ++i) {
@@ -381,7 +418,10 @@ void setup()
   dxl.setPortProtocolVersion(2.0);
   int torque_kept = 0;   // 토크 ON 으로 남겨 둔 팔 관절 수
   if (BOARD_ROLE == opencr_proto::ROLE_WHEEL) {
-    for (int i = 0; i < WHEEL_COUNT; ++i) {setupMotor(WHEEL_IDS[i], OP_VELOCITY, false, WHEEL_MODEL);}
+    for (int i = 0; i < WHEEL_COUNT; ++i) {
+      setupMotor(WHEEL_IDS[i], OP_VELOCITY, false, WHEEL_MODEL);
+      prepareWheelConfig(i);
+    }
   } else {
     for (int i = 0; i < ARM_COUNT; ++i) {
       torque_kept += setupMotor(ARM_IDS[i], OP_POSITION, true, ARM_MODEL) ? 1 : 0;
