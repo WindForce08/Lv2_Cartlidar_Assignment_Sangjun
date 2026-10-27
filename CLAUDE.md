@@ -19,15 +19,15 @@ i=$(mktemp) && GIT_INDEX_FILE=$i git read-tree --empty && GIT_INDEX_FILE=$i git 
 - 퍽 운반 로봇: 주행 4륜 (2026-10-26 6륜에서 가운데 2개 제거) + 매니퓰레이터 · ROS 2 Lyrical · C++17. 메인 SBC Jetson Orin Nano, OpenCR 2대 (USB CDC).
 - 펌웨어: `workspace/ros2_ws/src/opencr_firmware/` (Arduino 스케치, `COLCON_IGNORE`). 팀원용 설명: 그 폴더의 `README.md`.
   - 같은 소스를 역할별로 따로 빌드한다. **역할은 빌드 옵션으로만** (기본값 없음, 없으면 ino 의 `#error`): `tools/build_firmware.sh wheel|arm|setup`
-  - `OPENCR_BOARD_ROLE=1` 주행 보드: 바퀴 Dynamixel ID 1~4, Velocity Mode, 바퀴 칸 0~3 (칸 4 · 5 는 STATE 0) · IMU · 배터리
+  - `OPENCR_BOARD_ROLE=1` 주행 보드: 바퀴 Dynamixel ID 1~4 (칸 0~3 = ID {1,3,2,4}, PR #10), Velocity Mode, 직결 `WHEEL_GEAR 1.0`, 바퀴 칸 0~3 (칸 4 · 5 는 STATE 0) · IMU · 배터리
   - `OPENCR_BOARD_ROLE=2` 팔 보드: Dynamixel ID 11~16, Position Mode, 팔 칸 6~11
 - 호스트: `workspace/ros2_ws/src/opencr_hardware/` (ros2_control SystemInterface 플러그인). 후보 포트 2개를 열고 STATE.role 로 보드를 판별한다.
-  주행 4륜 고정 (`wheel_count` 옵션 · 6륜 설정 삭제), `config/controllers_4wd.yaml`. URDF = CAD `cartridar_01` (아래).
+  주행 4륜 고정 (`wheel_count` 옵션 · 6륜 설정 삭제), `config/controllers_4wd.yaml`. 로봇 URDF 없음 (1안 폐기, 차체 2안 대기 — 아래).
 - `opencr_firmware/opencr_protocol.h` 와 `opencr_hardware/include/opencr_hardware/opencr_protocol.hpp` 는 바이트 단위로 같아야 한다 (`test_protocol` 이 비교). 한쪽을 고치면 둘 다 복사한다.
 - 프로토콜: `FF FD | TYPE | LEN | PAYLOAD | CRC16-LE`, CMD 0x01 55 B · STATE 0x81 192 B, CRC-16/BUYPASS (다항식 0x8005, 초기값 0, 헤더~페이로드 끝).
   - 코드는 **v5** (2026-10-26, 사용자 결정 "전체 v5 전환"): v4 와 길이 · 오프셋 같고 CMD `FLAG_REARM 0x08`, STATE `ERR_HOLD 0x40` · `ERR_FAULT 0x80` 추가.
   - 팀 규격 `workspace/docs/interfaces.md` 의 **승인본 (dev) 은 v3** (OpenCR 1대, CMD 54 B · STATE 191 B, 4륜 ID 1~4). 이 브랜치는 10/22 `a817e2e` 에서 승인 없이 v4 · 6륜으로 고쳤고,
-    2026-10-26 사용자 결정으로 **v5 · 4륜 제안**으로 다시 고침 (PR 에서 Controller 팀장 승인 필요, 승인되지 않음). **승인 전 dev/main 머지 금지.**
+    2026-10-26 사용자 결정으로 **v5 · 4륜 제안**으로 다시 고침 → **PR #6 으로 dev 에 병합됨 (10-26 c1ad4a4)**. 그 뒤 interfaces.md 변경 (10-27 그리퍼 ESTOP 예외 · 부팅 점검) 은 다음 PR 에서 다시 승인.
     변경 요청서: `workspace/docs/opencr_v5_change_request.md` (v3 → v5 · 팔 6 번째 칸 = 그리퍼 개폐 · 부팅 점검 · dev manipulator.yaml 과 다른 점).
 - 펌웨어 안전 판단은 `opencr_firmware/safety_core.h` (Arduino 의존 없음, ino 가 include). 팔 HOLD 는 REARM 상승 에지로만 풀린다.
 
@@ -50,6 +50,25 @@ i=$(mktemp) && GIT_INDEX_FILE=$i git read-tree --empty && GIT_INDEX_FILE=$i git 
 팔 실기 기록 [workspace/docs/arm_bench_test_2026-10-26.md](workspace/docs/arm_bench_test_2026-10-26.md) ·
 규격 변경 요청 [workspace/docs/opencr_v5_change_request.md](workspace/docs/opencr_v5_change_request.md) · 팀원용 [opencr_firmware/README.md](workspace/ros2_ws/src/opencr_firmware/README.md).
 
+- **2026-10-27 오후 — 커밋 · dev 병합 (로컬만, 푸시 안 함)**: fetch 해 보니 **PR #6 은 10-26 dev 에 병합됨** (c1ad4a4, 저장소 주인 계정 — 리뷰 여부는 gh 없어 미확인)
+  · **PR #10 `manipulatorFirmware` (754b29c, 10-27)** 이 우리 펌웨어를 고침: `WHEEL_IDS {1,3,2,4}` (실물 장착 · spin 시험), `WHEEL_GEAR 1.0` 직결 (실물 확인),
+  `prepareWheelConfig` (부팅 때 바퀴 Drive Mode 반전 끔 · Velocity Limit ≥ 330 EEPROM 씀), 바퀴 한계 넘으면 비례 축소 (D6 펌웨어 쪽), SIL 6 개, `scripts/opencr_wheel_tool.py`,
+  예전 `robot.urdf.xacro` 에 urdfv2 `teamrobot.urdf` 값 (바퀴 간격 0.2744 · r 0.033 · IMU 뒤집힘). → 주행 보드는 팀에서 실물로 돌려 본 상태 (커밋 문구 기준).
+  사용자 결정: ①② 를 두 커밋 → origin/dev 병합, `robot.urdf.xacro` 는 **삭제 유지 (2안 대기)** — urdfv2 값은 변경 요청서 "PR #10 과 병합" 에 남김, 팀장 · PR #10 작성자 확인 ★.
+  커밋: aaefa54 ① `chore: remove cartridar_01 robot URDF pending chassis v2` (단독 colcon test 81 실패 0 건너뜀 1) →
+  c84336f ② `feat: port arm bench firmware (ranges, gripper stall guard, boot PWM check)` → **f3a5a3c 병합** (충돌 7: 6 개는 양쪽 다 살림, WHEEL_GEAR = dev 1.0,
+  robot.urdf.xacro 삭제, 변경 요청서 상태 · PR #10 절). 병합 뒤 colcon test **92 실패 0 건너뜀 1** (로봇 URDF 없음). 펌웨어 빌드: 팔 bin **986ad2ba (보드와 같음 — 다시 올릴 필요 없음)** ·
+  주행 5f39c235 (PR #10 포함, 새 값) · dxl_setup 0f703c5c. HEAD f3a5a3c = origin/dev 보다 5 앞 · 0 뒤. **origin · backup 푸시 · 다음 PR 은 사용자 결정**.
+  - arm_bench `src/` 는 이제 Lv2 와 PR #10 바퀴 변경만큼 다름 (팔 코드는 같음).
+- **2026-10-27 오전 (그때는 작업 트리에만)**: 사용자 지시로 두 묶음을 적용 (① 1안 정리 ② 펌웨어 이식 — 위 커밋 aaefa54 · c84336f).
+  ① 1안 차체 (cartridar_01) 폐기 → 로봇 URDF · CAD 지움: `urdf/cartridar_01.urdf` · `urdf/robot.urdf.xacro` · `scripts/import_cad_urdf.py` 삭제,
+     `opencr.ros2_control.xacro` 는 형상 없는 틀로 남김, `controllers_4wd.yaml` 바퀴 간격 · 반지름 비움 (diff_drive 가 시작 거부 = 일부러),
+     `base_bringup.launch.py` 는 URDF 없으면 "2안 대기 · use_hardware:=false" 알리고 Shutdown, `test_robot_description` = ros2_control 블록 시험 + 로봇 URDF 있을 때만 좌표 시험.
+     변경 요청서 "URDF 를 CAD 기준으로" → "로봇 URDF — 차체 2안 대기" (2안이 지킬 좌표 · 관절 이름). dev 의 예전 puckbot xacro 도 같이 지워짐 → PR 에 적고 팀장 확인 ★.
+  ② 개인 시험 폴더 `~/GIT/arm_bench` 의 펌웨어 이식 (12 파일): 범위 A안 + J1 ±π + 그리퍼 다시 결합 (1550 · 2650), 그리퍼 막힘 보호 GripGuard,
+     부팅 그리퍼 PWM ≤ 400 점검, dxl_setup o/w, SIL 대역 · 시험 5 개, ros2_control 팔 한계 = 펌웨어 범위. interfaces.md (ESTOP 그리퍼 예외 · 부팅 점검) · 변경 요청서 표 수정.
+     실기 기록 `workspace/docs/arm_bench_test_2026-10-27.md` (새 파일). colcon test 86 실패 0 건너뜀 1. 팔 bin 986ad2ba (보드에 올라감 · 실물 통과), 주행 6613c10a.
+  - `build_firmware.sh` 는 옮기지 않음 (arm_bench 만 결과 폴더가 다름). 마지막 fetch 10-27 15:3x (origin/dev 4c3f152) — 푸시 전에 다시 fetch 확인.
 - 결정 (2026-10-26): D1 = B + v5 (REARM 상승 에지, ESTOP 해제에도 REARM). D5 구현 — D5-1 OpenCR 재부팅 때 팔 토크가 켜져 있으면 유지 ·
   D5-2 호스트 활성화 중 CMD 미송신 · D5-4 팔 토크 OFF 는 HOLD + TORQUE_ON 없는 CMD 연속 `ARM_TORQUE_OFF_CMDS` (50 ★). D3 · D4 · D6 **미결 — 구현 안 함**.
   코드 리뷰 R1 · R2 · R4 · R5 · R6 반영, 남음 R3 (REARM 점프 — D4 허용오차) · R7~R9 정리.
@@ -57,7 +76,7 @@ i=$(mktemp) && GIT_INDEX_FILE=$i git read-tree --empty && GIT_INDEX_FILE=$i git 
   - `feature/firmware` (origin · backup 같음, AI 메모 없는 이력): e71db83 · a57f48b (10/22 · 10/23 update) → 5b6c6c5 v5 안전 정책 · SIL · 팔 실기 →
     95eff5f 주행 4륜 · 역할별 빌드 · 문서 → 6b6dcd9 origin/dev 병합 (충돌 0) → 892e8f4 AI 메모 ignore. colcon test 77 실패 0 (병합 뒤).
     이 이력은 AI 메모를 뺀 채 다시 만든 것 — 예전 이력 (메모 포함) 은 `archive/feature-firmware-with-notes` (로컬 · backup).
-  - **PR #6** (2026-10-26 사용자가 웹에서 올림): origin `feature/firmware` → `dev`. interfaces.md 변경이 있어 **Controller 팀장 승인 뒤에만 병합**. gh CLI 없음.
+  - **PR #6** (2026-10-26 사용자가 웹에서 올림): origin `feature/firmware` (892e8f4) → `dev`. **10-26 19:34 dev 에 병합됨 (c1ad4a4)**. gh CLI 없음.
   - 2026-10-26 밤 (사용자 지시 "backup 에만 커밋 푸쉬"): cf91a64 `feat: switch URDF to cartridar_01 CAD model` → 4cc4569 `feat: write arm position gains at boot`.
     **backup/feature/firmware = 4cc4569, origin/feature/firmware = 892e8f4 (PR #6 에는 아직 없음)** — origin 에 올릴지는 사용자 결정.
     colcon test 80 실패 0 (cf91a64 만 따로 79). 사용자가 작업 끝에 PC 전원을 끄라고 함 (Isaac 결과는 /tmp 가 아니라 CAD 저장소에 남김).
@@ -94,10 +113,10 @@ i=$(mktemp) && GIT_INDEX_FILE=$i git read-tree --empty && GIT_INDEX_FILE=$i git 
   0.019 로 열면 옆 · 뒤 줄 컵 벽에 걸림 → 수정 경로 (컵 위 lift 자세로 올라가 빠지고 위에서 내려가 꺼냄, 이동 중 손가락 닫음, 놓는 폭 0.004) 로 시험.
   결과: 수정 경로 + 처짐 없음 → 원기둥 6/6 · 접촉 0, 사각기둥 2/4 (놓을 때 기울어 끼임, 매번 다름). 지금 게인 (P 800) → 넣기 1/10 (J2 약 2° 처짐) → 게인 개선이 먼저.
   창 시연 그림 `img/c01_window_demo_*`, 주행 `img/drive_*`, 메시 전후 `img/mesh_fix_compare.png`.
-- 주행 보드: 실물 미시험. 실물 작업 — 모터 ID 3 → 2 · 4 → 3 · 6 → 4 (한 대씩), `WHEEL_DIR` 실측 (바퀴 띄우고).
-- 다음: PR #6 승인 대기 (origin 에 cartridar_01 · 게인 커밋을 올릴지 사용자 결정) · 게인 업로드 · A안 · 그리퍼 → 주행 자세 → Jetson 세팅
-  (dialout · udev · aarch64 업로드 도구 없음 · 두 보드 ros2_control 시험). 그 밖: v5 팀 승인 요청, D3 · D4 · D6 결정, 주행용 벤치 도구 (나중에),
-  WHEEL_GEAR 결정, Isaac 학습 준비 (robot_cfg 를 cartridar_01 로, 학습용 과제 환경 · 겉모양 끈 USD - 분석만 함).
+- 주행 보드: 우리는 실물 미시험. PR #10 커밋 문구로는 팀이 10-27 spin 시험 · 장착 ID 확인 (기록은 저장소에 없음 ★). `WHEEL_DIR` 실측은 여전히 ★.
+- 다음: origin · backup 에 f3a5a3c 까지 푸시할지 · 다음 PR (feature/firmware → dev, interfaces.md 변경 있음) 사용자 결정 → 게인 튜닝 (arm_bench) ·
+  쥐는 힘 확인 → 주행 자세 → Jetson 세팅 (dialout · udev · aarch64 업로드 도구 없음 · 두 보드 ros2_control 시험).
+  그 밖: 차체 2안 URDF (urdfv2 가 2안인지 팀 확인 ★), D3 · D4 결정, 주행용 벤치 도구 (나중에), Isaac 학습 준비 (분석만 함).
 - Jetson `cart11@cart11.local` (Orin Nano Super, Ubuntu 24.04 aarch64, JetPack 7.2.1). OpenCR by-id `usb-ROBOTIS_OpenCR_Virtual_ComPort_in_FS_Mode_FFFFFFFEFFFF-if00`
   (두 보드가 같음). cart11 dialout 아님 · ModemManager 동작 · OpenCR 업로드 도구가 aarch64 용으로 없음.
 - 브랜치: `feature/firmware`
