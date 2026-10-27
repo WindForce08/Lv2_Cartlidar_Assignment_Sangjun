@@ -1,0 +1,5 @@
+# 생성물 (./run.sh convert · train · eval · check 가 다시 만듦) — 저장소에 넣지 않음
+usd/
+urdf/
+logs/
+results/
