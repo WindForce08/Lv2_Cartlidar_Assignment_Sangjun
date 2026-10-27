@@ -59,7 +59,14 @@ tools/build_firmware.sh wheel --upload /dev/ttyACM0    # 빌드 후 업로드 �
   3 → 2, 4 → 3, 6 → 4 로 바꾼다 (`tools/dxl_setup`, 모터를 **한 대씩** 연결해서. 같은 ID 가 두 대 있으면 둘 다 바뀜).
   바꾸는 순서 주의: 4 → 3 을 하기 전에 3 → 2 를 먼저 (3 이 비어 있어야 함). 6 → 4 는 4 → 3 다음.
 - `WHEEL_DIR` (★): 왼쪽 +1 · 오른쪽 −1 은 모터가 서로 마주 보게 달렸다는 가정이다. **바퀴를 띄운 상태에서 실제 회전 방향을 확인**하고 고친다.
-- `WHEEL_GEAR = 1.5` (증속 벨트 36T → 24T), `WHEEL_VEL_LIMIT_RAW = 330` (★, 모터 Goal Velocity 상한) — 펌웨어는 넘는 값을 잘라 쓴다.
+  기준 URDF (urdfv2 `teamrobot.urdf`) 의 바퀴 축은 4개 모두 +y 라 + = 앞. 방향 반전은 `WHEEL_DIR` 로만 하고,
+  **모터 Drive Mode 의 반전 비트는 0 으로 둔다** (urdfv2 문서의 "Drive Mode 반전" 은 이 펌웨어에서는 하지 않음 — 둘 다 하면 다시 거꾸로).
+- `WHEEL_GEAR = 1.0` (직결, 2026-10-26 실물 확인 — urdfv2 와 같음). `WHEEL_VEL_LIMIT_RAW = 330` (★) = 75.6 rpm = 바퀴 7.91 rad/s ≈ 0.261 m/s
+  (URDF 한계 8.06 rad/s 안쪽).
+- 한계 초과 명령 (D6): 한 바퀴라도 넘으면 **모든 바퀴를 같은 비율로 줄인다** (좌우 속도비 = 회전 반경 유지). 개별 clamp 는 안전망으로 남김.
+- 부팅 때 바퀴 모터 설정을 맞춘다 (`prepareWheelConfig`, 토크 OFF 상태에서 다를 때만 EEPROM 에 씀):
+  **Drive Mode bit0 (반전) → 0**, **Velocity Limit (주소 44) < 330 이면 → 330**. 쓴 뒤 다시 읽어 맞지 않으면
+  `ERR_MOTOR_CONFIG` + `ERR_FAULT` 로 토크를 거부한다. 따로 손으로 설정할 필요 없음 (지금 값 확인: `tools/dxl_setup` 의 `x <id>`).
 - 부팅 때 바퀴 토크를 끄고 시작한다. 토크는 호스트가 `TORQUE_ON` 을 보낼 때 켜진다.
 - **아직 실물에서 돌려 보지 않았다** (주행 보드 없이 SIL 시험만 함). 첫 실기는 바퀴를 띄우고 저속으로.
 
@@ -125,6 +132,7 @@ colcon build --packages-up-to opencr_hardware && colcon test --packages-select o
 
 ## 아직 정하지 않은 것 (★)
 
-- 바퀴: 모터 ID 다시 매기기 (실물), `WHEEL_DIR` 실측, `WHEEL_VEL_LIMIT_RAW` 와 diff_drive 한계 (D6).
+- 바퀴: 모터 ID 다시 매기기 (실물), `WHEEL_DIR` 실측, 첫 부팅 때 STATE 에 `ERR_MOTOR_CONFIG` 가 없는지 확인 (실물),
+  호스트 diff_drive 한계를 바퀴 한계 (0.261 m/s) 에 맞추기 (D6 — 펌웨어는 비례 축소로 처리).
 - 팔: 6 번째 칸 (그리퍼 개폐) 의 규격 반영 · 그리퍼 결합 다시 맞추기, 시작 자세를 범위에 넣기 (A안), 위치 게인 (중력 처짐), 정밀 영점.
 - 공통: 물리 E-stop 배선, v5 · 4륜의 팀 규격 승인, D3 · D4 (`../../../docs/firmware_safety_analysis.md`).

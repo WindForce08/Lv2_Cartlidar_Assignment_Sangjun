@@ -17,6 +17,9 @@ struct SilMotor
   int32_t homing_offset = 0;
   int32_t min_position_limit = 0;      // EEPROM Min/Max Position Limit (공장값 0 · 4095)
   int32_t max_position_limit = 4095;
+  uint8_t drive_mode = 0;               // EEPROM Drive Mode (bit0 = Reverse)
+  int32_t velocity_limit = 1023;       // EEPROM Velocity Limit (0.229 rpm 단위, 시험 기본값 = 범위 최대 — 공장값 아님)
+  bool eeprom_write_fails = false;      // 시험용: EEPROM 쓰기를 받지 않음 (Drive Mode · Velocity Limit)
   uint8_t hw_error = 0;         // Hardware Error Status
   uint8_t mode = 3;
   bool torque = false;
@@ -59,5 +62,6 @@ SilBoard & sil_arm_board();
 namespace sil_item
 {
 enum : uint8_t { HOMING_OFFSET, RETURN_DELAY_TIME, BUS_WATCHDOG, PROFILE_VELOCITY, PROFILE_ACCELERATION,
-  HARDWARE_ERROR_STATUS, TORQUE_ENABLE, GOAL_POSITION, GOAL_VELOCITY, OPERATING_MODE, MIN_POSITION_LIMIT, MAX_POSITION_LIMIT };
+  HARDWARE_ERROR_STATUS, TORQUE_ENABLE, GOAL_POSITION, GOAL_VELOCITY, OPERATING_MODE, MIN_POSITION_LIMIT, MAX_POSITION_LIMIT,
+  DRIVE_MODE, VELOCITY_LIMIT };
 }
