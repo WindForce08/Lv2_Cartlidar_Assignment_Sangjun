@@ -438,3 +438,32 @@ TEST(SafetyCore, WheelTimeoutStopsAndCurrentlyAutoResumes)
   r.tick();
   EXPECT_FALSE(r.core.apply_targets()) << "ESTOP → 바퀴 0";
 }
+
+// 그리퍼 막힘 보호 (GripGuard, 2026-10-27 arm_bench) — 값은 config.h GRIP_*. 단위 tick, 10 ms 주기
+TEST(GripGuard, LatchesOnlyWhenStuckAndReleasesOnOpen)
+{
+  opencr_safety::GripGuard g(GRIP_STALL_TICKS, GRIP_PROGRESS_TICKS, GRIP_STALL_MS, GRIP_SQUEEZE_TICKS, 1530, 2670);
+  uint32_t t = 0;
+  // 빈 손: 멀리 있는 목표로 움직이는 중 (10 ms 마다 15 tick) → 오차가 커도 막힘 아님
+  int32_t pos = 1550;
+  for (int i = 0; i < 70; ++i, t += 10, pos += 15) {EXPECT_EQ(g.update(2650, pos, true, t), 2650) << i;}
+  EXPECT_FALSE(g.latched());
+  // 퍽에 막힘 (2300 에서 멈춤) → GRIP_STALL_MS 뒤 2300 + 쥐는 힘
+  int32_t out = 0;
+  for (uint32_t s = 0; s <= GRIP_STALL_MS + 20; s += 10, t += 10) {out = g.update(2650, 2300, true, t);}
+  EXPECT_TRUE(g.latched());
+  EXPECT_EQ(out, 2300 + GRIP_SQUEEZE_TICKS);
+  EXPECT_EQ(g.update(2650, 2310, false, t += 10), 2300 + GRIP_SQUEEZE_TICKS) << "위치를 못 읽은 주기에도 쥔 목표 유지";
+  EXPECT_EQ(g.update(2300 + GRIP_SQUEEZE_TICKS, 2320, true, t += 10), 2300 + GRIP_SQUEEZE_TICKS);
+  EXPECT_EQ(g.update(1550, 2320, true, t += 10), 1550) << "여는 쪽 명령 → 풀고 따름";
+  EXPECT_FALSE(g.latched());
+  // 문턱 안 (호스트가 직접 약하게 쥠) → 그대로
+  for (int i = 0; i < 100; ++i, t += 10) {EXPECT_EQ(g.update(2300 + GRIP_STALL_TICKS, 2300, true, t), 2300 + GRIP_STALL_TICKS);}
+  EXPECT_FALSE(g.latched());
+  // 범위 끝에서 막히면 고정 목표는 범위 안으로
+  for (uint32_t s = 0; s <= GRIP_STALL_MS + 20; s += 10, t += 10) {out = g.update(2670, 2660, true, t);}
+  EXPECT_EQ(out, 2670 - 0) << "2660 + 쥐는 힘 > 2670 → 2670";
+  g.reset();
+  EXPECT_FALSE(g.latched());
+  EXPECT_EQ(g.update(2670, 2660, true, t += 10), 2670) << "reset 뒤에는 다시 처음부터 잼";
+}

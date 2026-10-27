@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <deque>
+#include <limits>
 #include <map>
 #include <vector>
 
@@ -17,6 +18,16 @@ struct SilMotor
   int32_t homing_offset = 0;
   int32_t min_position_limit = 0;      // EEPROM Min/Max Position Limit (공장값 0 · 4095)
   int32_t max_position_limit = 4095;
+  int32_t pos_p_gain = 800;            // 위치 게인 (RAM, 공장값 800 · 0 · 0)
+  int32_t pos_i_gain = 0;
+  int32_t pos_d_gain = 0;
+  bool ignore_gain_writes = false;     // 시험용: 게인 쓰기가 반영되지 않는 모터
+  int32_t pwm_limit = 885;             // EEPROM PWM Limit (공장값 885 = 100 %). 시험이 그리퍼는 config.h GRIP_PWM_LIMIT_MAX 로 바꿔 넣는다
+  // 막힘 · 속도 모델 (토크 ON + motors_follow_goals 일 때): SyncWrite 마다 목표 쪽으로 max_step tick 까지 (0 = 바로 도달),
+  //   위치는 stop_min ~ stop_max 를 넘지 못함 (물체에 막힘 — 예: 그리퍼가 퍽을 쥠)
+  int32_t max_step = 0;
+  int32_t stop_min = std::numeric_limits<int32_t>::min();
+  int32_t stop_max = std::numeric_limits<int32_t>::max();
   uint8_t drive_mode = 0;               // EEPROM Drive Mode (bit0 = Reverse)
   int32_t velocity_limit = 1023;       // EEPROM Velocity Limit (0.229 rpm 단위, 시험 기본값 = 범위 최대 — 공장값 아님)
   bool eeprom_write_fails = false;      // 시험용: EEPROM 쓰기를 받지 않음 (Drive Mode · Velocity Limit)
@@ -63,5 +74,6 @@ namespace sil_item
 {
 enum : uint8_t { HOMING_OFFSET, RETURN_DELAY_TIME, BUS_WATCHDOG, PROFILE_VELOCITY, PROFILE_ACCELERATION,
   HARDWARE_ERROR_STATUS, TORQUE_ENABLE, GOAL_POSITION, GOAL_VELOCITY, OPERATING_MODE, MIN_POSITION_LIMIT, MAX_POSITION_LIMIT,
+  POSITION_P_GAIN, POSITION_I_GAIN, POSITION_D_GAIN, PWM_LIMIT,
   DRIVE_MODE, VELOCITY_LIMIT };
 }

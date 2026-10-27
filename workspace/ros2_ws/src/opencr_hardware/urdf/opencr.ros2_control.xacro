@@ -62,13 +62,16 @@
         <xacro:opencr_wheel name="wheel_right_rear_joint"  slot="5"/>
       </xacro:if>
 
-      <!-- 관절 한계 (rad) — manipulator.yaml 의 joint_limits 와 맞춤 ★ 실측 -->
-      <xacro:opencr_arm_joint name="joint1"       slot="0" lower="-2.8" upper="2.8"/>
-      <xacro:opencr_arm_joint name="joint2"       slot="1" lower="-1.8" upper="1.6"/>
-      <xacro:opencr_arm_joint name="joint3"       slot="2" lower="-1.6" upper="1.5"/>
-      <xacro:opencr_arm_joint name="joint4"       slot="3" lower="-1.8" upper="2.0"/>
-      <xacro:opencr_arm_joint name="joint5"       slot="4" lower="-2.8" upper="2.8"/>
-      <xacro:opencr_arm_joint name="gripper_roll" slot="5" lower="-2.8" upper="2.8"/>
+      <!-- 관절 한계 (rad): 호스트가 명령을 이 범위로 자른다. 펌웨어 config.h ARM_MIN/MAX_RAD 안이어야 한다 —
+           펌웨어는 범위 밖 CMD 를 통째로 거부 (test_robot_description 이 확인). 2026-10-27 arm_bench 이식으로 펌웨어 범위와 같게.
+           6 번째 칸 (gripper_roll) = 실물 그리퍼 개폐 모터 (ID 15): 열림 1550 tick (-0.76 rad) · 닫힘 2650 tick (+0.92 rad),
+           막히면 펌웨어 GripGuard 가 약하게 쥠. manipulator.yaml 의 joint_limits 와도 맞출 것 ★ -->
+      <xacro:opencr_arm_joint name="joint1"       slot="0" lower="-3.14159" upper="3.14159"/>
+      <xacro:opencr_arm_joint name="joint2"       slot="1" lower="-2.14"    upper="1.6"/>
+      <xacro:opencr_arm_joint name="joint3"       slot="2" lower="-1.6"     upper="1.6"/>
+      <xacro:opencr_arm_joint name="joint4"       slot="3" lower="-1.92"    upper="2.0"/>
+      <xacro:opencr_arm_joint name="joint5"       slot="4" lower="-2.8"     upper="2.8"/>
+      <xacro:opencr_arm_joint name="gripper_roll" slot="5" lower="-0.7946"  upper="0.9541"/>
 
       <xacro:if value="${use_gripper}">
         <!-- 그리퍼 개폐 액추에이터 미정 — 정해지면 펌웨어 GRIPPER_ID 와 함께 켬 ★ -->

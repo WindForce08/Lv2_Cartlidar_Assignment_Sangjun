@@ -76,12 +76,14 @@
       <limit lower="${lower}" upper="${upper}" effort="4.1" velocity="4.8"/>
     </joint>
   </xacro:macro>
-  <xacro:arm_joint name="joint1" parent="arm_base_link" child="link1" xyz="0 0 0.077" axis="0 0 1" lower="-2.8" upper="2.8"/>
-  <xacro:arm_joint name="joint2" parent="link1" child="link2" xyz="0 0 0" axis="0 1 0" lower="-1.8" upper="1.6"/>
-  <xacro:arm_joint name="joint3" parent="link2" child="link3" xyz="0.024 0 0.128" axis="0 1 0" lower="-1.6" upper="1.5"/>
-  <xacro:arm_joint name="joint4" parent="link3" child="link4" xyz="0.124 0 0" axis="0 1 0" lower="-1.8" upper="2.0"/>
+  <!-- 팔 관절 한계 = 펌웨어 config.h ARM_MIN/MAX_RAD (2026-10-27 arm_bench 이식: 대기 자세 A안 · J1 ±180° · 그리퍼 다시 결합).
+       6 번째 칸 (gripper_roll) 은 실물로는 그리퍼 개폐 모터 (ID 15, 열림 1550 · 닫힘 2650 tick = -0.7946 ~ 0.9541 rad) — 이름은 Controller 코드 때문에 그대로 ★ -->
+  <xacro:arm_joint name="joint1" parent="arm_base_link" child="link1" xyz="0 0 0.077" axis="0 0 1" lower="-3.14159" upper="3.14159"/>
+  <xacro:arm_joint name="joint2" parent="link1" child="link2" xyz="0 0 0" axis="0 1 0" lower="-2.14" upper="1.6"/>
+  <xacro:arm_joint name="joint3" parent="link2" child="link3" xyz="0.024 0 0.128" axis="0 1 0" lower="-1.6" upper="1.6"/>
+  <xacro:arm_joint name="joint4" parent="link3" child="link4" xyz="0.124 0 0" axis="0 1 0" lower="-1.92" upper="2.0"/>
   <xacro:arm_joint name="joint5" parent="link4" child="link5" xyz="0.04 0 0" axis="1 0 0" lower="-2.8" upper="2.8"/>
-  <xacro:arm_joint name="gripper_roll" parent="link5" child="gripper_roll_link" xyz="0.041 0 0" axis="1 0 0" lower="-2.8" upper="2.8"/>
+  <xacro:arm_joint name="gripper_roll" parent="link5" child="gripper_roll_link" xyz="0.041 0 0" axis="1 0 0" lower="-0.7946" upper="0.9541"/>
   <xacro:fixed_link name="arm_camera_link" parent="gripper_roll_link" xyz="0.02 0 0.035" rpy="0 0 0"/>
   <xacro:fixed_link name="tfmini_link"     parent="gripper_roll_link" xyz="0.02 0 -0.035" rpy="0 0 0"/>
   <xacro:fixed_link name="tool_link"       parent="gripper_roll_link" xyz="0.086 0 0" rpy="0 0 0"/>

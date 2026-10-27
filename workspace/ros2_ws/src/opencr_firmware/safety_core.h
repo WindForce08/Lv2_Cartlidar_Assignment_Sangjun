@@ -14,6 +14,7 @@
 //   CMD 하나 (flags=0 기본값 등) 로는 팔 토크가 꺼지지 않는다. 바퀴는 즉시 허용.
 // 바퀴: HOLD 래치 없음 — 무수신 · ESTOP 동안 0, 풀리면 다시 명령을 따른다 (D3 미결, v4 와 같은 동작).
 // FAULT: 부팅 점검 실패 (래치, 재부팅으로만 해제). 토크를 켜지 않고 REARM 도 받지 않는다.
+// GripGuard (2026-10-27 arm_bench): 그리퍼 칸이 막히면 목표를 "막힌 자리 + 쥐는 힘" 으로 고정 (아래 클래스 설명).
 #ifndef OPENCR_SAFETY_CORE_H_
 #define OPENCR_SAFETY_CORE_H_
 
@@ -173,6 +174,60 @@ private:
   bool hold_ = false;
   bool entered_stop_hold_ = false;
   bool fault_ = false;
+};
+
+// 그리퍼 막힘 보호 (2026-10-27 arm_bench). 단위 tick. ino 가 제어 주기마다 그리퍼 칸의 이번 목표 · 현재 위치를 넣고, 돌려준 목표를 쓴다.
+//   막힘 = 목표가 현재보다 stall 넘게 앞서 있는데 stall_ms 동안 progress 도 못 움직임 (물체를 잡았거나 끼임).
+//     빈 손으로 먼 목표에 가는 중에는 계속 움직이므로 막힘이 아니다 (오차가 커도).
+//   → 목표 = 현재 + squeeze (목표 쪽, lo ~ hi 안) 로 고정한다. 들어오는 목표가 그 자리보다 덜 가는 쪽이면 (보통 열기) 풀고 따른다.
+//   토크 ON · OFF 때 reset. 위치를 못 읽은 주기에는 판정하지 않고 고정 목표만 유지한다.
+class GripGuard
+{
+public:
+  GripGuard(int32_t stall, int32_t progress, uint32_t stall_ms, int32_t squeeze, int32_t lo, int32_t hi)
+  : stall_(stall), progress_(progress), stall_ms_(stall_ms), squeeze_(squeeze), lo_(lo < hi ? lo : hi), hi_(lo < hi ? hi : lo) {}
+
+  int32_t update(int32_t goal, int32_t pos, bool pos_valid, uint32_t now_ms)
+  {
+    if (latched_) {
+      if ((goal - hold_) * dir_ >= 0) {return hold_;}   // 여전히 막힌 쪽으로 → 쥔 목표 유지
+      latched_ = false;                                // 반대쪽 → 풀고 그 목표를 따름
+    }
+    if (!pos_valid) {watching_ = false; return goal;}
+    const int32_t err = goal - pos;
+    if (err <= stall_ && err >= -stall_) {watching_ = false; return goal;}
+    if (!watching_ || pos - anchor_ > progress_ || anchor_ - pos > progress_) {
+      watching_ = true;   // 처음 보거나 아직 움직이는 중 → 이 자리부터 다시 잰다
+      anchor_ = pos;
+      since_ms_ = now_ms;
+      return goal;
+    }
+    if ((uint32_t)(now_ms - since_ms_) < stall_ms_) {return goal;}
+    dir_ = err > 0 ? 1 : -1;
+    const int32_t h = pos + dir_ * squeeze_;
+    hold_ = h < lo_ ? lo_ : (h > hi_ ? hi_ : h);
+    latched_ = true;
+    watching_ = false;
+    return hold_;
+  }
+
+  void reset() {latched_ = false; watching_ = false;}
+  bool latched() const {return latched_;}
+  int32_t hold() const {return hold_;}
+
+private:
+  int32_t stall_;
+  int32_t progress_;
+  uint32_t stall_ms_;
+  int32_t squeeze_;
+  int32_t lo_;
+  int32_t hi_;
+  bool latched_ = false;
+  bool watching_ = false;
+  int8_t dir_ = 1;
+  int32_t hold_ = 0;
+  int32_t anchor_ = 0;
+  uint32_t since_ms_ = 0;
 };
 
 }  // namespace opencr_safety

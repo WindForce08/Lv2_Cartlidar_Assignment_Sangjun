@@ -44,6 +44,11 @@ if(BUILD_TESTING)
   target_include_directories(test_hardware_loopback PRIVATE include)
   target_link_libraries(test_hardware_loopback gtest hardware_interface::hardware_interface rclcpp::rclcpp)
 
+  # 로봇 설명: robot.urdf.xacro 를 펼쳐 ros2_control 파서 · 펌웨어 칸 · 명령 한계 (펌웨어 범위 · URDF 안) · 컨트롤러 이름 · 좌표 확인 (xacro 없으면 건너뜀)
+  ament_add_gtest(test_robot_description test/test_robot_description.cpp)
+  target_compile_definitions(test_robot_description PRIVATE PKG_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+  target_link_libraries(test_robot_description hardware_interface::hardware_interface)
+
   # 펌웨어 안전 판단 (opencr_firmware/safety_core.h — 실제 펌웨어 코드, Arduino 없이)
   set(FIRMWARE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../opencr_firmware)
   ament_add_gtest(test_safety_core test/test_safety_core.cpp)

@@ -176,6 +176,7 @@ TEST(HostFirmwareSil, PhasesOnOneBoot)
   SilBoard & ab = sil_arm_board();
   for (uint8_t id : WHEEL_IDS) {wb.motors[id] = SilMotor{}; wb.motors[id].model = WHEEL_MODEL;}
   for (uint8_t id : ARM_IDS) {ab.motors[id] = SilMotor{}; ab.motors[id].model = ARM_MODEL;}
+  ab.motors[ARM_IDS[GRIP_SLOT]].pwm_limit = GRIP_PWM_LIMIT_MAX;   // 실물 설정 (dxl_setup w 15 400)
   SilLink wheel(wb), arm(ab);
   const std::string ports = wheel.path() + "," + arm.path();
   auto torque_on = [](SilLink & l, uint8_t id) {return l.with_board([id](SilBoard & b) {return b.motors[id].torque;});};

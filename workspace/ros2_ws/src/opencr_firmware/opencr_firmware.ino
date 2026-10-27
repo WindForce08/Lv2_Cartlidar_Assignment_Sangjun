@@ -9,11 +9,13 @@
 //   readState()    SyncRead addr 126 부터 10 B, 응답한 모터 값만 반영. 응답 부족 시 오류 비트
 //   applySafety()  200 ms 무수신 · ESTOP 비트 · 물리 스위치 → 바퀴 0, 팔 HOLD (safety_core.h)
 //   handleCmd()    HOLD 가 아니면 승인된 명령을 rad/s 또는 rad → 모터 목표로 변환
+//   guardGripper() (팔) 그리퍼 칸이 막히면 목표를 "막힌 자리 + 쥐는 힘" 으로 (safety_core.h GripGuard, 2026-10-27 arm_bench)
 //   writeGoals()   역할에 해당하는 SyncWrite만 수행
 //   sendState()    상태 + IMU + 배터리 전압 + 오류 · HOLD · FAULT 비트
 //
 // 부팅 점검 (Xmen opencr_control.ino prepareAxis 참고): ping · 모델 번호 · Homing Offset 0 · Return Delay 0
-//   · (팔) 모터 Min/Max Position Limit 가 config 범위를 덮는지 · (바퀴) Drive Mode 반전 0 · Velocity Limit ≥ WHEEL_VEL_LIMIT_RAW (다르면 맞춰 씀, prepareWheelConfig). 하나라도 어긋나면 ERR_MOTOR_CONFIG · ERR_FAULT → 호스트가 활성화를 거부. 토크 ON 때 Bus Watchdog 500 ms 를 켬.
+//   · (팔) 모터 Min/Max Position Limit 가 config 범위를 덮는지 · 위치 P/I/D 게인 쓰기 (다시 읽어 확인) · 그리퍼 PWM Limit ≤ GRIP_PWM_LIMIT_MAX
+//   · (바퀴) Drive Mode 반전 0 · Velocity Limit ≥ WHEEL_VEL_LIMIT_RAW (다르면 맞춰 씀, prepareWheelConfig). 하나라도 어긋나면 ERR_MOTOR_CONFIG · ERR_FAULT → 호스트가 활성화를 거부. 토크 ON 때 Bus Watchdog 500 ms 를 켬.
 // 필요 라이브러리: OpenCR 보드 패키지 (Arduino IDE), Dynamixel2Arduino ≥ 0.6, OpenCR IMU (보드 패키지 내장)
 
 // 역할은 빌드 옵션으로만 정한다 (기본값 없음 — 팔 보드에 주행 펌웨어가 잘못 올라가는 것을 막음)
@@ -94,6 +96,10 @@ static int32_t wheelRadsToRaw(float wheel_rads, int8_t dir)
 
 static float clampf(float v, float lo, float hi) {return v < lo ? lo : (v > hi ? hi : v);}
 
+// 그리퍼 칸 막힘 보호 (팔 보드만 씀). 고정 목표는 config 범위 안
+static opencr_safety::GripGuard g_grip(GRIP_STALL_TICKS, GRIP_PROGRESS_TICKS, GRIP_STALL_MS, GRIP_SQUEEZE_TICKS,
+  radToTick(ARM_MIN_RAD[GRIP_SLOT], ARM_DIR[GRIP_SLOT]), radToTick(ARM_MAX_RAD[GRIP_SLOT], ARM_DIR[GRIP_SLOT]));
+
 // ---- 초기화 ----
 // 반환: 토크를 켜 둔 채로 두었는가 (D5-1, 팔만)
 static bool setupMotor(uint8_t id, uint8_t mode, bool is_arm, uint16_t model)
@@ -137,6 +143,30 @@ static void checkArmLimits(int i)
   const int32_t hi = dxl.readControlTableItem(MAX_POSITION_LIMIT, id);
   if (dxl.getLastLibErrCode() != DXL_LIB_OK) {g_config_error = true; return;}
   if (lo > (a < b ? a : b) || hi < (a < b ? b : a)) {g_config_error = true;}
+}
+
+// 팔: 위치 P · I · D 게인 (RAM, 토크 ON 중에도 쓸 수 있음) 을 config 값으로 쓰고 다시 읽어 확인. 다르면 점검 실패
+static void writeArmGains(int i)
+{
+  const uint8_t id = ARM_IDS[i];
+  if (!dxl.ping(id)) {return;}   // 응답 없음은 setupMotor 가 이미 알림
+  const uint8_t items[3] = {POSITION_P_GAIN, POSITION_I_GAIN, POSITION_D_GAIN};
+  const uint16_t gains[3] = {ARM_POS_P_GAIN[i], ARM_POS_I_GAIN[i], ARM_POS_D_GAIN[i]};
+  for (int k = 0; k < 3; ++k) {
+    dxl.writeControlTableItem(items[k], id, gains[k]);
+    const int32_t v = dxl.readControlTableItem(items[k], id);
+    if (dxl.getLastLibErrCode() != DXL_LIB_OK || v != gains[k]) {g_config_error = true;}
+  }
+}
+
+// 팔: 그리퍼 모터 EEPROM PWM Limit 가 GRIP_PWM_LIMIT_MAX 이하인지 (읽기만 — 바꾸려면 토크 OFF 후 tools/dxl_setup w).
+//   공장값 885 (100 %) 그대로 막히면 과부하로 모터가 토크를 끈다 (2026-10-27 실물 MOTOR_HW)
+static void checkGripperPwm()
+{
+  const uint8_t id = ARM_IDS[GRIP_SLOT];
+  if (!dxl.ping(id)) {return;}   // 응답 없음은 setupMotor 가 이미 알림
+  const int32_t v = dxl.readControlTableItem(PWM_LIMIT, id);
+  if (dxl.getLastLibErrCode() != DXL_LIB_OK || v > GRIP_PWM_LIMIT_MAX) {g_config_error = true;}
 }
 
 // 바퀴: 모터 EEPROM 설정을 펌웨어 가정에 맞춘다 (Return Delay · Operating Mode 를 setupMotor 가 쓰는 것과 같은 방식).
@@ -246,10 +276,14 @@ static void readState()
   if (g_hw_error_mask) {g_error |= opencr_proto::ERR_MOTOR_HW;} else {g_error &= ~opencr_proto::ERR_MOTOR_HW;}
 }
 
-static void holdArmAtPresent()
+// keep_grip (ESTOP · 토크 OFF 요청 HOLD): 그리퍼 목표가 현재에서 GRIP_STALL_TICKS 안이면 (쥐는 중이거나 멈춤) 그대로 둔다 —
+//   현재 위치로 바꾸면 쥐는 힘이 0 이 되어 퍽을 놓칠 수 있음. 멀리 가던 중이면 현재 위치에서 멈춤
+static void holdArmAtPresent(bool keep_grip = false)
 {
   if (BOARD_ROLE != opencr_proto::ROLE_ARM) {return;}
   for (int i = 0; i < ARM_COUNT; ++i) {
+    const int32_t d = g_arm_goal_raw[i] - g_present[i].position;
+    if (keep_grip && i == GRIP_SLOT && d <= GRIP_STALL_TICKS && d >= -GRIP_STALL_TICKS) {continue;}
     g_arm_goal_raw[i] = g_present[i].position;
   }
 }
@@ -280,6 +314,7 @@ static void handleCmd()
     // 팔은 토크 ON 목표가 현재 위치이므로, 모든 관절이 응답하지 않으면 켜지 않음
     if (BOARD_ROLE == opencr_proto::ROLE_ARM && !g_positions_valid) {return;}
     // 토크 ON 순간: 팔 목표 = 현재 위치 (REARM 까지 HOLD), 바퀴 = 0 (튀지 않게)
+    g_grip.reset();
     holdArmAtPresent();
     if (BOARD_ROLE == opencr_proto::ROLE_WHEEL) {
       for (int i = 0; i < WHEEL_COUNT; ++i) {g_wheel_goal_raw[i] = 0;}
@@ -299,6 +334,7 @@ static void handleCmd()
     dxl.writeControlTableItem(TORQUE_ENABLE, DXL_BROADCAST_ID, 0);
     g_torque_on = false;
     g_safety.on_torque_off();
+    g_grip.reset();
   }
   if (!g_torque_on || !g_safety.apply_targets()) {return;}
 
@@ -342,7 +378,14 @@ static void applySafety()
   }
   // 무수신: 팔은 마지막 승인 목표 유지. ESTOP · 토크 OFF 요청: 현재 자세에서 멈춤 (위치를 모르면 마지막 목표 유지).
   // 토크는 끄지 않는다 (카트리지 낙하 방지). HOLD 는 REARM 상승 에지로만 풀린다
-  if (g_safety.entered_stop_hold() && g_positions_valid) {holdArmAtPresent();}
+  if (g_safety.entered_stop_hold() && g_positions_valid) {holdArmAtPresent(true);}
+}
+
+// 그리퍼 칸 막힘 보호: HOLD 중에도 돈다 (무수신 HOLD 는 마지막 목표를 유지하므로 닫던 그리퍼가 계속 조일 수 있음)
+static void guardGripper()
+{
+  if (BOARD_ROLE != opencr_proto::ROLE_ARM || !g_torque_on) {return;}
+  g_arm_goal_raw[GRIP_SLOT] = g_grip.update(g_arm_goal_raw[GRIP_SLOT], g_present[GRIP_SLOT].position, g_positions_valid, millis());
 }
 
 static void writeGoals()
@@ -426,7 +469,9 @@ void setup()
     for (int i = 0; i < ARM_COUNT; ++i) {
       torque_kept += setupMotor(ARM_IDS[i], OP_POSITION, true, ARM_MODEL) ? 1 : 0;
       checkArmLimits(i);
+      writeArmGains(i);
     }
+    checkGripperPwm();
   }
 #if GRIPPER_ID != 0
   if (BOARD_ROLE == opencr_proto::ROLE_ARM) {setupMotor(GRIPPER_ID, OP_POSITION, true, ARM_MODEL);}
@@ -466,6 +511,7 @@ void loop()
     g_battery_v = (g_battery_v <= 0.f) ? vin : 0.9f * g_battery_v + 0.1f * vin;
     applySafety();   // 무수신 · ESTOP · HOLD 판단을 먼저 하고 명령을 적용
     handleCmd();
+    guardGripper();
     writeGoals();
     sendState();
   }

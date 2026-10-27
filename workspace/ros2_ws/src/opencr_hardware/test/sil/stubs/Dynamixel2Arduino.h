@@ -4,7 +4,8 @@
 //     timeout_ms(기본 10 ms) 만큼 시계가 흐른다 (master.cpp Master::syncRead · rxStatusPacket).
 //   - readControlTableItem: 응답 없으면 0 을 돌려주고 timeout(기본 100 ms) 만큼 시계가 흐른다. getLastLibErrCode 로 구분.
 //   - writeControlTableItem: 브로드캐스트(0xFE)는 응답을 기다리지 않고 모든 모터에 적용.
-//   - syncWrite: 토크 ON 모터는 목표에 즉시 도달 (motors_follow_goals). Bus Watchdog 만료 동작은 흉내 내지 않음.
+//   - syncWrite: 토크 ON 모터는 목표에 즉시 도달 (motors_follow_goals) — 시험이 max_step (속도) · stop_min/max (막힘) 을 주면 그만큼만.
+//     Bus Watchdog 만료 동작은 흉내 내지 않음.
 //     Min/Max Position Limit 밖 Goal Position · Velocity Limit 밖 Goal Velocity 는 모터가 버린다 (e-Manual Data Limit — SyncWrite 라 응답 없음).
 #ifndef SIL_DYNAMIXEL2ARDUINO_H_
 #define SIL_DYNAMIXEL2ARDUINO_H_
@@ -17,6 +18,7 @@ namespace ControlTableItem
 {
 enum ControlTableItemIndex { HOMING_OFFSET, RETURN_DELAY_TIME, BUS_WATCHDOG, PROFILE_VELOCITY, PROFILE_ACCELERATION,
   HARDWARE_ERROR_STATUS, TORQUE_ENABLE, GOAL_POSITION, GOAL_VELOCITY, OPERATING_MODE, MIN_POSITION_LIMIT, MAX_POSITION_LIMIT,
+  POSITION_P_GAIN, POSITION_I_GAIN, POSITION_D_GAIN, PWM_LIMIT,
   DRIVE_MODE, VELOCITY_LIMIT };   // 바퀴 부팅 설정 (prepareWheelConfig) — 뒤에 붙여 기존 값 유지
 }
 
@@ -82,6 +84,10 @@ public:
       case ControlTableItem::OPERATING_MODE: return m->mode;
       case ControlTableItem::MIN_POSITION_LIMIT: return m->min_position_limit;
       case ControlTableItem::MAX_POSITION_LIMIT: return m->max_position_limit;
+      case ControlTableItem::POSITION_P_GAIN: return m->pos_p_gain;
+      case ControlTableItem::POSITION_I_GAIN: return m->pos_i_gain;
+      case ControlTableItem::POSITION_D_GAIN: return m->pos_d_gain;
+      case ControlTableItem::PWM_LIMIT: return m->pwm_limit;
       case ControlTableItem::DRIVE_MODE: return m->drive_mode;
       case ControlTableItem::VELOCITY_LIMIT: return m->velocity_limit;
       default: return 0;
@@ -139,7 +145,16 @@ public:
       if (p->addr == 116) {   // Goal Position
         if (v < m->min_position_limit || v > m->max_position_limit) {continue;}
         m->goal_position = v;
-        if (m->torque && g_board.motors_follow_goals) {m->position = v;}
+        if (m->torque && g_board.motors_follow_goals) {
+          int32_t p = v;
+          if (m->max_step > 0) {
+            if (p > m->position + m->max_step) {p = m->position + m->max_step;}
+            if (p < m->position - m->max_step) {p = m->position - m->max_step;}
+          }
+          if (p > m->stop_max) {p = m->stop_max;}
+          if (p < m->stop_min) {p = m->stop_min;}
+          m->position = p;
+        }
       } else if (p->addr == 104) {   // Goal Velocity
         if (v > m->velocity_limit || v < -m->velocity_limit) {continue;}   // Velocity Limit 밖은 모터가 버림 (SyncWrite 라 응답 없음)
         m->goal_velocity = v;
@@ -164,6 +179,9 @@ private:
       case ControlTableItem::BUS_WATCHDOG: m.watchdog = v; break;
       case ControlTableItem::OPERATING_MODE: m.mode = static_cast<uint8_t>(v); break;
       case ControlTableItem::HOMING_OFFSET: m.homing_offset = v; break;
+      case ControlTableItem::POSITION_P_GAIN: if (!m.ignore_gain_writes) {m.pos_p_gain = v;} break;
+      case ControlTableItem::POSITION_I_GAIN: if (!m.ignore_gain_writes) {m.pos_i_gain = v;} break;
+      case ControlTableItem::POSITION_D_GAIN: if (!m.ignore_gain_writes) {m.pos_d_gain = v;} break;
       // EEPROM (바퀴 부팅 설정): 토크 ON 중이거나 시험이 막아 두면 받지 않음 (e-Manual: EEPROM 은 토크 OFF 에서만)
       case ControlTableItem::DRIVE_MODE: if (!m.torque && !m.eeprom_write_fails) {m.drive_mode = static_cast<uint8_t>(v);} break;
       case ControlTableItem::VELOCITY_LIMIT: if (!m.torque && !m.eeprom_write_fails) {m.velocity_limit = v;} break;
