@@ -291,6 +291,8 @@ private:
     skill_file_ = declare_parameter<std::string>("skill.policies_file", "");
     // 스트리밍 1점 궤적의 time_from_start = horizon / rate_hz (JTC 떨림 방지, 실물 테스트 후 조정)
     skill_horizon_ = declare_parameter<double>("skill.horizon", 1.5);
+    // 정책 목표의 한 tick 변화량 ≤ max_joint_velocity / rate_hz (arm.max_joint_velocity 와 별개, 학습 환경 한계와 맞출 것)
+    skill_max_joint_vel_ = declare_parameter<double>("skill.max_joint_velocity", 0.5);
 
     validateParameters(signs);
     loadPolicies();
@@ -381,6 +383,7 @@ private:
     requireNonNegative("pick.object_radius", object_radius_);
 
     requirePositive("skill.horizon", skill_horizon_);
+    requirePositive("skill.max_joint_velocity", skill_max_joint_vel_);
     if (correction_max_iter_ < 0) {
       throw std::invalid_argument("correction.max_iterations must be >= 0");
     }
@@ -1226,6 +1229,7 @@ private:
       skill_timeout_);
     active_policy_ = policies_.find(gh->get_goal()->policy);   // accept 때 skill_ready_로 확인함
     skill_rate_ = active_policy_->spec.rate_hz;
+    skill_last_cmd_.reset();   // 첫 tick 에 현재 관절각으로 초기화
     const uint64_t id = job_id_;
     skill_timer_ = rclcpp::create_timer(
       this, get_clock(), rclcpp::Duration::from_seconds(1.0 / skill_rate_),
@@ -1270,10 +1274,16 @@ private:
     if (!active_policy_->runner->run(obs, raw)) {finishSkill(false, "policy inference failed"); return;}
     // action_low · action_high clamp (ActionMapper) 뒤 관절 한계로 다시 clamp (계약)
     const auto mapped = robot_policy::ActionMapper(spec).map(raw);
+    // 기준 = 직전 목표 (측정값 기준이면 추종이 늦을 때 목표가 계속 뒤처짐). 정책 출력이 튀어도 급동작 없음
+    if (!skill_last_cmd_) {skill_last_cmd_ = *q;}
+    const double max_step = skill_max_joint_vel_ / skill_rate_;
     std::vector<double> action(joint_names_.size());
     for (size_t i = 0; i < action.size(); ++i) {
-      action[i] = std::clamp(static_cast<double>(mapped[i]), lower_[i], upper_[i]);
+      const double prev = (*skill_last_cmd_)[i];
+      const double target = std::clamp(static_cast<double>(mapped[i]), lower_[i], upper_[i]);
+      action[i] = std::clamp(target, prev - max_step, prev + max_step);
     }
+    skill_last_cmd_ = action;
     trajectory_msgs::msg::JointTrajectory jt;
     jt.joint_names = joint_names_;
     trajectory_msgs::msg::JointTrajectoryPoint point;
@@ -1326,7 +1336,8 @@ private:
   bool skill_enabled_{false};
   std::vector<std::string> skill_names_;
   std::string skill_file_;
-  double skill_rate_{20.0}, skill_horizon_{1.5};
+  double skill_rate_{20.0}, skill_horizon_{1.5}, skill_max_joint_vel_{0.5};
+  std::optional<std::vector<double>> skill_last_cmd_;   // 직전 정책 목표 (변화량 제한 기준)
   robot_policy::PolicyLibrary policies_;
   std::set<std::string> skill_ready_;   // 로드 · 형식 확인을 통과한 정책만 (없으면 execute_skill 거절)
   robot_policy::LoadedPolicy * active_policy_{nullptr};

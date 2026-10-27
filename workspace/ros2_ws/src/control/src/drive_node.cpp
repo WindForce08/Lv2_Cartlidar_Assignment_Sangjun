@@ -93,6 +93,7 @@ public:
     max_v_ = declare_parameter("skill.max_linear", 0.3);
     max_w_ = declare_parameter("skill.max_angular", 1.5);
     scan_bins_ = declare_parameter("skill.scan_bins", 360);
+    skill_front_margin_ = declare_parameter("skill.front_margin", 0.10);   // 범퍼 앞면에서 이 거리 안에 점 → 전진 0
 
     if (skill_enabled_) {
       std::vector<std::string> errs;
@@ -154,7 +155,9 @@ public:
         [this](std::shared_ptr<SkillGH> gh) {start_skill(gh);},
         rcl_action_server_get_default_options(), cbg_);
 
-    timer_ = create_wall_timer(std::chrono::duration<double>(1.0 / rate_hz_), [this]() {tick();}, cbg_);
+    // 노드 시계 기준 (use_sim_time 이면 /clock) — wall timer 는 시뮬레이션 실시간 비율이 1 이 아니면 주기 · timeout 이 어긋남
+    timer_ = rclcpp::create_timer(this, get_clock(), rclcpp::Duration::from_seconds(1.0 / rate_hz_),
+        [this]() {tick();}, cbg_);
     RCLCPP_INFO(get_logger(), "drive_node 준비 (align %.0f Hz, 정책 %s)", rate_hz_,
       skill_enabled_ ? "사용" : "사용 안 함");
   }
@@ -199,7 +202,7 @@ private:
       auto r = std::make_shared<Skill::Result>();
       r->message = why;
       end(skill_gh_, false, r);
-      skill_timer_.reset();
+      stop_skill_timer();
     }
     if (nav_gh_) {
       cancel_nav2();
@@ -400,14 +403,21 @@ private:
     skill_ = policies_.find(gh->get_goal()->policy);
     skill_start_ = now();
     skill_timeout_ = gh->get_goal()->timeout > 0 ? gh->get_goal()->timeout : 30.0;
-    skill_timer_ = create_wall_timer(std::chrono::duration<double>(1.0 / skill_->spec.rate_hz), [this]() {tick_skill();}, cbg_);
+    skill_timer_ = rclcpp::create_timer(this, get_clock(), rclcpp::Duration::from_seconds(1.0 / skill_->spec.rate_hz),
+        [this]() {tick_skill();}, cbg_);
     RCLCPP_INFO(get_logger(), "skill %s 시작 (%.0f Hz, %.1f s)", skill_->spec.name.c_str(), skill_->spec.rate_hz, skill_timeout_);
+  }
+
+  // 타이머 콜백(tick_skill) 안에서 끝날 수 있으므로 파괴하지 않고 멈추기만 한다 (다음 start_skill 에서 교체)
+  void stop_skill_timer()
+  {
+    if (skill_timer_) {skill_timer_->cancel();}
   }
 
   void finish_skill(bool ok, const std::string & msg, bool canceled = false)
   {
     publish_cmd(0, 0);
-    skill_timer_.reset();
+    stop_skill_timer();
     auto r = std::make_shared<Skill::Result>();
     r->success = ok;
     r->message = msg;
@@ -432,7 +442,7 @@ private:
 
   void tick_skill()
   {
-    if (!skill_gh_) {skill_timer_.reset(); return;}
+    if (!skill_gh_) {stop_skill_timer(); return;}
     if (skill_gh_->is_canceling()) {finish_skill(false, "취소됨", true); return;}
     const double el = (now() - skill_start_).seconds();
     if (el >= skill_timeout_) {
@@ -458,7 +468,23 @@ private:
     if (!robot_policy::ObservationBuilder(skill_->spec).build(v, obs, err)) {finish_skill(false, "필수 관측 무효: " + err); return;}
     if (!skill_->runner->run(obs, raw)) {finish_skill(false, "추론 실패"); return;}
     const auto a = robot_policy::ActionMapper(skill_->spec).map(raw);
-    publish_cmd(std::clamp<double>(a[0], -max_v_, max_v_), std::clamp<double>(a[1], -max_w_, max_w_));
+    double cmd_v = std::clamp<double>(a[0], -max_v_, max_v_);
+    const double cmd_w = std::clamp<double>(a[1], -max_w_, max_w_);
+    // 정책 출력은 nav2 · collision_monitor 를 거치지 않음 → 진행 방향 /scan 확인 (align 과 같은 규칙)
+    //   막힌 방향의 전후 속도만 0, 회전은 그대로 (정책이 돌아서 빠져나갈 수 있게)
+    if (std::fabs(cmd_v) > 1e-3) {
+      const bool scan_ok = scan_ && fresh(scan_->header.stamp);
+      if (!scan_ok && require_scan_) {finish_skill(false, "/scan 없음 — 정책 주행 중지"); return;}
+      if (scan_ok) {
+        const bool fwd = cmd_v > 0;
+        const double limit = fwd ? front_offset_ + skill_front_margin_ : scan_rear_stop_;
+        if (scan_blocked(scan_->ranges, scan_->angle_min, scan_->angle_increment, fwd ? 0.0 : M_PI, scan_half_, limit)) {
+          RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000, "skill: %s 장애물 — 전후 속도 0", fwd ? "전방" : "후방");
+          cmd_v = 0.0;
+        }
+      }
+    }
+    publish_cmd(cmd_v, cmd_w);
     auto fb = std::make_shared<Skill::Feedback>();
     fb->progress = static_cast<float>(el / skill_timeout_);
     skill_gh_->publish_feedback(fb);
@@ -475,7 +501,7 @@ private:
 
   // 파라미터
   double rate_hz_, lost_s_, mode_wait_s_, align_timeout_s_, min_fine_target_, coarse_min_, default_tol_, front_offset_;
-  double scan_half_, scan_front_margin_, scan_rear_stop_, stale_s_, xy_tol_, spin_time_, max_v_, max_w_;
+  double scan_half_, scan_front_margin_, scan_rear_stop_, stale_s_, xy_tol_, spin_time_, max_v_, max_w_, skill_front_margin_;
   bool require_scan_, skill_enabled_;
   int scan_bins_;
   std::string map_frame_, base_frame_, nav_action_name_, spin_action_name_;

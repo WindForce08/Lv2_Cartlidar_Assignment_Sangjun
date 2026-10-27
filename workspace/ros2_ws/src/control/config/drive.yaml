@@ -38,3 +38,4 @@ drive_node:
       max_linear: 0.3
       max_angular: 1.5
       scan_bins: 360
+      front_margin: 0.10             # 정책 주행: 범퍼 앞면(base.front_offset) + 이 거리 안에 점 (±scan.half_angle) → 전진 0, 회전 허용 ★
