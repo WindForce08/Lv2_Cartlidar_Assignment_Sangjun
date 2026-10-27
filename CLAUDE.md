@@ -50,7 +50,7 @@ i=$(mktemp) && GIT_INDEX_FILE=$i git read-tree --empty && GIT_INDEX_FILE=$i git 
 팔 실기 기록 [workspace/docs/arm_bench_test_2026-10-26.md](workspace/docs/arm_bench_test_2026-10-26.md) ·
 규격 변경 요청 [workspace/docs/opencr_v5_change_request.md](workspace/docs/opencr_v5_change_request.md) · 팀원용 [opencr_firmware/README.md](workspace/ros2_ws/src/opencr_firmware/README.md).
 
-- **2026-10-27 오후 — 커밋 · dev 병합 (로컬만, 푸시 안 함)**: fetch 해 보니 **PR #6 은 10-26 dev 에 병합됨** (c1ad4a4, 저장소 주인 계정 — 리뷰 여부는 gh 없어 미확인)
+- **2026-10-27 오후 — 커밋 · dev 병합 · backup 에만 푸시 (사용자 지시)**: fetch 해 보니 **PR #6 은 10-26 dev 에 병합됨** (c1ad4a4, 저장소 주인 계정 — 리뷰 여부는 gh 없어 미확인)
   · **PR #10 `manipulatorFirmware` (754b29c, 10-27)** 이 우리 펌웨어를 고침: `WHEEL_IDS {1,3,2,4}` (실물 장착 · spin 시험), `WHEEL_GEAR 1.0` 직결 (실물 확인),
   `prepareWheelConfig` (부팅 때 바퀴 Drive Mode 반전 끔 · Velocity Limit ≥ 330 EEPROM 씀), 바퀴 한계 넘으면 비례 축소 (D6 펌웨어 쪽), SIL 6 개, `scripts/opencr_wheel_tool.py`,
   예전 `robot.urdf.xacro` 에 urdfv2 `teamrobot.urdf` 값 (바퀴 간격 0.2744 · r 0.033 · IMU 뒤집힘). → 주행 보드는 팀에서 실물로 돌려 본 상태 (커밋 문구 기준).
@@ -58,7 +58,8 @@ i=$(mktemp) && GIT_INDEX_FILE=$i git read-tree --empty && GIT_INDEX_FILE=$i git 
   커밋: aaefa54 ① `chore: remove cartridar_01 robot URDF pending chassis v2` (단독 colcon test 81 실패 0 건너뜀 1) →
   c84336f ② `feat: port arm bench firmware (ranges, gripper stall guard, boot PWM check)` → **f3a5a3c 병합** (충돌 7: 6 개는 양쪽 다 살림, WHEEL_GEAR = dev 1.0,
   robot.urdf.xacro 삭제, 변경 요청서 상태 · PR #10 절). 병합 뒤 colcon test **92 실패 0 건너뜀 1** (로봇 URDF 없음). 펌웨어 빌드: 팔 bin **986ad2ba (보드와 같음 — 다시 올릴 필요 없음)** ·
-  주행 5f39c235 (PR #10 포함, 새 값) · dxl_setup 0f703c5c. HEAD f3a5a3c = origin/dev 보다 5 앞 · 0 뒤. **origin · backup 푸시 · 다음 PR 은 사용자 결정**.
+  주행 5f39c235 (PR #10 포함, 새 값) · dxl_setup 0f703c5c. HEAD f3a5a3c = origin/dev 보다 5 앞 · 0 뒤.
+  **backup/feature/firmware = f3a5a3c (10-27 푸시) · origin/feature/firmware = 892e8f4 그대로** — origin 푸시 · 다음 PR 은 사용자 결정. ai-notes 도 10-27 푸시.
   - arm_bench `src/` 는 이제 Lv2 와 PR #10 바퀴 변경만큼 다름 (팔 코드는 같음).
 - **2026-10-27 오전 (그때는 작업 트리에만)**: 사용자 지시로 두 묶음을 적용 (① 1안 정리 ② 펌웨어 이식 — 위 커밋 aaefa54 · c84336f).
   ① 1안 차체 (cartridar_01) 폐기 → 로봇 URDF · CAD 지움: `urdf/cartridar_01.urdf` · `urdf/robot.urdf.xacro` · `scripts/import_cad_urdf.py` 삭제,
@@ -114,7 +115,7 @@ i=$(mktemp) && GIT_INDEX_FILE=$i git read-tree --empty && GIT_INDEX_FILE=$i git 
   결과: 수정 경로 + 처짐 없음 → 원기둥 6/6 · 접촉 0, 사각기둥 2/4 (놓을 때 기울어 끼임, 매번 다름). 지금 게인 (P 800) → 넣기 1/10 (J2 약 2° 처짐) → 게인 개선이 먼저.
   창 시연 그림 `img/c01_window_demo_*`, 주행 `img/drive_*`, 메시 전후 `img/mesh_fix_compare.png`.
 - 주행 보드: 우리는 실물 미시험. PR #10 커밋 문구로는 팀이 10-27 spin 시험 · 장착 ID 확인 (기록은 저장소에 없음 ★). `WHEEL_DIR` 실측은 여전히 ★.
-- 다음: origin · backup 에 f3a5a3c 까지 푸시할지 · 다음 PR (feature/firmware → dev, interfaces.md 변경 있음) 사용자 결정 → 게인 튜닝 (arm_bench) ·
+- 다음: origin 에 f3a5a3c 까지 올릴지 · 다음 PR (feature/firmware → dev, interfaces.md 변경 있음) 사용자 결정 → 게인 튜닝 (arm_bench) ·
   쥐는 힘 확인 → 주행 자세 → Jetson 세팅 (dialout · udev · aarch64 업로드 도구 없음 · 두 보드 ros2_control 시험).
   그 밖: 차체 2안 URDF (urdfv2 가 2안인지 팀 확인 ★), D3 · D4 결정, 주행용 벤치 도구 (나중에), Isaac 학습 준비 (분석만 함).
 - Jetson `cart11@cart11.local` (Orin Nano Super, Ubuntu 24.04 aarch64, JetPack 7.2.1). OpenCR by-id `usb-ROBOTIS_OpenCR_Virtual_ComPort_in_FS_Mode_FFFFFFFEFFFF-if00`
