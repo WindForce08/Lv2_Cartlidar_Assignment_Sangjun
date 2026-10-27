@@ -1,5 +1,7 @@
 # robot_nodes.html 대비 소스 검토 · 개선 (2026-10-22)
 
+> **현재 하드웨어 구성 갱신 (2026-10-26):** 아래 검토는 이전의 단일 OpenCR 결정을 기록한 이력이다. 지금 구성은 주행 모터 전용 OpenCR 1대 (4륜, ID 1~4 — 한때 6륜이었다가 가운데 2개를 뺌) 와 팔 모터 전용 OpenCR 1대이며, 통신 계약 제안은 [interfaces.md](interfaces.md) USB 패킷 절 (v5, [변경 요청](opencr_v5_change_request.md), 승인 대기) 이다. 아래 과거 수치는 현재 설정 기준으로 사용하지 않는다.
+
 > **저장소 통합 뒤 이름 대응 (2026-10-22)**: 이 검토는 `robot_ws` 시절 작성. 지금 패키지는
 > `robot_perception` → `perception`, `robot_control` → `control` (drive · manipulator) + `center` (mission — 2026-10-25 `mission` 패키지로 교체),
 > `controller_bringup.launch.py` → `bringup/launch/bringup.launch.py`. STATE 패킷은 191 B (`fw_version` 추가).

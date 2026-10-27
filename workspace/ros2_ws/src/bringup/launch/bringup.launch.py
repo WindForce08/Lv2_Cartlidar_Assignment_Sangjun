@@ -4,7 +4,7 @@
 #   ros2 launch bringup bringup.launch.py use_hardware:=false    # OpenCR 없이 (판단 · 제어 · 인식만)
 #   ros2 launch bringup bringup.launch.py use_perception:=false  # 카메라 없이
 #   ros2 launch bringup bringup.launch.py skill_enabled:=true    # ONNX Runtime 빌드에서만 (정책 실행)
-#   ros2 launch bringup bringup.launch.py use_hardware:=false use_sim_time:=true   # Isaac Sim (/clock · 센서 토픽은 시뮬레이터가 발행)
+#   ros2 launch bringup bringup.launch.py use_hardware:=false use_sim_time:=true   # 시뮬레이션 (Isaac Sim 이 /clock 발행)
 #
 # ① ros2_control_node · ② base_container : opencr_hardware/base_bringup.launch.py
 # ⑦ perception_container                  : perception/perception.launch.py
@@ -31,6 +31,7 @@ def generate_launch_description():
     pol = FindPackageShare('robot_policy')
     me = FindPackageShare('bringup')
     ipc = [{'use_intra_process_comms': True}]
+    # 모든 노드가 같은 시계를 쓰게: 시뮬레이션이면 /clock (영상 · 라이다 stamp 가 시뮬레이션 시각이라 300 ms 규칙에 필요)
     sim = {'use_sim_time': ParameterValue(LaunchConfiguration('use_sim_time'), value_type=bool)}
     skill = {'skill.enabled': ParameterValue(LaunchConfiguration('skill_enabled'), value_type=bool),
              'skill.policies_file': LaunchConfiguration('policies_file')}
@@ -55,15 +56,16 @@ def generate_launch_description():
         DeclareLaunchArgument('use_teleop', default_value='true', description='조이스틱 (끄면 E-stop heartbeat 검사도 끔)'),
         DeclareLaunchArgument('use_perception', default_value='true', description='⑦ 카메라 3대 · 검출'),
         DeclareLaunchArgument('use_ekf', default_value='true', description='⑥ robot_localization ekf'),
-        DeclareLaunchArgument('port', default_value='/dev/opencr'),
-        DeclareLaunchArgument('use_sim_time', default_value='false', description='시뮬레이션 시계 (/clock)'),
+        DeclareLaunchArgument('ports', default_value='/dev/ttyACM0,/dev/ttyACM1',
+                              description='두 OpenCR 후보 포트 (역할은 프로토콜 응답으로 판별)'),
         DeclareLaunchArgument('skill_enabled', default_value='false',
                               description='정책 실행 — ONNX Runtime 빌드에서만 true (없으면 거절 → 미션 fallback)'),
         DeclareLaunchArgument('policies_file', default_value=PathJoinSubstitution([pol, 'config', 'policies.yaml'])),
+        DeclareLaunchArgument('use_sim_time', default_value='false', description='시뮬레이션 시계(/clock) 사용 — 모든 노드에 전달'),
 
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(PathJoinSubstitution([hw, 'launch', 'base_bringup.launch.py'])),
-            launch_arguments={'use_teleop': LaunchConfiguration('use_teleop'), 'port': LaunchConfiguration('port')}.items(),
+            launch_arguments={'use_teleop': LaunchConfiguration('use_teleop'), 'ports': LaunchConfiguration('ports')}.items(),
             condition=IfCondition(LaunchConfiguration('use_hardware'))),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(PathJoinSubstitution([per, 'launch', 'perception.launch.py'])),

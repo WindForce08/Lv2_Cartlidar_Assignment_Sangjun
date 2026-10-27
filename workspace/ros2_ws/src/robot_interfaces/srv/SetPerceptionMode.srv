@@ -6,6 +6,7 @@ uint8 READ_TAG=4       # Arducam AprilTag
 uint8 SEARCH_REAR=8    # 후방 D435 물체 탐색
 uint8 READ_MARKER=16   # 장소 태그 (앞 · 뒤 D435, 팔 카메라가 켜져 있으면 그것도)
 uint8 READ_SIGNAL=32   # 신호등 점멸 순서 (앞 · 뒤 D435). 끄면 센 순서를 지운다
+uint8 READ_BARCODE=64  # 바코드 라벨: 앞 D435 로 자리 찾기(멈춰서 깊이 여러 장 평균) · 팔 카메라로 문자열 읽기 (/perception/barcode)
 uint8 mode             # 예: SEARCH_FRONT | ARM_ALIGN = 3
 ---
 bool success

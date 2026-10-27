@@ -16,6 +16,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/PuckArray.msg"
   "msg/TaskMarker.msg"
   "msg/SignalSequence.msg"
+  "msg/Barcode.msg"
   "srv/SetPerceptionMode.srv"
   "srv/CheckDice.srv"
   "action/AlignBase.action"

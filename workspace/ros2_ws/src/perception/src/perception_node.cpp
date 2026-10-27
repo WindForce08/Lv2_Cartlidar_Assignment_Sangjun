@@ -14,10 +14,14 @@
 //   SEARCH_* : 검출 → (색 검출기면) 덩어리를 깊이가 끊긴 곳에서 나눔 → 조각 깊이 중앙값 → 컬러 광학 좌표 3D
 //              → TF 로 base_link · odom → TargetTracker → object_pose
 //   ARM_ALIGN: camera_info 로 왜곡 보정한 영상을 detect_width 로 줄여 검출 → 화면 중심 대비 arm_offset
+//              목표 퍽 하나를 잠가 유지한다(arm_target_lock.hpp): 처음에는 D435 추적 목표를 팔 영상에 투영한 점에 가까운 것,
+//              그 뒤에는 같은 색 · 직전 자리 근처만. 놓치면 offset_valid = false (다른 퍽으로 넘어가지 않음)
 //   READ_TAG : 왜곡 보정 원본에서 AprilTag → tag_id · tag_pose (Arducam 광학 프레임 기준, x 오른쪽 · y 아래 · z 앞)
+//              퍽 태그(tag.*)와 장소 태그(marker.*)를 각자 크기로 찾아 가장 크게 보이는 것 하나 (read_tag.hpp)
 //   /perception/pucks (토픽, PuckArray): SEARCH_* 또는 READ_TAG 가 켜져 있으면 result 와 같은 주기로 발행한다
 //      Arducam 태그 → 번호 · 색 · 중심 · 긴 축(puck_estimator.hpp), D435 색 검출 → 색 · 중심(번호 -1)
-//      같은 퍽(merge_dist 안)이면 태그로 읽은 것을 남긴다. 새 영상이 없는 카메라는 그 영상으로 낸 결과를 다시 쓴다
+//      카메라 사이 같은 퍽(같은 색 · 한쪽 모름, merge_dist 안)은 일대일로 하나만 남긴다(puck_merge.hpp): 앞 · 뒤 D435 끼리,
+//      그다음 태그로 읽은 퍽과. 태그 퍽이 있으면 그것을 남긴다. 새 영상이 없는 카메라는 그 영상으로 낸 결과를 다시 쓴다
 //   /perception/task_marker (토픽, TaskMarker): READ_MARKER 가 켜져 있으면 앞 · 뒤 D435 (팔 카메라가 켜져 있으면 그것도)
 //      에서 장소 태그(marker.family · ids)를 찾아 가장 크게 보이는 것 하나. 없으면 found = false
 //   /perception/signal (토픽, SignalSequence): READ_SIGNAL 이 켜져 있으면 앞 · 뒤 D435 의 컬러 프레임을 모두(빠짐 없이)
@@ -25,23 +29,32 @@
 //      → 프레임 상태(켜진 등이 없고 칸 앞을 무엇이 가리면 꺼짐이 아니라 모름) → 점멸 순서 세기(signal_sequence.hpp).
 //      READ_SIGNAL 을 끄면 센 것을 지운다
 //   /perception/check_dice (서비스, CheckDice): 가장 최근 /perception/pucks 목록으로 선반 위 3×3 주사위 판정(dice_check.hpp)
+//   /perception/barcode (토픽, Barcode): READ_BARCODE 가 켜져 있으면 두 가지를 낸다
+//      LOCATE: barcode.camera D435 깊이를 barcode.depth_frames 장 모아 평균(로봇이 멈춘 동안, 평균 중 odom 으로
+//              움직였으면 그 프레임부터 다시 모음) → 라벨 찾기(barcode_locator.hpp) → base_link 위치. 묶음마다 한 번
+//      READ  : 팔 카메라(cameras.arm.image_topic) 새 영상마다 zbar 로 CODE128 읽기(barcode_reader.hpp, barcode.read_scale 배)
+//      둘 다 일꾼 스레드에서 돌아 다른 모드 처리 주기를 막지 않는다. 일꾼이 도는 동안 온 팔 영상은 건너뛴다
 #include <algorithm>
 #include <atomic>
 #include <deque>
 #include <chrono>
+#include <future>
 #include <cmath>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include <opencv2/calib3d.hpp>
 #include <opencv2/imgproc.hpp>
 
+#include "ament_index_cpp/get_package_share_path.hpp"
 #include "cv_bridge/cv_bridge.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_components/register_node_macro.hpp"
+#include "robot_interfaces/msg/barcode.hpp"
 #include "robot_interfaces/msg/perception_result.hpp"
 #include "robot_interfaces/msg/puck_array.hpp"
 #include "robot_interfaces/msg/signal_sequence.hpp"
@@ -51,12 +64,17 @@
 #include "robot_interfaces/srv/set_perception_mode.hpp"
 #include "sensor_msgs/msg/camera_info.hpp"
 #include "sensor_msgs/msg/image.hpp"
+#include "perception/arm_target_lock.hpp"
+#include "perception/barcode_locator.hpp"
+#include "perception/barcode_reader.hpp"
 #include "perception/depth_split.hpp"
 #include "perception/detector.hpp"
 #include "perception/dice_check.hpp"
 #include "perception/frame_gate.hpp"
 #include "perception/geometry.hpp"
 #include "perception/puck_estimator.hpp"
+#include "perception/puck_merge.hpp"
+#include "perception/read_tag.hpp"
 #include "perception/signal_light.hpp"
 #include "perception/signal_sequence.hpp"
 #include "perception/tag_depth.hpp"
@@ -79,6 +97,7 @@ using PuckArray = robot_interfaces::msg::PuckArray;
 using TaskMarker = robot_interfaces::msg::TaskMarker;
 using SignalMsg = robot_interfaces::msg::SignalSequence;
 using CheckDice = robot_interfaces::srv::CheckDice;
+using BarcodeMsg = robot_interfaces::msg::Barcode;
 using Image = sensor_msgs::msg::Image;
 using CameraInfo = sensor_msgs::msg::CameraInfo;
 
@@ -125,6 +144,7 @@ struct DepthCamera
   std::vector<Puck> pucks;                                      // used_ns 영상으로 낸 결과 (처리 그룹에서만 씀)
   std::optional<MarkerHit> marker;
   std::deque<Image::ConstSharedPtr> signal_q;                   // READ_SIGNAL: 아직 처리하지 않은 컬러 프레임
+  std::deque<Image::ConstSharedPtr> barcode_q;                  // READ_BARCODE: 아직 평균에 넣지 않은 깊이 프레임
 
   rclcpp::Subscription<Image>::SharedPtr color_sub, depth_sub;
   rclcpp::Subscription<CameraInfo>::SharedPtr info_sub;
@@ -183,6 +203,10 @@ public:
     depth_win_ = static_cast<int>(declare_parameter("depth.window", 3));
     depth_tol_ns_ = static_cast<int64_t>(declare_parameter("depth.sync_tol_s", 0.02) * 1e9);
     detect_w_ = static_cast<int>(declare_parameter("arm.detect_width", 640));
+    ArmLockConfig alc;
+    alc.gate = declare_parameter("arm.lock_gate", alc.gate);
+    alc.size_ratio = declare_parameter("arm.lock_size_ratio", alc.size_ratio);
+    arm_lock_ = ArmTargetLock(alc);
 
     DetectorConfig dc;
     dc.type = declare_parameter("detector.type", dc.type);
@@ -225,6 +249,7 @@ public:
     tc.gate = declare_parameter("target.gate", tc.gate);
     tc.lost_timeout = declare_parameter("target.lost_timeout", tc.lost_timeout);
     tracker_ = TargetTracker(tc);
+    seed_max_age_ = tc.lost_timeout;
     min_confidence_ = tc.min_confidence;
     size_min_m_ = declare_parameter("target.size_min_m", 0.015);
     size_max_m_ = declare_parameter("target.size_max_m", 0.09);
@@ -293,6 +318,36 @@ public:
     dice_margin_ = declare_parameter("dice.region_margin_m", 0.04);
     dice_max_age_ = declare_parameter("dice.max_age_s", 1.0);
 
+    // 바코드 (R3): 찾기 문턱은 barcode.<이름> (기본값 = BarcodeLocatorConfig = R3 설계 45차 locate_v2.py CFG2)
+    BarcodeLocatorConfig bcc;
+    visit_barcode_params(bcc, [this](const char * k, auto & x) {
+        using T = std::decay_t<decltype(x)>;
+        const std::string name = std::string("barcode.") + k;
+        if constexpr (std::is_same_v<T, int>) {
+          x = static_cast<int>(declare_parameter(name, static_cast<int64_t>(x)));
+        } else {
+          x = declare_parameter(name, x);
+        }
+      });
+    std::string tex = declare_parameter("barcode.template_path", std::string(""));
+    if (tex.empty()) {
+      tex = (ament_index_cpp::get_package_share_path("perception") / "data" / "barcode_P2-01.png").string();
+    }
+    bc_locator_ = std::make_unique<BarcodeLocator>(bcc, tex);
+    const double rs = declare_parameter("barcode.read_scale", 1.0), rg = declare_parameter("barcode.read_gamma", 2.0);
+    bc_reader_ = std::make_unique<BarcodeReader>(rs, rg, static_cast<int>(declare_parameter("barcode.read_min_quality", 4)));
+    bc_cam_ = declare_parameter("barcode.camera", std::string("front")) == "rear" ? &rear_ : &front_;
+    bc_frames_ = std::max(1, static_cast<int>(declare_parameter("barcode.depth_frames", 5)));
+    bc_min_valid_ = static_cast<int>(declare_parameter("barcode.depth_min_valid", 0));
+    bc_base_frame_ = declare_parameter("barcode.base_frame", std::string("base_footprint"));
+    bc_max_move_ = declare_parameter("barcode.max_motion_m", bc_max_move_);
+    bc_max_rot_ = declare_parameter("barcode.max_rotation_deg", bc_max_rot_) * M_PI / 180.0;
+    bc_arm_.name = "arm_barcode";
+    bc_arm_.image_topic = arm_.image_topic;   // 팔 카메라와 같은 토픽. 따로 구독해 ARM_ALIGN · READ_TAG 와 처리한 영상 기록을 나눔
+    bc_arm_.info_topic = arm_.info_topic;   // 읽기에는 안 쓰지만 MonoCamera 구독이 같이 만든다
+    bc_arm_.frame_id = arm_.frame_id;
+    if (!bc_locator_->ok()) {RCLCPP_ERROR(get_logger(), "바코드 라벨 그림을 읽지 못함: %s (READ_BARCODE 거절)", tex.c_str());}
+
     const double rate = declare_parameter("publish_rate", 15.0);
     frame_max_age_ = declare_parameter("frame_max_age_s", 0.3);
     base_frame_ = declare_parameter("frames.base", std::string("base_link"));
@@ -319,6 +374,7 @@ public:
     puck_pub_ = create_publisher<PuckArray>(names::PERCEPTION_PUCKS, qos::result());
     marker_pub_ = create_publisher<TaskMarker>(names::PERCEPTION_TASK_MARKER, qos::result());
     signal_pub_ = create_publisher<SignalMsg>(names::PERCEPTION_SIGNAL, qos::result());
+    barcode_pub_ = create_publisher<BarcodeMsg>(names::PERCEPTION_BARCODE, qos::result());
     dice_srv_ = create_service<CheckDice>(names::PERCEPTION_CHECK_DICE,
         [this](CheckDice::Request::SharedPtr req, CheckDice::Response::SharedPtr res) {on_check_dice(*req, *res);},
         rclcpp::ServicesQoS(), ctl_cbg_);
@@ -333,11 +389,12 @@ private:
   static constexpr uint8_t ARM_BITS = SetMode::Request::ARM_ALIGN | SetMode::Request::READ_TAG;
   static constexpr uint8_t MARKER_BIT = SetMode::Request::READ_MARKER;
   static constexpr uint8_t SIGNAL_BIT = SetMode::Request::READ_SIGNAL;
+  static constexpr uint8_t BARCODE_BIT = SetMode::Request::READ_BARCODE;
 
   // ------------------------------ set_mode ------------------------------
   void on_set_mode(const SetMode::Request & req, SetMode::Response & res)
   {
-    if (req.mode & ~(SEARCH_BITS | ARM_BITS | MARKER_BIT | SIGNAL_BIT)) {res.success = false; res.message = "모르는 모드 비트"; return;}
+    if (req.mode & ~(SEARCH_BITS | ARM_BITS | MARKER_BIT | SIGNAL_BIT | BARCODE_BIT)) {res.success = false; res.message = "모르는 모드 비트"; return;}
     if ((req.mode & SetMode::Request::SEARCH_FRONT) && front_.color_topic.empty()) {
       res.success = false; res.message = "전방 카메라 토픽 미설정"; return;
     }
@@ -347,9 +404,14 @@ private:
     if ((req.mode & ARM_BITS) && arm_.image_topic.empty()) {res.success = false; res.message = "팔 카메라 토픽 미설정"; return;}
     if ((req.mode & SetMode::Request::READ_TAG) && !tag_->ok()) {res.success = false; res.message = "태그 패밀리 오류"; return;}
     if ((req.mode & MARKER_BIT) && !marker_->ok()) {res.success = false; res.message = "마커 사전 이름 오류"; return;}
+    if ((req.mode & BARCODE_BIT) && !bc_locator_->ok()) {res.success = false; res.message = "바코드 라벨 그림 없음"; return;}
+    if ((req.mode & BARCODE_BIT) && (bc_cam_->color_topic.empty() || bc_arm_.image_topic.empty())) {
+      res.success = false; res.message = "바코드 카메라 토픽 미설정"; return;
+    }
 
     const uint8_t old = mode_;
     mode_ = req.mode;
+    if ((old ^ req.mode) & SetMode::Request::ARM_ALIGN) {arm_lock_.reset();}   // 켜거나 끌 때 목표를 다시 고른다
     if ((old ^ req.mode) & SIGNAL_BIT) {   // 켜거나 끌 때 센 것을 지운다
       locator_.reset();
       sequence_.reset();
@@ -357,11 +419,19 @@ private:
       for (auto * c : {&front_, &rear_}) {std::lock_guard<std::mutex> lk(c->m); c->signal_q.clear();}
     }
     signal_on_ = req.mode & SIGNAL_BIT;
+    if ((old ^ req.mode) & BARCODE_BIT) {   // 켜거나 끌 때 모으던 깊이를 지우고, 돌고 있는 일꾼 결과는 내지 않는다
+      bc_acc_ = DepthAverage();
+      ++bc_gen_;
+      std::lock_guard<std::mutex> lk(bc_cam_->m);
+      bc_cam_->barcode_q.clear();
+    }
+    barcode_on_ = req.mode & BARCODE_BIT;
     update_subscriptions();
     for (auto * c : {&front_, &rear_}) {std::lock_guard<std::mutex> lk(c->m); c->used_ns = -1;}   // 새 모드로 지금 영상을 다시 처리
     {std::lock_guard<std::mutex> lk(arm_.m); arm_.used_ns = -1;}
     if (req.mode == SetMode::Request::OFF) {
       tracker_.reset();
+      seed_odom_.reset();
       Result r;   // 받는 쪽 초기화 신호 (manipulator 기억 삭제)
       r.header.stamp = now();
       r.header.frame_id = base_frame_;
@@ -375,9 +445,11 @@ private:
 
   void update_subscriptions()
   {
-    set_depth_subscribed(front_, mode_ & (front_.bit | MARKER_BIT | SIGNAL_BIT));
-    set_depth_subscribed(rear_, mode_ & (rear_.bit | MARKER_BIT | SIGNAL_BIT));
+    const uint8_t bc = mode_ & BARCODE_BIT;
+    set_depth_subscribed(front_, (mode_ & (front_.bit | MARKER_BIT | SIGNAL_BIT)) || (bc && bc_cam_ == &front_));
+    set_depth_subscribed(rear_, (mode_ & (rear_.bit | MARKER_BIT | SIGNAL_BIT)) || (bc && bc_cam_ == &rear_));
     set_mono_subscribed(arm_, mode_ & ARM_BITS);
+    set_mono_subscribed(bc_arm_, bc);
   }
 
   void set_depth_subscribed(DepthCamera & c, bool on)
@@ -389,7 +461,14 @@ private:
       c.color_sub = create_subscription<Image>(c.color_topic, image_qos_,
           [this, &c](Image::ConstSharedPtr m) {on_depth_color(c, m);}, o);
       c.depth_sub = create_subscription<Image>(c.depth_topic, image_qos_,
-          [&c](Image::ConstSharedPtr m) {std::lock_guard<std::mutex> lk(c.m); c.depth.push(stamp_ns(m->header.stamp), m);}, o);
+          [this, &c](Image::ConstSharedPtr m) {
+            std::lock_guard<std::mutex> lk(c.m);
+            c.depth.push(stamp_ns(m->header.stamp), m);
+            if (barcode_on_ && &c == bc_cam_) {   // 바코드 깊이 평균은 프레임을 빠짐 없이 쓴다
+              c.barcode_q.push_back(m);
+              while (c.barcode_q.size() > static_cast<size_t>(2 * bc_frames_)) {c.barcode_q.pop_front();}
+            }
+          }, o);
       c.info_sub = create_subscription<CameraInfo>(c.info_topic, image_qos_,
           [&c](CameraInfo::ConstSharedPtr m) {std::lock_guard<std::mutex> lk(c.m); c.info = m;}, o);
       RCLCPP_INFO(get_logger(), "%s 카메라 구독 시작 %s", c.name.c_str(), c.color_topic.c_str());
@@ -405,6 +484,7 @@ private:
       c.pucks.clear();
       c.marker.reset();
       c.signal_q.clear();
+      c.barcode_q.clear();
       RCLCPP_INFO(get_logger(), "%s 카메라 구독 끝", c.name.c_str());
     }
   }
@@ -724,7 +804,8 @@ private:
     const rclcpp::Time now_t = now();
     const bool want_marker = mode & MARKER_BIT;
     if (mode & SIGNAL_BIT) {process_signal();}
-    if (!(mode & ~SIGNAL_BIT)) {return;}
+    if (mode & BARCODE_BIT) {process_barcode(now_t);}
+    if (!(mode & ~(SIGNAL_BIT | BARCODE_BIT))) {return;}
     Result r;
     r.mode = mode;
     StampSet res_st, puck_st, mark_st;
@@ -759,7 +840,7 @@ private:
       if (search) {puck_lists.push_back(&c->pucks);}
       if (want_marker && c->marker) {markers.push_back(&*c->marker);}
     }
-    if (restart_seen_) {tracker_.reset(); restart_seen_ = false;}
+    if (restart_seen_) {tracker_.reset(); seed_odom_.reset(); restart_seen_ = false;}
     if (search_have && res_st.fresh) {
       if (auto t = tracker_.update(cands, res_st.oldest->seconds())) {
         r.object_found = true;
@@ -770,6 +851,8 @@ private:
         r.object_pose.pose.position.z = t->base.z;
         r.object_pose.pose.orientation.w = 1.0;
         r.confidence = static_cast<float>(t->confidence);
+        seed_odom_ = t->odom;   // 팔 정렬 목표를 처음 고를 때 쓴다
+        seed_t_ = res_st.oldest->seconds();
       }
     }
 
@@ -785,6 +868,7 @@ private:
           const int64_t ns = stamp_ns(img->header.stamp);
           fresh = ns != arm_.used_ns;
           arm_.used_ns = ns;
+          if (arm_.restarted) {arm_lock_.reset();}
           arm_.restarted = false;
         }
       }
@@ -832,24 +916,21 @@ private:
     }
   }
 
-  // 태그로 읽은 퍽(팔)을 먼저 넣고, D435 퍽은 그 merge_dist 안이면 뺀다. 수평 거리 순 정렬, 집을 후보 고르기
+  // 카메라 사이 같은 퍽을 하나로 묶고(puck_merge.hpp), 수평 거리 순 정렬, 집을 후보 고르기
   void publish_pucks(const std::vector<const std::vector<Puck> *> & lists, const rclcpp::Time & stamp)
   {
     PuckArray msg;
     msg.header.stamp = stamp;
     msg.header.frame_id = base_frame_;
+    std::vector<const Puck *> all;
+    std::vector<PuckObs> obs;
     for (const auto * l : lists) {
       for (const auto & p : *l) {
-        bool dup = false;
-        for (const auto & q : msg.pucks) {
-          if (q.tag_id < 0 || p.tag_id >= 0) {continue;}
-          const double dx = p.pose.position.x - q.pose.position.x, dy = p.pose.position.y - q.pose.position.y,
-            dz = p.pose.position.z - q.pose.position.z;
-          dup = dup || std::sqrt(dx * dx + dy * dy + dz * dz) < merge_dist_;
-        }
-        if (!dup) {msg.pucks.push_back(p);}
+        all.push_back(&p);
+        obs.push_back({p.pose.position.x, p.pose.position.y, p.pose.position.z, p.color, p.tag_id, p.camera, p.confidence});
       }
     }
+    for (size_t i : merge_pucks(obs, merge_dist_)) {msg.pucks.push_back(*all[i]);}
     auto hd = [](const Puck & p) {return std::hypot(p.pose.position.x, p.pose.position.y);};
     std::stable_sort(msg.pucks.begin(), msg.pucks.end(), [&](const Puck & a, const Puck & b) {return hd(a) < hd(b);});
     msg.target_index = -1;
@@ -863,6 +944,187 @@ private:
     }
     puck_pub_->publish(msg);
     last_pucks_ = msg;
+  }
+
+  // ------------------------------ 바코드 ------------------------------
+  static bool busy(const std::future<void> & f)
+  {
+    return f.valid() && f.wait_for(std::chrono::seconds(0)) != std::future_status::ready;
+  }
+
+  // 깊이 한 장을 평균에 넣는다. 평균 중 차체가 움직였거나 시각이 뒤로 갔으면 이 장부터 다시 모은다
+  void add_barcode_depth(DepthCamera & c, const Image::ConstSharedPtr & m)
+  {
+    const int64_t ns = stamp_ns(m->header.stamp);
+    DepthAverage & a = bc_acc_;
+    if (a.n > 0 && ns <= a.last_ns) {
+      if (a.last_ns - ns <= 1'000'000'000LL) {return;}   // 재전송 · 순서 바뀜
+      a = DepthAverage();                                 // 시각 재시작
+    }
+    const double scale = depth_scale_for_encoding(m->encoding);
+    if (scale <= 0.0) {
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "%s 깊이 형식 %s 은 바코드 평균에 못 씀", c.name.c_str(), m->encoding.c_str());
+      return;
+    }
+    cv_bridge::CvImageConstPtr d;
+    try {
+      d = cv_bridge::toCvShare(m);
+    } catch (const cv_bridge::Exception & e) {
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "%s 깊이 변환 실패: %s", c.name.c_str(), e.what());
+      return;
+    }
+    const rclcpp::Time stamp(m->header.stamp, get_clock()->get_clock_type());
+    const auto T_ob = lookup_at(odom_frame_, base_frame_, stamp);
+    if (a.n > 0) {
+      bool moved = d->image.size() != a.sum.size();
+      if (!moved && T_ob && a.odom0) {
+        const tf2::Transform dT = a.odom0->inverse() * *T_ob;
+        moved = dT.getOrigin().length() > bc_max_move_ || dT.getRotation().getAngleShortestPath() > bc_max_rot_;
+      }
+      if (moved) {
+        RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 2000, "바코드: 깊이 평균 중 차체가 움직임 — 다시 모음");
+        a = DepthAverage();
+      }
+    }
+    if (a.n == 0) {
+      a.sum = cv::Mat::zeros(d->image.size(), CV_64F);
+      a.cnt = cv::Mat::zeros(d->image.size(), CV_32S);
+      a.odom0 = T_ob;
+      a.first_ns = ns;
+    }
+    cv::Mat z;
+    d->image.convertTo(z, CV_32F, scale);
+    for (int y = 0; y < z.rows; ++y) {
+      const float * zp = z.ptr<float>(y);
+      double * sp = a.sum.ptr<double>(y);
+      int * cp = a.cnt.ptr<int>(y);
+      for (int x = 0; x < z.cols; ++x) {
+        if (std::isfinite(zp[x]) && zp[x] > 0.0f) {sp[x] += zp[x]; ++cp[x];}
+      }
+    }
+    ++a.n;
+    a.last_ns = ns;
+  }
+
+  void process_barcode(const rclcpp::Time & now_t)
+  {
+    DepthCamera & c = *bc_cam_;
+    std::deque<Image::ConstSharedPtr> q;
+    Image::ConstSharedPtr color;
+    CameraInfo::ConstSharedPtr info;
+    {
+      std::lock_guard<std::mutex> lk(c.m);
+      q.swap(c.barcode_q);
+      color = c.color;
+      info = c.info;
+    }
+    std::sort(q.begin(), q.end(), [](const auto & x, const auto & y) {return stamp_ns(x->header.stamp) < stamp_ns(y->header.stamp);});
+    for (const auto & m : q) {
+      if (bc_acc_.n < bc_frames_) {add_barcode_depth(c, m);}
+    }
+    // 찾기: 다 모였고 일꾼이 쉬고 있으면. 컬러는 평균을 시작한 뒤 찍힌 것(멈춘 동안)이어야 한다
+    if (bc_acc_.n >= bc_frames_ && !busy(bc_locate_job_) && color && info &&
+      stamp_ns(color->header.stamp) >= bc_acc_.first_ns - depth_tol_ns_)
+    {
+      launch_barcode_locate(c, color, info);
+    }
+    // 읽기: 팔 카메라 새 영상, 일꾼이 쉬고 있으면
+    if (busy(bc_read_job_)) {return;}
+    Image::ConstSharedPtr img;
+    {
+      std::lock_guard<std::mutex> lk(bc_arm_.m);
+      if (bc_arm_.image && (now_t - rclcpp::Time(bc_arm_.image->header.stamp, now_t.get_clock_type())).seconds() <= frame_max_age_) {
+        const int64_t ns = stamp_ns(bc_arm_.image->header.stamp);
+        if (ns != bc_arm_.used_ns) {img = bc_arm_.image; bc_arm_.used_ns = ns;}
+        bc_arm_.restarted = false;
+      }
+    }
+    if (!img) {return;}
+    cv_bridge::CvImageConstPtr im;
+    try {
+      im = cv_bridge::toCvShare(img, img->encoding == "mono8" ? "mono8" : "bgr8");
+    } catch (const cv_bridge::Exception & e) {
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "바코드 팔 영상 변환 실패: %s", e.what());
+      return;
+    }
+    const uint64_t gen = bc_gen_;
+    bc_read_job_ = std::async(std::launch::async, [this, im, gen]() {
+        const BarcodeRead r = bc_reader_->read(im->image);
+        if (gen != bc_gen_) {return;}
+        BarcodeMsg msg;
+        msg.header.stamp = im->header.stamp;
+        msg.header.frame_id = base_frame_;
+        msg.source = BarcodeMsg::READ;
+        msg.read_ok = r.ok;
+        msg.text = r.text;
+        msg.symbols = static_cast<uint8_t>(std::min<size_t>(r.symbols.size(), 255));
+        barcode_pub_->publish(msg);
+      });
+  }
+
+  void launch_barcode_locate(DepthCamera & c, const Image::ConstSharedPtr & color_msg, const CameraInfo::ConstSharedPtr & info)
+  {
+    DepthAverage a = std::move(bc_acc_);
+    bc_acc_ = DepthAverage();   // 다음 묶음은 새로 모은다
+    cv_bridge::CvImageConstPtr color;
+    try {
+      color = cv_bridge::toCvShare(color_msg, "bgr8");
+    } catch (const cv_bridge::Exception & e) {
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "%s 영상 변환 실패: %s", c.name.c_str(), e.what());
+      return;
+    }
+    if (color->image.size() != a.sum.size()) {
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "바코드: %s 컬러와 깊이 크기가 다름(컬러에 맞춘 깊이여야 함)", c.name.c_str());
+      return;
+    }
+    const std::string frame = c.frame_id.empty() ? color_msg->header.frame_id : c.frame_id;
+    const auto T_fc = tf_->fixed(bc_base_frame_, frame), T_bc = tf_->fixed(base_frame_, frame);
+    if (!T_fc || !T_bc) {
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "바코드: TF %s · %s ← %s 없음", bc_base_frame_.c_str(),
+        base_frame_.c_str(), frame.c_str());
+      return;
+    }
+    // 평균 깊이: depth_min_valid 장(0 이면 모든 장) 넘게 값이 있는 화소만, 나머지는 0(없음)
+    const int need = bc_min_valid_ > 0 && bc_min_valid_ < a.n ? bc_min_valid_ : a.n;
+    cv::Mat avg(a.sum.size(), CV_32F);
+    for (int y = 0; y < avg.rows; ++y) {
+      for (int x = 0; x < avg.cols; ++x) {
+        const int n = a.cnt.at<int>(y, x);
+        avg.at<float>(y, x) = n >= need ? static_cast<float>(a.sum.at<double>(y, x) / n) : 0.0f;
+      }
+    }
+    const BarcodeK K{info->k[0], info->k[4], info->k[2], info->k[5]};
+    cv::Matx44d T = cv::Matx44d::eye();
+    for (int r = 0; r < 3; ++r) {
+      for (int k = 0; k < 3; ++k) {T(r, k) = T_fc->getBasis()[r][k];}
+      T(r, 3) = T_fc->getOrigin()[r];
+    }
+    const tf2::Transform Tb = *T_bc;
+    const int frames = a.n;
+    const uint64_t gen = bc_gen_;
+    bc_locate_job_ = std::async(std::launch::async, [this, color, avg, K, T, Tb, frames, gen]() {
+        const auto t0 = std::chrono::steady_clock::now();
+        const auto dets = bc_locator_->locate(color->image, avg, K, T);
+        const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+        if (gen != bc_gen_) {return;}
+        BarcodeMsg msg;
+        msg.header.stamp = color->header.stamp;
+        msg.header.frame_id = base_frame_;
+        msg.source = BarcodeMsg::LOCATE;
+        msg.depth_frames = static_cast<uint8_t>(std::min(frames, 255));
+        for (const auto & d : dets) {
+          const tf2::Vector3 p = Tb * tf2::Vector3(d.center[0], d.center[1], d.center[2]);
+          geometry_msgs::msg::Point pt;
+          pt.x = p.x();
+          pt.y = p.y();
+          pt.z = p.z();
+          msg.positions.push_back(pt);
+          msg.scores.push_back(static_cast<float>(d.score));
+          msg.surfaces.push_back(d.surface == BarcodeDetection::TOP ? BarcodeMsg::SURFACE_TOP : BarcodeMsg::SURFACE_WALL);
+        }
+        barcode_pub_->publish(msg);
+        RCLCPP_INFO(get_logger(), "바코드 찾기: 라벨 %zu 개 (깊이 %d 장 평균, %.0f ms)", dets.size(), frames, ms);
+      });
   }
 
   // ------------------------------ 신호등 ------------------------------
@@ -1083,36 +1345,46 @@ private:
       return;
     }
     const cv::Mat u = undistort(cv->image, info);
+    const std::string frame = arm_.frame_id.empty() ? img->header.frame_id : arm_.frame_id;
+    const rclcpp::Time stamp(img->header.stamp, get_clock()->get_clock_type());
     if (mode & SetMode::Request::ARM_ALIGN) {
       cv::Mat small = u;
       if (detect_w_ > 0 && u.cols > detect_w_) {
         cv::resize(u, small, cv::Size(detect_w_, u.rows * detect_w_ / u.cols), 0, 0, cv::INTER_AREA);
       }
       const auto dets = detector_->detect(small);
-      const int b = best_detection(dets, target_class_);
+      std::vector<ArmBox> boxes;
+      std::vector<size_t> idx;
+      for (size_t i = 0; i < dets.size(); ++i) {
+        if (target_class_ >= 0 && dets[i].class_id != target_class_) {continue;}
+        const cv::Vec3d o = image_offset(dets[i].box, small.size());   // 정규화 값이라 해상도와 무관
+        boxes.push_back({o[0], o[1], o[2], dets[i].class_id, dets[i].score});
+        idx.push_back(i);
+      }
+      const std::optional<ArmPoint> seed = arm_lock_.locked() ? std::nullopt : arm_seed(frame, stamp, u.size());
+      const int b = arm_lock_.update(boxes, seed);
       if (b >= 0) {
-        const cv::Vec3d o = image_offset(dets[b].box, small.size());   // 정규화 값이라 해상도와 무관
         r.offset_valid = true;
-        r.arm_offset.x = o[0];
-        r.arm_offset.y = o[1];
-        r.arm_offset.z = o[2];
-        if (!r.object_found) {r.confidence = dets[b].score;}
+        r.arm_offset.x = boxes[b].x;
+        r.arm_offset.y = boxes[b].y;
+        r.arm_offset.z = boxes[b].w;
+        if (!r.object_found) {r.confidence = dets[idx[b]].score;}
       }
     }
-    const std::string frame = arm_.frame_id.empty() ? img->header.frame_id : arm_.frame_id;
     std::optional<tf2::Transform> T;   // 팔은 움직이므로 촬영 시각 변환. 자세가 없으면(camera_info 없음) 찾지 않는다
     const bool want_marker = mode & MARKER_BIT;
     if (!newK_.empty() && ((mode & SetMode::Request::READ_TAG) || want_marker)) {
-      T = lookup_at(base_frame_, frame, rclcpp::Time(img->header.stamp, get_clock()->get_clock_type()));
+      T = lookup_at(base_frame_, frame, stamp);
+    }
+    std::vector<TagDetection> places;   // 장소 태그: READ_TAG 결과 후보 · READ_MARKER 가 같이 씀
+    if (((mode & SetMode::Request::READ_TAG) && marker_->ok()) || (want_marker && T)) {
+      places = marker_->detect(u, newK_, cv::Mat());
+      keep_tag_ids(places, marker_ids_);
     }
     if (mode & SetMode::Request::READ_TAG) {
       auto tags = tag_->detect(u, newK_, cv::Mat());
-      if (!tag_ids_.empty()) {   // 같은 계열 장소 태그는 크기가 달라 퍽 자세가 틀리므로 뺀다
-        tags.erase(std::remove_if(tags.begin(), tags.end(), [this](const TagDetection & t) {
-            return std::find(tag_ids_.begin(), tag_ids_.end(), t.id) == tag_ids_.end();}), tags.end());
-      }
-      const TagDetection * best = nullptr;
-      for (const auto & t : tags) {if (!best || t.area > best->area) {best = &t;}}
+      keep_tag_ids(tags, tag_ids_);   // 같은 계열 장소 태그는 크기가 달라 퍽 자세가 틀리므로 뺀다 (장소 태그는 places 로)
+      const TagDetection * best = largest_tag(tags, places);
       if (best) {
         r.tag_found = true;
         r.tag_id = best->id;
@@ -1132,8 +1404,24 @@ private:
       if (T) {arm_.pucks = pucks_from_tags(tags, u, newK_, *T);}
     }
     if (want_marker && T) {
-      arm_.marker = best_marker(marker_->detect(u, newK_, cv::Mat()), *T, img->header.stamp, Puck::CAMERA_ARM);
+      arm_.marker = best_marker(places, *T, img->header.stamp, Puck::CAMERA_ARM);
     }
+  }
+
+  // D435 추적 목표(odom)를 팔 영상(왜곡 보정 뒤)에 투영한 정규화 점. 목표가 seed_max_age_ 보다 오래됐거나
+  // camera_info · TF 가 없거나 카메라 뒤 · 화면 밖이면 없음 → 점수가 가장 높은 검출로 잠근다
+  std::optional<ArmPoint> arm_seed(const std::string & frame, const rclcpp::Time & stamp, cv::Size size)
+  {
+    if (!seed_odom_ || newK_.empty() || std::abs(stamp.seconds() - seed_t_) > seed_max_age_) {return std::nullopt;}
+    const auto T = lookup_at(frame, odom_frame_, stamp);
+    if (!T) {return std::nullopt;}
+    const tf2::Vector3 p = *T * tf2::Vector3(seed_odom_->x, seed_odom_->y, seed_odom_->z);
+    if (p.z() <= 0.0) {return std::nullopt;}
+    const double px = newK_.at<double>(0, 0) * p.x() / p.z() + newK_.at<double>(0, 2);
+    const double py = newK_.at<double>(1, 1) * p.y() / p.z() + newK_.at<double>(1, 2);
+    const ArmPoint n{(px - size.width / 2.0) / (size.width / 2.0), (py - size.height / 2.0) / (size.height / 2.0)};
+    if (std::abs(n.x) > 1.0 || std::abs(n.y) > 1.0) {return std::nullopt;}
+    return n;
   }
 
   // camera_info 로 왜곡 보정. camera_info 가 없으면 원본 그대로이고 태그 자세는 내지 않는다(newK_ 비움)
@@ -1187,6 +1475,9 @@ private:
   double merge_dist_ = 0.04, min_confidence_ = 0.5;
   double upright_gap_px_ = 1.0;
   TargetTracker tracker_;
+  ArmTargetLock arm_lock_;             // ctl_cbg_ 에서만 쓴다 (on_set_mode · 처리 주기)
+  std::optional<Vec3> seed_odom_;      // 가장 최근 D435 추적 목표 (odom)
+  double seed_t_ = 0, seed_max_age_ = 1.0;
   uint8_t mode_ = SetMode::Request::OFF;   // ctl_cbg_ 에서만 읽고 쓴다
   bool restart_seen_ = false;
   DepthCamera front_, rear_;
@@ -1219,6 +1510,27 @@ private:
   rclcpp::Service<SetMode>::SharedPtr srv_;
   rclcpp::Service<CheckDice>::SharedPtr dice_srv_;
   rclcpp::TimerBase::SharedPtr timer_;
+
+  // 바코드 (READ_BARCODE). 일꾼 future 는 맨 뒤에 두어 소멸 때 먼저 끝을 기다린다(일꾼이 위 멤버를 씀)
+  struct DepthAverage
+  {
+    cv::Mat sum, cnt;              // 화소별 깊이 합 [m] (CV_64F) · 값이 있던 장 수 (CV_32S)
+    int n = 0;
+    int64_t first_ns = -1, last_ns = -1;
+    std::optional<tf2::Transform> odom0;   // 첫 장 촬영 때 odom ← base_link
+  };
+  std::unique_ptr<BarcodeLocator> bc_locator_;
+  std::unique_ptr<BarcodeReader> bc_reader_;   // bc_read_job_ 일꾼에서만 쓴다
+  rclcpp::Publisher<BarcodeMsg>::SharedPtr barcode_pub_;
+  MonoCamera bc_arm_;                          // 바코드 읽기용 팔 카메라 구독 (영상 · 처리 기록이 arm_ 과 따로)
+  DepthCamera * bc_cam_ = nullptr;
+  int bc_frames_ = 5, bc_min_valid_ = 0;
+  std::string bc_base_frame_ = "base_footprint";
+  double bc_max_move_ = 0.01, bc_max_rot_ = 1.0;   // [m] · [°] (생성자에서 rad)
+  DepthAverage bc_acc_;                        // ctl_cbg_ 에서만
+  std::atomic<bool> barcode_on_{false};        // 깊이 콜백(cam_cbg_)이 읽는다
+  std::atomic<uint64_t> bc_gen_{0};            // 모드를 켜고 끌 때마다 늘림: 그 전에 시작한 일꾼 결과는 내지 않는다
+  std::future<void> bc_locate_job_, bc_read_job_;
 };
 
 }  // namespace perception

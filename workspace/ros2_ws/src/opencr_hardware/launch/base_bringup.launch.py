@@ -18,7 +18,7 @@ def _setup(context):
         'xacro ', PathJoinSubstitution([pkg, 'urdf', 'robot.urdf.xacro']),
         ' wheel_count:=', wheel_count,
         ' use_gripper:=', 'true' if use_gripper else 'false',
-        ' port:=', LaunchConfiguration('port'),
+        ' ports:=', LaunchConfiguration('ports'),
         ' joy_required:=', LaunchConfiguration('use_teleop')]), value_type=str)
     controllers = PathJoinSubstitution([pkg, 'config', f'controllers_{wheel_count}wd.yaml'])
 
@@ -60,9 +60,11 @@ def _setup(context):
 
 def generate_launch_description():
     return LaunchDescription([
-        DeclareLaunchArgument('wheel_count', default_value='4', description='4 또는 6'),
+        DeclareLaunchArgument('wheel_count', default_value='4',
+                              description='실물 바퀴 수 (기본 4 = 주행 펌웨어 WHEEL_COUNT, 6 은 이전 6륜 구성)'),
         DeclareLaunchArgument('use_gripper', default_value='false', description='그리퍼 개폐 액추에이터 사용'),
         DeclareLaunchArgument('use_teleop', default_value='true'),
-        DeclareLaunchArgument('port', default_value='/dev/opencr'),
+        DeclareLaunchArgument('ports', default_value='/dev/ttyACM0,/dev/ttyACM1',
+                              description='역할 자동 판별을 위한 두 OpenCR 후보 포트, 쉼표로 구분'),
         OpaqueFunction(function=_setup),
     ])

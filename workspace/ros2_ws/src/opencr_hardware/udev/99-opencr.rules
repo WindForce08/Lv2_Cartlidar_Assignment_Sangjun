@@ -1,2 +1,3 @@
-# OpenCR → /dev/opencr  (sudo cp 99-opencr.rules /etc/udev/rules.d/ && sudo udevadm control --reload && sudo udevadm trigger)
-SUBSYSTEM=="tty", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="5740", SYMLINK+="opencr", MODE="0666", ENV{ID_MM_DEVICE_IGNORE}="1"
+# 두 OpenCR은 동일한 USB VID/PID를 사용하므로 역할별 symlink를 만들지 않는다.
+# 호스트가 두 tty 후보를 열고 STATE.role로 WHEEL/ARM을 연결한다.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="5740", GROUP="dialout", MODE="0660", ENV{ID_MM_DEVICE_IGNORE}="1"
