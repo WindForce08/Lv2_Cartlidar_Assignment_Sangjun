@@ -14,10 +14,14 @@
 //   SEARCH_* : 검출 → (색 검출기면) 덩어리를 깊이가 끊긴 곳에서 나눔 → 조각 깊이 중앙값 → 컬러 광학 좌표 3D
 //              → TF 로 base_link · odom → TargetTracker → object_pose
 //   ARM_ALIGN: camera_info 로 왜곡 보정한 영상을 detect_width 로 줄여 검출 → 화면 중심 대비 arm_offset
+//              목표 퍽 하나를 잠가 유지한다(arm_target_lock.hpp): 처음에는 D435 추적 목표를 팔 영상에 투영한 점에 가까운 것,
+//              그 뒤에는 같은 색 · 직전 자리 근처만. 놓치면 offset_valid = false (다른 퍽으로 넘어가지 않음)
 //   READ_TAG : 왜곡 보정 원본에서 AprilTag → tag_id · tag_pose (Arducam 광학 프레임 기준, x 오른쪽 · y 아래 · z 앞)
+//              퍽 태그(tag.*)와 장소 태그(marker.*)를 각자 크기로 찾아 가장 크게 보이는 것 하나 (read_tag.hpp)
 //   /perception/pucks (토픽, PuckArray): SEARCH_* 또는 READ_TAG 가 켜져 있으면 result 와 같은 주기로 발행한다
 //      Arducam 태그 → 번호 · 색 · 중심 · 긴 축(puck_estimator.hpp), D435 색 검출 → 색 · 중심(번호 -1)
-//      같은 퍽(merge_dist 안)이면 태그로 읽은 것을 남긴다. 새 영상이 없는 카메라는 그 영상으로 낸 결과를 다시 쓴다
+//      카메라 사이 같은 퍽(같은 색 · 한쪽 모름, merge_dist 안)은 일대일로 하나만 남긴다(puck_merge.hpp): 앞 · 뒤 D435 끼리,
+//      그다음 태그로 읽은 퍽과. 태그 퍽이 있으면 그것을 남긴다. 새 영상이 없는 카메라는 그 영상으로 낸 결과를 다시 쓴다
 //   /perception/task_marker (토픽, TaskMarker): READ_MARKER 가 켜져 있으면 앞 · 뒤 D435 (팔 카메라가 켜져 있으면 그것도)
 //      에서 장소 태그(marker.family · ids)를 찾아 가장 크게 보이는 것 하나. 없으면 found = false
 //   /perception/signal (토픽, SignalSequence): READ_SIGNAL 이 켜져 있으면 앞 · 뒤 D435 의 컬러 프레임을 모두(빠짐 없이)
@@ -60,6 +64,7 @@
 #include "robot_interfaces/srv/set_perception_mode.hpp"
 #include "sensor_msgs/msg/camera_info.hpp"
 #include "sensor_msgs/msg/image.hpp"
+#include "perception/arm_target_lock.hpp"
 #include "perception/barcode_locator.hpp"
 #include "perception/barcode_reader.hpp"
 #include "perception/depth_split.hpp"
@@ -68,6 +73,8 @@
 #include "perception/frame_gate.hpp"
 #include "perception/geometry.hpp"
 #include "perception/puck_estimator.hpp"
+#include "perception/puck_merge.hpp"
+#include "perception/read_tag.hpp"
 #include "perception/signal_light.hpp"
 #include "perception/signal_sequence.hpp"
 #include "perception/tag_depth.hpp"
@@ -196,6 +203,10 @@ public:
     depth_win_ = static_cast<int>(declare_parameter("depth.window", 3));
     depth_tol_ns_ = static_cast<int64_t>(declare_parameter("depth.sync_tol_s", 0.02) * 1e9);
     detect_w_ = static_cast<int>(declare_parameter("arm.detect_width", 640));
+    ArmLockConfig alc;
+    alc.gate = declare_parameter("arm.lock_gate", alc.gate);
+    alc.size_ratio = declare_parameter("arm.lock_size_ratio", alc.size_ratio);
+    arm_lock_ = ArmTargetLock(alc);
 
     DetectorConfig dc;
     dc.type = declare_parameter("detector.type", dc.type);
@@ -238,6 +249,7 @@ public:
     tc.gate = declare_parameter("target.gate", tc.gate);
     tc.lost_timeout = declare_parameter("target.lost_timeout", tc.lost_timeout);
     tracker_ = TargetTracker(tc);
+    seed_max_age_ = tc.lost_timeout;
     min_confidence_ = tc.min_confidence;
     size_min_m_ = declare_parameter("target.size_min_m", 0.015);
     size_max_m_ = declare_parameter("target.size_max_m", 0.09);
@@ -399,6 +411,7 @@ private:
 
     const uint8_t old = mode_;
     mode_ = req.mode;
+    if ((old ^ req.mode) & SetMode::Request::ARM_ALIGN) {arm_lock_.reset();}   // 켜거나 끌 때 목표를 다시 고른다
     if ((old ^ req.mode) & SIGNAL_BIT) {   // 켜거나 끌 때 센 것을 지운다
       locator_.reset();
       sequence_.reset();
@@ -418,6 +431,7 @@ private:
     {std::lock_guard<std::mutex> lk(arm_.m); arm_.used_ns = -1;}
     if (req.mode == SetMode::Request::OFF) {
       tracker_.reset();
+      seed_odom_.reset();
       Result r;   // 받는 쪽 초기화 신호 (manipulator 기억 삭제)
       r.header.stamp = now();
       r.header.frame_id = base_frame_;
@@ -826,7 +840,7 @@ private:
       if (search) {puck_lists.push_back(&c->pucks);}
       if (want_marker && c->marker) {markers.push_back(&*c->marker);}
     }
-    if (restart_seen_) {tracker_.reset(); restart_seen_ = false;}
+    if (restart_seen_) {tracker_.reset(); seed_odom_.reset(); restart_seen_ = false;}
     if (search_have && res_st.fresh) {
       if (auto t = tracker_.update(cands, res_st.oldest->seconds())) {
         r.object_found = true;
@@ -837,6 +851,8 @@ private:
         r.object_pose.pose.position.z = t->base.z;
         r.object_pose.pose.orientation.w = 1.0;
         r.confidence = static_cast<float>(t->confidence);
+        seed_odom_ = t->odom;   // 팔 정렬 목표를 처음 고를 때 쓴다
+        seed_t_ = res_st.oldest->seconds();
       }
     }
 
@@ -852,6 +868,7 @@ private:
           const int64_t ns = stamp_ns(img->header.stamp);
           fresh = ns != arm_.used_ns;
           arm_.used_ns = ns;
+          if (arm_.restarted) {arm_lock_.reset();}
           arm_.restarted = false;
         }
       }
@@ -899,24 +916,21 @@ private:
     }
   }
 
-  // 태그로 읽은 퍽(팔)을 먼저 넣고, D435 퍽은 그 merge_dist 안이면 뺀다. 수평 거리 순 정렬, 집을 후보 고르기
+  // 카메라 사이 같은 퍽을 하나로 묶고(puck_merge.hpp), 수평 거리 순 정렬, 집을 후보 고르기
   void publish_pucks(const std::vector<const std::vector<Puck> *> & lists, const rclcpp::Time & stamp)
   {
     PuckArray msg;
     msg.header.stamp = stamp;
     msg.header.frame_id = base_frame_;
+    std::vector<const Puck *> all;
+    std::vector<PuckObs> obs;
     for (const auto * l : lists) {
       for (const auto & p : *l) {
-        bool dup = false;
-        for (const auto & q : msg.pucks) {
-          if (q.tag_id < 0 || p.tag_id >= 0) {continue;}
-          const double dx = p.pose.position.x - q.pose.position.x, dy = p.pose.position.y - q.pose.position.y,
-            dz = p.pose.position.z - q.pose.position.z;
-          dup = dup || std::sqrt(dx * dx + dy * dy + dz * dz) < merge_dist_;
-        }
-        if (!dup) {msg.pucks.push_back(p);}
+        all.push_back(&p);
+        obs.push_back({p.pose.position.x, p.pose.position.y, p.pose.position.z, p.color, p.tag_id, p.camera, p.confidence});
       }
     }
+    for (size_t i : merge_pucks(obs, merge_dist_)) {msg.pucks.push_back(*all[i]);}
     auto hd = [](const Puck & p) {return std::hypot(p.pose.position.x, p.pose.position.y);};
     std::stable_sort(msg.pucks.begin(), msg.pucks.end(), [&](const Puck & a, const Puck & b) {return hd(a) < hd(b);});
     msg.target_index = -1;
@@ -1331,36 +1345,46 @@ private:
       return;
     }
     const cv::Mat u = undistort(cv->image, info);
+    const std::string frame = arm_.frame_id.empty() ? img->header.frame_id : arm_.frame_id;
+    const rclcpp::Time stamp(img->header.stamp, get_clock()->get_clock_type());
     if (mode & SetMode::Request::ARM_ALIGN) {
       cv::Mat small = u;
       if (detect_w_ > 0 && u.cols > detect_w_) {
         cv::resize(u, small, cv::Size(detect_w_, u.rows * detect_w_ / u.cols), 0, 0, cv::INTER_AREA);
       }
       const auto dets = detector_->detect(small);
-      const int b = best_detection(dets, target_class_);
+      std::vector<ArmBox> boxes;
+      std::vector<size_t> idx;
+      for (size_t i = 0; i < dets.size(); ++i) {
+        if (target_class_ >= 0 && dets[i].class_id != target_class_) {continue;}
+        const cv::Vec3d o = image_offset(dets[i].box, small.size());   // 정규화 값이라 해상도와 무관
+        boxes.push_back({o[0], o[1], o[2], dets[i].class_id, dets[i].score});
+        idx.push_back(i);
+      }
+      const std::optional<ArmPoint> seed = arm_lock_.locked() ? std::nullopt : arm_seed(frame, stamp, u.size());
+      const int b = arm_lock_.update(boxes, seed);
       if (b >= 0) {
-        const cv::Vec3d o = image_offset(dets[b].box, small.size());   // 정규화 값이라 해상도와 무관
         r.offset_valid = true;
-        r.arm_offset.x = o[0];
-        r.arm_offset.y = o[1];
-        r.arm_offset.z = o[2];
-        if (!r.object_found) {r.confidence = dets[b].score;}
+        r.arm_offset.x = boxes[b].x;
+        r.arm_offset.y = boxes[b].y;
+        r.arm_offset.z = boxes[b].w;
+        if (!r.object_found) {r.confidence = dets[idx[b]].score;}
       }
     }
-    const std::string frame = arm_.frame_id.empty() ? img->header.frame_id : arm_.frame_id;
     std::optional<tf2::Transform> T;   // 팔은 움직이므로 촬영 시각 변환. 자세가 없으면(camera_info 없음) 찾지 않는다
     const bool want_marker = mode & MARKER_BIT;
     if (!newK_.empty() && ((mode & SetMode::Request::READ_TAG) || want_marker)) {
-      T = lookup_at(base_frame_, frame, rclcpp::Time(img->header.stamp, get_clock()->get_clock_type()));
+      T = lookup_at(base_frame_, frame, stamp);
+    }
+    std::vector<TagDetection> places;   // 장소 태그: READ_TAG 결과 후보 · READ_MARKER 가 같이 씀
+    if (((mode & SetMode::Request::READ_TAG) && marker_->ok()) || (want_marker && T)) {
+      places = marker_->detect(u, newK_, cv::Mat());
+      keep_tag_ids(places, marker_ids_);
     }
     if (mode & SetMode::Request::READ_TAG) {
       auto tags = tag_->detect(u, newK_, cv::Mat());
-      if (!tag_ids_.empty()) {   // 같은 계열 장소 태그는 크기가 달라 퍽 자세가 틀리므로 뺀다
-        tags.erase(std::remove_if(tags.begin(), tags.end(), [this](const TagDetection & t) {
-            return std::find(tag_ids_.begin(), tag_ids_.end(), t.id) == tag_ids_.end();}), tags.end());
-      }
-      const TagDetection * best = nullptr;
-      for (const auto & t : tags) {if (!best || t.area > best->area) {best = &t;}}
+      keep_tag_ids(tags, tag_ids_);   // 같은 계열 장소 태그는 크기가 달라 퍽 자세가 틀리므로 뺀다 (장소 태그는 places 로)
+      const TagDetection * best = largest_tag(tags, places);
       if (best) {
         r.tag_found = true;
         r.tag_id = best->id;
@@ -1380,8 +1404,24 @@ private:
       if (T) {arm_.pucks = pucks_from_tags(tags, u, newK_, *T);}
     }
     if (want_marker && T) {
-      arm_.marker = best_marker(marker_->detect(u, newK_, cv::Mat()), *T, img->header.stamp, Puck::CAMERA_ARM);
+      arm_.marker = best_marker(places, *T, img->header.stamp, Puck::CAMERA_ARM);
     }
+  }
+
+  // D435 추적 목표(odom)를 팔 영상(왜곡 보정 뒤)에 투영한 정규화 점. 목표가 seed_max_age_ 보다 오래됐거나
+  // camera_info · TF 가 없거나 카메라 뒤 · 화면 밖이면 없음 → 점수가 가장 높은 검출로 잠근다
+  std::optional<ArmPoint> arm_seed(const std::string & frame, const rclcpp::Time & stamp, cv::Size size)
+  {
+    if (!seed_odom_ || newK_.empty() || std::abs(stamp.seconds() - seed_t_) > seed_max_age_) {return std::nullopt;}
+    const auto T = lookup_at(frame, odom_frame_, stamp);
+    if (!T) {return std::nullopt;}
+    const tf2::Vector3 p = *T * tf2::Vector3(seed_odom_->x, seed_odom_->y, seed_odom_->z);
+    if (p.z() <= 0.0) {return std::nullopt;}
+    const double px = newK_.at<double>(0, 0) * p.x() / p.z() + newK_.at<double>(0, 2);
+    const double py = newK_.at<double>(1, 1) * p.y() / p.z() + newK_.at<double>(1, 2);
+    const ArmPoint n{(px - size.width / 2.0) / (size.width / 2.0), (py - size.height / 2.0) / (size.height / 2.0)};
+    if (std::abs(n.x) > 1.0 || std::abs(n.y) > 1.0) {return std::nullopt;}
+    return n;
   }
 
   // camera_info 로 왜곡 보정. camera_info 가 없으면 원본 그대로이고 태그 자세는 내지 않는다(newK_ 비움)
@@ -1435,6 +1475,9 @@ private:
   double merge_dist_ = 0.04, min_confidence_ = 0.5;
   double upright_gap_px_ = 1.0;
   TargetTracker tracker_;
+  ArmTargetLock arm_lock_;             // ctl_cbg_ 에서만 쓴다 (on_set_mode · 처리 주기)
+  std::optional<Vec3> seed_odom_;      // 가장 최근 D435 추적 목표 (odom)
+  double seed_t_ = 0, seed_max_age_ = 1.0;
   uint8_t mode_ = SetMode::Request::OFF;   // ctl_cbg_ 에서만 읽고 쓴다
   bool restart_seen_ = false;
   DepthCamera front_, rear_;

@@ -1,6 +1,7 @@
 # interfaces.md "USB 패킷" 절 변경 요청 — v3 → v5 (OpenCR 2대 · 팔 HOLD/REARM) (Firmware 팀, 2026-10-26)
 
-받는 사람: Controller 팀장 (interfaces.md 승인). 상태: **승인 대기** — `feature/firmware` 브랜치에만 있고, 승인 전에는 dev/main 에 병합하지 않는다.
+받는 사람: Controller 팀장 (interfaces.md 승인). 상태: **dev 에 병합됨** (PR #6, 2026-10-26 `c1ad4a4`). 그 뒤 고친 것 (1안 정리 · 팔 실기 이식 · PR #10 병합, 2026-10-27) 은
+`feature/firmware` 에 있고 다음 PR 로 올린다 — interfaces.md 변경 (그리퍼 ESTOP 예외 · 부팅 점검) 이 있어 다시 승인 필요.
 제안 내용은 이 브랜치의 `interfaces.md` "USB 패킷" 절에 반영해 두었다 (PR diff 로 검토). 구현 · 시험: `opencr_firmware/`, `opencr_hardware/`
 (colcon test 77 건 실패 0, 실제 펌웨어 소스를 PC 에서 돌리는 SIL 포함), 팔 보드 실기: `arm_bench_test_2026-10-26.md`.
 
@@ -73,4 +74,16 @@ v5 에서 팔은 토크를 유지한 채 HOLD 하고, 운용자 리셋 버튼 �
 - 좌표: `base_link` · `base_footprint` · `arm_base_link` · `imu_link` · `tfmini_link` · `lds03_front/rear_link` · `top_camera_front/rear_link` ·
   `gripper_camera_optical_frame` · `end_effector_link`. realsense 드라이버가 만드는 `*_color_optical_frame` 은 URDF 에 두지 않는다.
 - 관절: 팔 `joint1~4` · `wrist_roll_joint` · `gripper_motor_joint` (그리퍼 모터 각, 빈 링크 가상 관절), 바퀴 4개 (지금 이름 `wheel_fl/rl/fr/rr_joint` ★).
-- 차체 치수 (`diff_drive` 바퀴 간격 · 반지름 · 속도 한계, 펌웨어 `WHEEL_GEAR` · `WHEEL_DIR`) 는 2안 확정 뒤.
+- 차체 치수 (`diff_drive` 바퀴 간격 · 반지름 · 속도 한계) 는 2안 확정 뒤. 펌웨어 `WHEEL_GEAR` 는 PR #10 에서 1.0 (직결, 실물 확인), `WHEEL_DIR` 은 실측 ★.
+
+### dev PR #10 (`manipulatorFirmware`, 2026-10-27) 과 병합
+
+- 펌웨어 · 시험은 그대로 합쳤다: 바퀴 칸별 모터 ID `{1, 3, 2, 4}` (실물 장착), `WHEEL_GEAR = 1.0`, 부팅 때 바퀴 Drive Mode 반전 끄기 ·
+  Velocity Limit ≥ 330 (`prepareWheelConfig`), 한계를 넘는 바퀴 명령은 모든 바퀴를 같은 비율로 줄임, SIL 시험 6 개, `scripts/opencr_wheel_tool.py`.
+- PR #10 이 고친 `urdf/robot.urdf.xacro` (예전 자리값 URDF 에 urdfv2 `teamrobot.urdf` 값을 넣은 것) 는 이 브랜치에서 지웠다
+  (2안 대기 유지, 2026-10-27 결정 — 팀장 · PR #10 작성자 확인 ★). ros2_control 블록과 관절 이름 · 인자 (`wheel_count` · `use_gripper` ·
+  `joint5` · `gripper_roll` · `wheel_left_front_joint` 등) 가 맞지 않아 그대로는 펼쳐지지 않는다.
+  그 값은 2안 URDF 를 만들 때 쓰도록 남긴다 (urdfv2 기준, `base_link` = 하판 윗면 중심, 바닥 위 56.25 mm):
+  - 바퀴: x ±0.100 · |y| 0.1372 (간격 0.2744) · z −0.02325, 반지름 0.033, 축 +y (4 개 모두, + 회전 = 전진), 한계 3.0 N·m · 8.063 rad/s
+  - `base_footprint` = `base_link` 아래 0.05625. `imu_link` xyz (0, 0, −0.0192) · rpy (π, 0, π/2) — OpenCR 을 하판 아래에 뒤집어 닮
+- `controllers_4wd.yaml` 의 바퀴 간격 · 반지름은 비운 그대로 둔다 (dev 는 0.317 · 0.033 이라 urdfv2 의 0.2744 와도 달랐음).

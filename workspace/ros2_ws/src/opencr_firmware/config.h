@@ -51,10 +51,15 @@ static const float ACCEL_FACTOR     = 0.000598550415f; // ±2 g → m/s^2
 // 바퀴 4개 (2026-10-26: 6륜에서 가운데 2개를 뺌). 패킷의 바퀴 칸은 6개 그대로 — 칸 4 · 5 는 쓰지 않고 STATE 는 0.
 // 칸 순서 = URDF opencr.ros2_control.xacro (wheel_fl/rl/fr/rr_joint): 0 왼쪽 앞 · 1 왼쪽 뒤 · 2 오른쪽 앞 · 3 오른쪽 뒤
 #define WHEEL_COUNT       4
-static const uint8_t WHEEL_IDS[WHEEL_COUNT] = {1, 2, 3, 4};      // 6륜 때 ID 1 · 3 · 4 · 6 → 1 · 2 · 3 · 4 로 다시 매김 (tools/dxl_setup) ★
+static const uint8_t WHEEL_IDS[WHEEL_COUNT] = {1, 3, 2, 4};      // 칸 순서대로 그 자리의 모터 ID. 실물 장착 (2026-10-27): 왼앞 1 · 오앞 2 · 왼뒤 3 · 오뒤 4
+                                                                 //   (spin 시험에서 ID 2 · 3 만 거꾸로 → 자리 맞바꿈 확인) ★
 static const int8_t  WHEEL_DIR[WHEEL_COUNT] = {+1, +1, -1, -1};  // 왼쪽 +1 · 오른쪽 -1 (모터가 마주 보게 장착 가정) — 실물 회전 확인 필수 ★
-static const float   WHEEL_GEAR     = 1.5f;   // 바퀴 각속도 / 모터 각속도. 1.5 = 예전 증속벨트 (36T→24T) 가정 — 차체 2안 구동계 확정 전 미정 ★ (직결이면 1.0)
-static const int32_t WHEEL_VEL_LIMIT_RAW = 330;   // Goal Velocity 한계 (0.229 rpm 단위, XM430-W210 12 V 무부하 ≈ 77 rpm) ★
+//   URDF (urdfv2 teamrobot.urdf) 바퀴 축은 4개 모두 +y → + = 앞. 오른쪽 반전은 여기서만 한다.
+//   모터 Drive Mode 의 반전 비트는 0 이어야 함 (둘 다 반전하면 다시 거꾸로) — 부팅 때 prepareWheelConfig 가 0 으로 맞춤
+static const float   WHEEL_GEAR     = 1.0f;   // 바퀴 각속도 / 모터 각속도. 직결 (2026-10-26 실물 확인, urdfv2 와 같음)
+static const int32_t WHEEL_VEL_LIMIT_RAW = 330;   // Goal Velocity 한계 (0.229 rpm 단위) = 75.6 rpm = 바퀴 7.91 rad/s ≈ 0.261 m/s
+                                                  // (URDF velocity 8.06 rad/s = XM430-W210 12 V 무부하 77 rpm 안쪽) ★
+                                                  // 모터 EEPROM Velocity Limit (주소 44) 은 이 값 이상이어야 함 — 작으면 부팅 때 이 값으로 올림
 static const uint16_t WHEEL_MODEL = 1030;  // 부팅 점검: 바퀴 XM430-W210 (= 1030, 확정 2026-10-22). W350 이면 1020
 
 // 배터리: OpenCR 코어의 getPowerInVoltage() (전원 입력 단자 분압 ADC). IMU: OpenCR 내장 (cIMU)

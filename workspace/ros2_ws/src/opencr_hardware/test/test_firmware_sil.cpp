@@ -262,7 +262,7 @@ TEST(FirmwareSil, RejectsWrongRoleAndOutOfRange)
     sa = b.ha.last();
     EXPECT_TRUE(sa.error & ERR_HOLD) << "범위 밖 CMD 만 오면 타임아웃 → HOLD";
 
-    // 바퀴 범위 초과는 D6 미결 — 현재 동작(clamp)을 기록
+    // 바퀴 한 개만 한계 초과: 그 바퀴 = 한계 (여러 바퀴는 같은 비율로 축소 — WheelOverspeedScalesProportionally)
     b.hw.wheel[0] = 100.f;
     b.drive(50, FLAG_TORQUE_ON, NO_CMD);
     EXPECT_EQ(b.wheel_goal(0), WHEEL_DIR[0] * WHEEL_VEL_LIMIT_RAW);
@@ -951,5 +951,170 @@ TEST(FirmwareSil, GripperPwmLimitCheckedAtBoot)
     b.arm_activate();
     EXPECT_FALSE(b.ha.last().error & (ERR_FAULT | ERR_MOTOR_CONFIG));
     EXPECT_TRUE(b.arm_motor(0).torque);
+  });
+}
+
+// ---- 주행 (바퀴) — 직결 · 비례 축소 · 바퀴 부팅 점검 (2026-10-26, urdfv2 teamrobot.urdf 기준) ----
+
+// 직결 (WHEEL_GEAR 1.0): 바퀴 rad/s = 모터 rad/s. URDF 축이 4개 모두 +y 라 같은 + 명령 = 전진,
+//   오른쪽은 WHEEL_DIR 로 모터 방향만 반전. STATE 는 다시 URDF 방향 (+ = 앞) 으로 돌려준다
+TEST(FirmwareSil, WheelDirectDriveMatchesUrdf)
+{
+  isolated([] {
+    EXPECT_FLOAT_EQ(WHEEL_GEAR, 1.0f) << "실물 직결";
+    Bench b;
+    b.boot();
+    for (int k = 0; k < WHEEL_COUNT; ++k) {b.hw.wheel[k] = 5.0f;}   // 실측 가이드 3: 5 rad/s 직진
+    b.drive(100, FLAG_TORQUE_ON, NO_CMD);
+    const int32_t raw = static_cast<int32_t>(lroundf(5.0f / RADS_PER_VEL_RAW));   // 기어 없이 그대로
+    for (int k = 0; k < WHEEL_COUNT; ++k) {
+      EXPECT_EQ(b.wheel_goal(k), WHEEL_DIR[k] * raw) << "칸 " << k;
+    }
+    EXPECT_GT(b.wheel_goal(0), 0) << "왼쪽 모터 +";
+    EXPECT_LT(b.wheel_goal(2), 0) << "오른쪽 모터 - (마주 보게 장착)";
+    const State sw = b.hw.last();
+    for (int k = 0; k < WHEEL_COUNT; ++k) {EXPECT_NEAR(sw.vel[k], 5.0, 0.03) << "STATE 는 URDF 방향 " << k;}
+    EXPECT_FALSE(sw.error & (ERR_FAULT | ERR_MOTOR_CONFIG));
+  });
+}
+
+// 한계를 넘으면 모든 바퀴를 같은 비율로 줄여 좌우 속도비 (회전 반경) 를 유지
+TEST(FirmwareSil, WheelOverspeedScalesProportionally)
+{
+  isolated([] {
+    Bench b;
+    b.boot();
+    const float lim = WHEEL_VEL_LIMIT_RAW * RADS_PER_VEL_RAW * WHEEL_GEAR;
+    // diff_drive 역기구학 (URDF: 반지름 0.033, 바퀴 간격 0.2744) — v 0.2 m/s + w 1.0 rad/s
+    const float r = 0.033f, half = 0.1372f, v = 0.2f, w = 1.0f;
+    const float wl = (v - w * half) / r, wr = (v + w * half) / r;   // 1.90 · 10.22 rad/s → 오른쪽이 한계 초과
+    ASSERT_GT(wr, lim);
+    b.hw.wheel[0] = wl; b.hw.wheel[1] = wl;
+    b.hw.wheel[2] = wr; b.hw.wheel[3] = wr;
+    b.drive(100, FLAG_TORQUE_ON, NO_CMD);
+    EXPECT_EQ(b.wheel_goal(2), WHEEL_DIR[2] * WHEEL_VEL_LIMIT_RAW) << "가장 빠른 바퀴 = 한계";
+    EXPECT_EQ(b.wheel_goal(3), WHEEL_DIR[3] * WHEEL_VEL_LIMIT_RAW);
+    const State sw = b.hw.last();
+    EXPECT_NEAR(sw.vel[0] / sw.vel[2], wl / wr, 0.01) << "좌우 속도비 유지";
+    EXPECT_NEAR(sw.vel[1] / sw.vel[3], wl / wr, 0.01);
+    EXPECT_EQ(b.wheel_goal(0), wheel_raw(0, wl * lim / wr));
+
+    // 후진하며 회전 (가장 큰 명령이 음수): 부호 · 비율 유지
+    b.hw.wheel[0] = b.hw.wheel[1] = -wr;
+    b.hw.wheel[2] = b.hw.wheel[3] = -wl;
+    b.drive(50, FLAG_TORQUE_ON, NO_CMD);
+    EXPECT_EQ(b.wheel_goal(0), -WHEEL_DIR[0] * WHEEL_VEL_LIMIT_RAW) << "음수 최대 바퀴 = -한계";
+    EXPECT_EQ(b.wheel_goal(2), wheel_raw(2, -wl * lim / wr)) << "다른 쪽도 같은 비율";
+
+    // 한계 안이면 그대로
+    b.hw.wheel[0] = b.hw.wheel[1] = 3.0f;
+    b.hw.wheel[2] = b.hw.wheel[3] = -3.0f;   // 제자리 회전
+    b.drive(50, FLAG_TORQUE_ON, NO_CMD);
+    for (int k = 0; k < WHEEL_COUNT; ++k) {EXPECT_EQ(b.wheel_goal(k), wheel_raw(k, b.hw.wheel[k])) << k;}
+
+    // 제자리 회전 한계 초과: 부호는 그대로, 크기는 모두 한계
+    b.hw.wheel[0] = b.hw.wheel[1] = 20.0f;
+    b.hw.wheel[2] = b.hw.wheel[3] = -20.0f;
+    b.drive(50, FLAG_TORQUE_ON, NO_CMD);
+    for (int k = 0; k < WHEEL_COUNT; ++k) {
+      EXPECT_EQ(b.wheel_goal(k), (k < 2 ? 1 : -1) * WHEEL_DIR[k] * WHEEL_VEL_LIMIT_RAW) << k;
+    }
+  });
+}
+
+// 바퀴 모터 Drive Mode 반전 비트가 켜져 있으면 (WHEEL_DIR 와 이중 반전) 부팅 때 bit0 만 끈다 → 정상 주행
+TEST(FirmwareSil, WheelDriveModeReverseIsCleared)
+{
+  isolated([] {
+    Bench b;
+    b.w.motors[WHEEL_IDS[2]].drive_mode = 0x05;   // bit0 반전 + bit2 (다른 비트는 그대로 둬야 함)
+    b.boot();
+    EXPECT_EQ(b.w.motors[WHEEL_IDS[2]].drive_mode, 0x04) << "bit0 만 끔";
+    b.hw.wheel[2] = 2.0f;
+    b.drive(100, FLAG_TORQUE_ON, NO_CMD);
+    EXPECT_FALSE(b.hw.last().error & (ERR_FAULT | ERR_MOTOR_CONFIG));
+    EXPECT_TRUE(b.w.motors[WHEEL_IDS[2]].torque);
+    EXPECT_EQ(b.wheel_goal(2), wheel_raw(2, 2.0f));
+  });
+  // 맞출 수 없으면 (EEPROM 쓰기 실패) 부팅 점검 실패 → 토크 거부
+  isolated([] {
+    Bench b;
+    b.w.motors[WHEEL_IDS[2]].drive_mode = 0x01;
+    b.w.motors[WHEEL_IDS[2]].eeprom_write_fails = true;
+    b.boot();
+    b.drive(200, FLAG_TORQUE_ON, NO_CMD);
+    const State sw = b.hw.last();
+    EXPECT_TRUE(sw.error & ERR_FAULT);
+    EXPECT_TRUE(sw.error & ERR_MOTOR_CONFIG);
+    for (uint8_t id : WHEEL_IDS) {EXPECT_FALSE(b.w.motors[id].torque) << int(id);}
+  });
+}
+
+// 모터 Velocity Limit 이 WHEEL_VEL_LIMIT_RAW 보다 작으면 (큰 명령을 모터가 조용히 버림) 부팅 때 올린다
+TEST(FirmwareSil, WheelVelocityLimitIsRaised)
+{
+  isolated([] {
+    Bench b;
+    b.w.motors[WHEEL_IDS[1]].velocity_limit = 200;
+    b.w.motors[WHEEL_IDS[3]].velocity_limit = 1023;   // 이미 크면 그대로
+    b.boot();
+    EXPECT_EQ(b.w.motors[WHEEL_IDS[1]].velocity_limit, WHEEL_VEL_LIMIT_RAW);
+    EXPECT_EQ(b.w.motors[WHEEL_IDS[3]].velocity_limit, 1023);
+    b.drive(100, FLAG_TORQUE_ON, NO_CMD);
+    EXPECT_FALSE(b.hw.last().error & (ERR_FAULT | ERR_MOTOR_CONFIG));
+    for (int k = 0; k < WHEEL_COUNT; ++k) {b.hw.wheel[k] = 7.5f;}   // 200 raw (4.8 rad/s) 보다 큰 명령
+    b.drive(50, FLAG_TORQUE_ON, NO_CMD);
+    EXPECT_EQ(b.wheel_goal(1), wheel_raw(1, 7.5f)) << "올린 한계 덕분에 모터가 명령을 받음";
+  });
+  isolated([] {
+    Bench b;
+    b.w.motors[WHEEL_IDS[1]].velocity_limit = 200;
+    b.w.motors[WHEEL_IDS[1]].eeprom_write_fails = true;
+    b.boot();
+    b.drive(200, FLAG_TORQUE_ON, NO_CMD);
+    EXPECT_TRUE(b.hw.last().error & ERR_FAULT);
+    for (uint8_t id : WHEEL_IDS) {EXPECT_FALSE(b.w.motors[id].torque) << int(id);}
+  });
+}
+
+// 설정이 이미 맞으면 EEPROM 에 쓰지 않는다 (EEPROM 수명) · 토크 ON 으로 남아 있던 바퀴도 먼저 끄고 맞춘다
+TEST(FirmwareSil, WheelConfigWritesOnlyWhenNeeded)
+{
+  isolated([] {
+    Bench b;
+    for (uint8_t id : WHEEL_IDS) {b.w.motors[id].velocity_limit = WHEEL_VEL_LIMIT_RAW;}
+    b.boot();
+    for (const SilWrite & wr : b.w.writes) {
+      EXPECT_NE(wr.item, sil_item::DRIVE_MODE) << "id " << int(wr.id);
+      EXPECT_NE(wr.item, sil_item::VELOCITY_LIMIT) << "id " << int(wr.id);
+    }
+  });
+  isolated([] {
+    Bench b;
+    for (uint8_t id : WHEEL_IDS) {b.w.motors[id].torque = true; b.w.motors[id].drive_mode = 0x01;}
+    b.boot();
+    for (uint8_t id : WHEEL_IDS) {EXPECT_EQ(b.w.motors[id].drive_mode, 0) << int(id);}
+    b.drive(100, FLAG_TORQUE_ON, NO_CMD);
+    EXPECT_FALSE(b.hw.last().error & (ERR_FAULT | ERR_MOTOR_CONFIG));
+  });
+}
+
+// 바퀴 부팅 점검은 팔 보드에 영향 없음 (팔 모터의 Drive Mode · Velocity Limit 은 보지 않음)
+TEST(FirmwareSil, WheelBootCheckDoesNotTouchArm)
+{
+  isolated([] {
+    Bench b;
+    for (uint8_t id : ARM_IDS) {b.a.motors[id].drive_mode = 0x01; b.a.motors[id].velocity_limit = 0;}
+    b.boot();
+    b.arm_activate();
+    EXPECT_FALSE(b.ha.last().error & (ERR_FAULT | ERR_MOTOR_CONFIG));
+    for (uint8_t id : ARM_IDS) {
+      EXPECT_EQ(b.a.motors[id].drive_mode, 0x01) << "팔 모터 설정은 그대로 " << int(id);
+      EXPECT_EQ(b.a.motors[id].velocity_limit, 0) << int(id);
+    }
+    for (const SilWrite & wr : b.a.writes) {
+      EXPECT_NE(wr.item, sil_item::DRIVE_MODE) << "팔 보드는 Drive Mode 를 쓰지 않음";
+      EXPECT_NE(wr.item, sil_item::VELOCITY_LIMIT) << "팔 보드는 Velocity Limit 을 쓰지 않음";
+    }
   });
 }
