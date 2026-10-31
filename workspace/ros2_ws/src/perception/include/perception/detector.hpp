@@ -47,6 +47,7 @@ struct DetectorConfig
   int input_size = 640;
   float score_threshold = 0.5f;
   float nms_threshold = 0.45f;
+  float engine_score_threshold = 0.25f;   // TensorRT 엔진만 (score_threshold 는 색 검출 점수라 뜻이 다름)
   int target_class = -1;              // -1 = 모든 클래스
   std::string target_color = "any";   // any | red | green | blue (ColorDetector)
   double min_area_ratio = 0.002;      // 화면 넓이 대비 최소 영역
