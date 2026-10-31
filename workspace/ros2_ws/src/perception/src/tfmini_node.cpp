@@ -3,8 +3,8 @@
 //   /dev/tfmini 115200 bps 를 읽기 스레드에서 파싱 → range_topic(기본 /tfmini/range) 으로 sensor_msgs/Range 발행
 //   - 새 측정이 있을 때만 발행한다 (publish_rate 로 묶음, 같은 측정을 두 번 내지 않음). stamp = 프레임을 받은 시각
 //   - 신호세기 < min_strength · 측정 범위 밖 → range = +inf (무효)
-//   - stale_timeout_s 동안 새 프레임이 없으면 +inf 를 publish_rate 로 계속 낸다 (받는 쪽 obstacle_stop 이 끊김을 알 수 있게.
-//     아예 침묵하면 받는 쪽은 stale_s 뒤에 정지한다)
+//   - stale_timeout_s 동안 새 프레임이 없으면 내지 않는다. 받는 쪽 obstacle_stop 이 stale_s 뒤에 끊김으로 정지한다
+//     (끊긴 동안 지금 시각의 +inf 를 내면 obstacle_stop 이 새 측정으로 받아 끊김 정지를 못 하고, 직전 거리가 멀었으면 '비었음'으로 풂)
 #include <fcntl.h>
 #include <termios.h>
 #include <unistd.h>
@@ -144,7 +144,7 @@ private:
           m.range = static_cast<float>(latest_.distance_m);
         }
       } else {
-        m.header.stamp = now();   // 끊김: 무효 값을 계속 낸다
+        return;   // 끊김: 내지 않는다 (위 설명)
       }
     }
     pub_->publish(m);
