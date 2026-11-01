@@ -1,6 +1,6 @@
-// TensorRTDetector — YOLOv8 형식 엔진 (입력 1×3×S×S float, 출력 1×(4+nc)×N: cx, cy, w, h, 클래스 점수)
-// TensorRT 10 API (Jetson Orin JetPack 6.x). USE_TENSORRT 일 때만 빌드된다.
-//   엔진 만들기 예: trtexec --onnx=puck_yolov8n.onnx --saveEngine=puck_yolov8n.engine --fp16
+// TensorRTDetector — YOLOv8 형식 출력 엔진 (YOLO11 도 같음. 입력 1×3×H×W float, 출력 1×(4+nc)×N: cx, cy, w, h, 클래스 점수)
+// TensorRT 10 API. USE_TENSORRT 일 때만 빌드된다. 후처리는 yolo_postprocess.hpp
+//   엔진 만들기 예(FP32, 엔진을 쓸 기기에서 만든다): trtexec --onnx=yolo11n_task4_B.onnx --noTF32 --saveEngine=yolo11n_task4_B.engine
 #ifdef USE_TENSORRT
 
 #include <cuda_runtime_api.h>
@@ -17,6 +17,7 @@
 #include <opencv2/imgproc.hpp>
 
 #include "perception/detector.hpp"
+#include "perception/yolo_postprocess.hpp"
 
 namespace perception
 {
@@ -58,13 +59,24 @@ public:
     ctx_.reset(engine_->createExecutionContext());
     if (!ctx_) {info = "createExecutionContext 실패"; return false;}
 
+    int n_in = 0, n_out = 0;
     for (int i = 0; i < engine_->getNbIOTensors(); ++i) {
       const char * n = engine_->getIOTensorName(i);
-      if (engine_->getTensorIOMode(n) == nvinfer1::TensorIOMode::kINPUT) {in_name_ = n;} else {out_name_ = n;}
+      if (engine_->getTensorIOMode(n) == nvinfer1::TensorIOMode::kINPUT) {in_name_ = n; ++n_in;} else {out_name_ = n; ++n_out;}
     }
+    if (n_in != 1 || n_out != 1) {info = "입력 1개 · 출력 1개 엔진만 씀 (NMS 를 넣은 엔진이 아닌지 확인)"; return false;}
     const auto in_dims = engine_->getTensorShape(in_name_.c_str());
     const auto out_dims = engine_->getTensorShape(out_name_.c_str());
     if (in_dims.nbDims != 4 || out_dims.nbDims != 3) {info = "입출력 모양이 YOLOv8 형식이 아님"; return false;}
+    // 정적 모양 · float32 만 (동적 모양이면 d 가 -1, FP16 입출력이면 복사 크기가 틀림)
+    if (in_dims.d[0] != 1 || in_dims.d[1] != 3 || in_dims.d[2] <= 0 || in_dims.d[3] <= 0 ||
+      out_dims.d[0] != 1 || out_dims.d[2] <= 0 ||
+      engine_->getTensorDataType(in_name_.c_str()) != nvinfer1::DataType::kFLOAT ||
+      engine_->getTensorDataType(out_name_.c_str()) != nvinfer1::DataType::kFLOAT)
+    {
+      info = "입출력이 정적 float32 1×3×H×W / 1×(4+클래스 수)×N 이 아님";
+      return false;
+    }
     in_h_ = static_cast<int>(in_dims.d[2]);
     in_w_ = static_cast<int>(in_dims.d[3]);
     out_c_ = static_cast<int>(out_dims.d[1]);   // 4 + nc
@@ -105,36 +117,8 @@ public:
     cudaMemcpyAsync(host_out_.data(), d_out_, host_out_.size() * sizeof(float), cudaMemcpyDeviceToHost, stream_);
     cudaStreamSynchronize(stream_);
 
-    std::vector<cv::Rect> boxes;
-    std::vector<float> scores;
-    std::vector<int> classes;
-    const int nc = out_c_ - 4;
-    for (int i = 0; i < out_n_; ++i) {
-      int best = -1;
-      float bs = 0.f;
-      for (int c = 0; c < nc; ++c) {
-        const float v = host_out_[static_cast<size_t>(4 + c) * out_n_ + i];
-        if (v > bs) {bs = v; best = c;}
-      }
-      if (bs < cfg_.score_threshold) {continue;}
-      if (cfg_.target_class >= 0 && best != cfg_.target_class) {continue;}
-      const float cx = host_out_[i], cy = host_out_[out_n_ + i];
-      const float w = host_out_[2 * out_n_ + i], h = host_out_[3 * out_n_ + i];
-      const float x0 = (cx - w / 2 - px) / s, y0 = (cy - h / 2 - py) / s;
-      boxes.emplace_back(static_cast<int>(x0), static_cast<int>(y0), static_cast<int>(w / s), static_cast<int>(h / s));
-      scores.push_back(bs);
-      classes.push_back(best);
-    }
-    std::vector<int> keep;
-    cv::dnn::NMSBoxes(boxes, scores, cfg_.score_threshold, cfg_.nms_threshold, keep);
-    for (int k : keep) {
-      Detection d;
-      d.box = cv::Rect2f(boxes[k]) & cv::Rect2f(0, 0, static_cast<float>(bgr.cols), static_cast<float>(bgr.rows));
-      d.score = scores[k];
-      d.class_id = classes[k];
-      out.push_back(d);
-    }
-    return out;
+    return decode_yolo(host_out_, out_c_, out_n_, s, px, py, bgr.cols, bgr.rows,
+      cfg_.engine_score_threshold, cfg_.nms_threshold, cfg_.target_class);
   }
 
   std::string name() const override {return "tensorrt";}

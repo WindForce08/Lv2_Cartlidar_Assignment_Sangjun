@@ -219,6 +219,8 @@ public:
     dc.engine_path = declare_parameter("detector.engine_path", dc.engine_path);
     dc.score_threshold = static_cast<float>(declare_parameter("detector.score_threshold", 0.3));
     dc.nms_threshold = static_cast<float>(declare_parameter("detector.nms_threshold", 0.45));
+    dc.engine_score_threshold = static_cast<float>(declare_parameter("detector.engine_score_threshold",
+      static_cast<double>(dc.engine_score_threshold)));
     dc.target_class = static_cast<int>(declare_parameter("detector.target_class", -1));
     dc.target_color = declare_parameter("detector.target_color", dc.target_color);
     dc.min_area_ratio = declare_parameter("detector.min_area_ratio", dc.min_area_ratio);

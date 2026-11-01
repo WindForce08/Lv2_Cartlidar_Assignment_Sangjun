@@ -60,7 +60,8 @@ perception_node:
       type: auto                # auto | tensorrt | color
       engine_path: ""           # ★ TensorRT 엔진 (.engine). 비우면 색 검출기
       score_threshold: 0.3      # 색 검출 점수 = 0.5·채움 + 0.5·가로세로비. 퍽 끝면(태그 때문에 채움 약 0.44)도 0.7 이상
-      nms_threshold: 0.45       # TensorRT(YOLOv8) 겹침 제거, YOLOv8 기본값
+      nms_threshold: 0.45       # TensorRT(YOLOv8) 겹침 제거(클래스마다), YOLOv8 기본값
+      engine_score_threshold: 0.25  # TensorRT 엔진 점수 하한(score_threshold 는 색 검출기만). YOLO 후보 B 실물 203장 평가 값
       target_class: -1          # 이 클래스 번호만 씀(-1 = 전부). 번호의 뜻은 검출기마다 다름(색 검출기 0 빨강 · 1 초록 · 2 파랑, 엔진은 class_names 순서)
       # class_names: 엔진 클래스 번호 순서의 이름. 이름의 red · green · blue → 색, cylinder · cuboid → 모양 (include/perception/puck_class.hpp)
       #   TensorRT 엔진일 때만 쓴다. 비우면(기본) 색 검출기 번호로 색만 정함. 엔진과 함께 지정한다. 예(YOLO 4 클래스):

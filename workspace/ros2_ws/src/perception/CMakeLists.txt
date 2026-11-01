@@ -89,7 +89,7 @@ if(BUILD_TESTING)
     test/test_inputs.cpp test/test_lidar.cpp test/test_puck.cpp test/test_signal.cpp test/test_dice.cpp
     test/test_signal_light.cpp test/test_depth_split.cpp
     test/test_tag_upright.cpp test/test_barcode.cpp test/test_puck_merge.cpp test/test_read_tag.cpp test/test_arm_lock.cpp test/test_arm_detect.cpp
-    test/test_puck_class.cpp)
+    test/test_puck_class.cpp test/test_yolo_postprocess.cpp)
   target_link_libraries(test_perception_logic perception_detector perception_barcode)
   # 촬영 시각 TF 조회 (tf_lookup.hpp) — tf2::BufferCore 로 시험
   target_sources(test_perception_logic PRIVATE test/test_tf_lookup.cpp)
