@@ -1,7 +1,7 @@
 # perception_node 설정. ★ = 실물·현장에서 다시 확인할 값
 # 카메라 토픽: 실물은 realsense2_camera(camera_name 을 top_camera_front · top_camera_rear 로 실행)와 UVC 드라이버,
 #   시뮬레이션은 Isaac Sim 이 같은 이름으로 발행한다. frame_id 를 비우면 영상 header.frame_id 를 쓴다.
-#   realsense2_camera 의 컬러 header.frame_id 는 <camera_name>_color_optical_frame 이라 URDF(261022_2119) 이름과 같다.
+#   realsense2_camera 의 컬러 header.frame_id 는 <camera_name>_color_optical_frame 이라 URDF(261027_1711) 이름과 같다.
 perception_node:
   ros__parameters:
     publish_rate: 15.0          # [Hz] 이 주기로 새 영상이 있는지 보고 결과를 낸다 (ARM_ALIGN 은 15 Hz 이상 필요)
@@ -159,3 +159,34 @@ perception_node:
     frames:
       base: base_link
       odom: odom
+
+# 후방 장애물 판독 (rear_obstacle_node.cpp · rear_obstacle.hpp). 뒤 D435 컬러에 맞춘 깊이 → 차체 뒤 통로의 가장 가까운 장애물.
+#   라이다(바닥 위 한 높이 평면)가 못 보는 누운 퍽 · 선반 끝 같은 것을 보려는 것이다. 후진을 막는 것은 제어 쪽이 이 토픽으로 한다.
+#   카메라가 아래로 35° 기울어 바닥 높이에서는 뒤 끝 가까이가 화면 밖이다(URDF 261027_1711 · D435 컬러 화각으로 계산, 뒤 끝에서 약 0.31 m) → 그 안은 라이다 몫.
+rear_obstacle:
+  ros__parameters:
+    depth_topic: /top_camera_rear/aligned_depth_to_color/image_raw
+    info_topic: /top_camera_rear/color/camera_info    # 컬러에 맞춘 깊이라 컬러 내부값을 쓴다
+    depth_scale: 0.001          # [m] CV_16U 깊이 한 단위 (realsense2_camera 기본 mm). 32FC1 이면 쓰지 않음
+    target_frame: base_footprint   # z = 바닥 위 높이
+    # 통로 (base_footprint). URDF 261027_1711 충돌 형상 외곽: 뒤 끝 x −0.2185, 반폭 0.1676 m
+    x_edge: -0.2285             # [m] 차체 뒤 끝 (lidar.yaml self_box x_min 과 같게, 1 cm 여유)
+    y_half: 0.2176              # [m] 차체 반폭 + 0.05
+    z_min: 0.02                 # [m] 바닥 위 높이 하한 ★ 실물 깊이 잡음(바닥이 떠 보이는 정도)을 보고 맞춤
+    z_max: 0.45                 # [m]
+    range_m: 1.0                # [m] 뒤 끝에서 이 거리까지만 (release_m 이상이어야 함)
+    depth_min_m: 0.10
+    depth_max_m: 3.0
+    stride: 2                   # 화소 건너뛰기 (2 = 1/4 만 봄)
+    min_points: 20              # 이보다 적은 점은 잡음으로 봄
+    # 정지 · 해제 (obstacle_stop.hpp 와 같은 규칙) — 가정으로 정한 값, 모의 판정 · 실물 시험으로 확인 ★
+    #   후진 0.10 m/s 가정: 반응 0.1 s(0.01 m) + 감속(0.005 m) ≪ 0.40 m. 0.40 m 는 바닥 높이 사각(약 0.31 m)에 들어가기 전에 멈추려는 값
+    stop_m: 0.40
+    release_m: 0.50
+    release_count: 3
+    near_m: 0.0                 # 0 = "점 없음"을 너무 가까움으로 보지 않음 (카메라는 점 없음 = 통로가 비었음)
+    stale_s: 0.5                # [s] 깊이가 이만큼 없으면 정지
+    publish_rate: 10.0
+    stop_topic: /perception/rear_obstacle
+    reason_topic: /perception/rear_obstacle/reason
+    distance_topic: /perception/rear_obstacle/distance

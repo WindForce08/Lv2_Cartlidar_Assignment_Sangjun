@@ -77,7 +77,15 @@ rclcpp_components_register_node(perception_lidar PLUGIN "perception::ScanMergerN
 rclcpp_components_register_node(perception_lidar PLUGIN "perception::ObstacleStopNode" EXECUTABLE obstacle_stop)
 rclcpp_components_register_node(perception_lidar PLUGIN "perception::TFminiNode" EXECUTABLE tfmini)
 
-install(TARGETS perception_detector perception_barcode perception_node perception_lidar
+# 후방 장애물: 뒤 D435 깊이 → /perception/rear_obstacle (계산부 include/perception/rear_obstacle.hpp, 단위 시험 대상)
+add_library(perception_rear SHARED src/rear_obstacle_node.cpp)
+target_include_directories(perception_rear PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include/${PROJECT_NAME}>)
+target_link_libraries(perception_rear PUBLIC rclcpp::rclcpp rclcpp_components::component ${sensor_msgs_TARGETS}
+  ${std_msgs_TARGETS} cv_bridge::cv_bridge ${OpenCV_LIBS} tf2::tf2 tf2_ros::tf2_ros tf2_geometry_msgs::tf2_geometry_msgs)
+rclcpp_components_register_node(perception_rear PLUGIN "perception::RearObstacleNode" EXECUTABLE rear_obstacle)
+
+install(TARGETS perception_detector perception_barcode perception_node perception_lidar perception_rear
   ARCHIVE DESTINATION lib LIBRARY DESTINATION lib RUNTIME DESTINATION bin)
 install(TARGETS barcode_compare RUNTIME DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY include/ DESTINATION include/${PROJECT_NAME})
@@ -85,6 +93,9 @@ install(DIRECTORY config launch udev data DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
+  # 후방 장애물 계산부 (rear_obstacle.hpp, 헤더만) — 아래 목록과 따로 둬서 다른 시험 추가와 겹치지 않게
+  ament_add_gtest(test_rear_obstacle test/test_rear_obstacle.cpp)
+  target_link_libraries(test_rear_obstacle perception_detector)
   ament_add_gtest(test_perception_logic test/test_tfmini.cpp test/test_vision.cpp test/test_tracker_tag.cpp
     test/test_inputs.cpp test/test_lidar.cpp test/test_puck.cpp test/test_signal.cpp test/test_dice.cpp
     test/test_signal_light.cpp test/test_depth_split.cpp
