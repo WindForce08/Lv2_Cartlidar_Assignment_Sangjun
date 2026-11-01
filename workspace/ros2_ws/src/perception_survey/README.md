@@ -16,3 +16,4 @@
 기존 perception 노드/robot_interfaces/mission을 수정하지 않는다. 실제 카메라·YOLO·태그의 인식률이나 조사 경로 완주를 검증한 패키지가 아니라, 인지 관측을 누적·전달하는 노드다. 초기 박스가 발제 위치에서 35mm 이상 이동하거나 ±30° 가정을 넘으면 별도 박스 관측이 필요하다.
 
 - `tagged_min_confidence`(기본0.6): 태그 ID가 있고 camera=arm인 관측의 색·형상 점수 문턱. D435는 기존0.6을 유지한다. Puck.confidence는 태그의 경우 정사각 색띠 점유율이므로 원기둥의 곡면에서는 올바른 색도0.6 미만일 수 있다. 기존 R6 방식과 연결한 모의 구성에서는0.4를 명시해 검증한다. 이는 실물 최적값·확률 보정이 아니며 낮은 점수·충돌·미관측·최소관측 조건은 계속 거부한다.
+- 실행: `perception/launch/perception.launch.py`가 `use_survey:=true`(기본)일 때 설정 `perception/config/puck_survey.yaml`로 띄운다. 완료 파일은 `survey_output` 인자(기본 `~/.ros/puck_survey/puck_survey.json`). 조사는 `/perception/survey/start`·`finish`·`reset`(std_srvs/Trigger).

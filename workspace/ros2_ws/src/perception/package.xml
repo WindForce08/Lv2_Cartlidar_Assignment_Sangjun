@@ -23,6 +23,7 @@
   <depend>libzbar-dev</depend>
   <depend>liblapack-dev</depend>
   <depend>ament_index_cpp</depend>
+  <exec_depend>perception_survey</exec_depend>   <!-- perception.launch.py 가 B0 등록부를 띄움 -->
   <!-- 선택: TensorRT · CUDA (Jetson 은 JetPack). 없으면 색 검출기만 빌드된다 -->
 
   <test_depend>ament_cmake_gtest</test_depend>
