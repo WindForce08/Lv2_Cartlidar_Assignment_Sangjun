@@ -91,6 +91,9 @@ if(BUILD_TESTING)
     test/test_tag_upright.cpp test/test_barcode.cpp test/test_puck_merge.cpp test/test_read_tag.cpp test/test_arm_lock.cpp test/test_arm_detect.cpp
     test/test_puck_class.cpp)
   target_link_libraries(test_perception_logic perception_detector perception_barcode)
+  # 촬영 시각 TF 조회 (tf_lookup.hpp) — tf2::BufferCore 로 시험
+  target_sources(test_perception_logic PRIVATE test/test_tf_lookup.cpp)
+  target_link_libraries(test_perception_logic tf2::tf2 ${geometry_msgs_TARGETS})
   target_compile_definitions(test_perception_logic PRIVATE
     PERCEPTION_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data" PERCEPTION_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/data")
 endif()

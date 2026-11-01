@@ -358,6 +358,7 @@ public:
     frame_max_age_ = declare_parameter("frame_max_age_s", 0.3);
     base_frame_ = declare_parameter("frames.base", std::string("base_link"));
     odom_frame_ = declare_parameter("frames.odom", std::string("odom"));
+    tf_fallback_max_s_ = declare_parameter("tf_fallback_max_s", tf_fallback_max_s_);
 
     std::string info;
     detector_ = make_detector(dc, info);
@@ -605,16 +606,14 @@ private:
     base = {b.x(), b.y(), b.z()};
     odom = base;
     try {
-      geometry_msgs::msg::TransformStamped t_ob;
-      const tf2::TimePoint tp = tf2_ros::fromRclcpp(stamp);
-      auto & buf = tf_->buffer();
-      if (buf.canTransform(odom_frame_, base_frame_, tp)) {
-        t_ob = buf.lookupTransform(odom_frame_, base_frame_, tp);
-      } else {
-        t_ob = buf.lookupTransform(odom_frame_, base_frame_, tf2::TimePointZero);
+      const auto t_ob = lookup_near(tf_->buffer(), odom_frame_, base_frame_, tf2_ros::fromRclcpp(stamp), tf_fallback_max_s_);
+      if (!t_ob) {
+        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 10000, "TF %s→%s 가 촬영 시각과 %.2f s 넘게 다름: base_link 기준으로 추적",
+          base_frame_.c_str(), odom_frame_.c_str(), tf_fallback_max_s_);
+        return true;
       }
       tf2::Transform t;
-      tf2::fromMsg(t_ob.transform, t);
+      tf2::fromMsg(t_ob->transform, t);
       const tf2::Vector3 o = t * b;
       odom = {o.x(), o.y(), o.z()};
     } catch (const tf2::TransformException &) {
@@ -721,17 +720,19 @@ private:
     }
   }
 
-  // 움직이는 카메라(팔) 변환 target ← source, 촬영 시각 기준. 그 시각 변환이 없으면 가장 최근 것
+  // 움직이는 카메라(팔) 변환 target ← source, 촬영 시각 기준. 그 시각 변환이 없으면 tf_fallback_max_s 안의 가장 최근 것
+  //   (allow_latest = false 면 촬영 시각 값만). 둘 다 없으면 없음
   std::optional<tf2::Transform> lookup_at(const std::string & target, const std::string & source, const rclcpp::Time & stamp, bool allow_latest = true)
   {
     try {
-      auto & buf = tf_->buffer();
-      const tf2::TimePoint tp = tf2_ros::fromRclcpp(stamp);
-      if (!allow_latest && !buf.canTransform(target, source, tp)) {return std::nullopt;}
-      const auto m = buf.canTransform(target, source, tp) ? buf.lookupTransform(target, source, tp) :
-        buf.lookupTransform(target, source, tf2::TimePointZero);
+      const auto m = lookup_near(tf_->buffer(), target, source, tf2_ros::fromRclcpp(stamp), allow_latest ? tf_fallback_max_s_ : -1.0);
+      if (!m) {
+        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "TF %s→%s 촬영 시각 값 없음 (허용 차 %.2f s)", source.c_str(), target.c_str(),
+          allow_latest ? tf_fallback_max_s_ : 0.0);
+        return std::nullopt;
+      }
       tf2::Transform t;
-      tf2::fromMsg(m.transform, t);
+      tf2::fromMsg(m->transform, t);
       return t;
     } catch (const tf2::TransformException & e) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "TF %s→%s 없음: %s", source.c_str(), target.c_str(), e.what());
@@ -860,12 +861,14 @@ private:
     if (mode & BARCODE_BIT) {process_barcode(now_t);}
     if (!(mode & ~(SIGNAL_BIT | BARCODE_BIT))) {return;}
     // 같은 촬영 시각 TF가 늦게 도착하면 입력을 소비하지 않고 다음 처리 주기에 다시 확인한다.
-    if (mode & SetMode::Request::ARM_ALIGN) {
+    // ARM_ALIGN 은 odom(D435 목표 투영), READ_TAG 만이면 base_link(태그 퍽 위치)까지의 촬영 시각 TF 가 있어야 한다
+    if (mode & ARM_BITS) {
       Image::ConstSharedPtr pending;
       {std::lock_guard<std::mutex> lk(arm_.m); pending = arm_.image;}
       if (pending && (now_t-rclcpp::Time(pending->header.stamp,now_t.get_clock_type())).seconds() <= frame_max_age_) {
         const auto frame=arm_.frame_id.empty()?pending->header.frame_id:arm_.frame_id;
-        if (!tf_->buffer().canTransform(frame,odom_frame_,tf2_ros::fromRclcpp(rclcpp::Time(pending->header.stamp,now_t.get_clock_type())))) {
+        const auto & need = (mode & SetMode::Request::ARM_ALIGN) ? odom_frame_ : base_frame_;
+        if (!tf_->buffer().canTransform(frame,need,tf2_ros::fromRclcpp(rclcpp::Time(pending->header.stamp,now_t.get_clock_type())))) {
           RCLCPP_WARN_THROTTLE(get_logger(),*get_clock(),1000,"ARM_TF_PENDING: 촬영 시각 TF 대기");
           return;
         }
@@ -1448,7 +1451,7 @@ private:
     std::optional<tf2::Transform> T;   // 팔은 움직이므로 촬영 시각 변환. 자세가 없으면(camera_info 없음) 찾지 않는다
     const bool want_marker = mode & MARKER_BIT;
     if (!newK_.empty() && ((mode & SetMode::Request::READ_TAG) || want_marker)) {
-      T = lookup_at(base_frame_, frame, stamp);
+      T = lookup_at(base_frame_, frame, stamp, false);   // 태그 퍽 위치는 촬영 시각 팔 자세로만 (위에서 그 TF 를 기다림)
     }
     std::vector<TagDetection> places;   // 장소 태그: READ_TAG 결과 후보 · READ_MARKER 가 같이 씀
     if (((mode & SetMode::Request::READ_TAG) && marker_->ok()) || (want_marker && T)) {
@@ -1550,6 +1553,7 @@ private:
   PuckGeometry puck_geom_;
   double merge_dist_ = 0.04, min_confidence_ = 0.5;
   double upright_gap_px_ = 1.0;
+  double tf_fallback_max_s_ = 0.1;   // [s] 촬영 시각 TF 가 없을 때 최근 TF 를 써도 되는 시각 차 (lookup_near)
   TargetTracker tracker_;
   ArmTargetLock arm_lock_;             // ctl_cbg_ 에서만 쓴다 (on_set_mode · 처리 주기)
   std::optional<Vec3> seed_odom_;      // 가장 최근 D435 추적 목표 (odom)

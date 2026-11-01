@@ -6,6 +6,8 @@ perception_node:
   ros__parameters:
     publish_rate: 15.0          # [Hz] 이 주기로 새 영상이 있는지 보고 결과를 낸다 (ARM_ALIGN 은 15 Hz 이상 필요)
     frame_max_age_s: 0.3        # [s] 이보다 오래된 영상은 쓰지 않는다 (받는 쪽 300 ms 규칙과 같게)
+    tf_fallback_max_s: 0.1      # [s] 촬영 시각 TF 가 없을 때 가장 최근 TF 를 써도 되는 시각 차. 넘으면 그 영상 위치를 내지 않음
+                                #   (/joint_states 50 Hz 주기 20 ms 의 5 배. 팔 태그 퍽 · 팔 정렬은 이 값과 상관없이 촬영 시각 TF 만 씀)
     image_qos: sensor_data      # sensor_data(best effort) | reliable. best effort 구독은 어느 발행자와도 연결된다
     image_qos_depth: 2
     cameras:
