@@ -88,7 +88,7 @@ perception_node:
         #   파란 퍽을 다시 쓰면 lower [95, 80, 25] · upper [120, 255, 255] (위 근거)
         blue:  {lower: [1, 0, 0],      upper: [0, 0, 0]}
     target:                     # 물체 하나만 따라가기
-      exclude_min: [-0.30, -0.25, -0.10]   # ★ base_link 기준 버리는 상자: 차체(0.445 × 0.306 m) + 여유, 앞 0.35 m 는 집게에 든 퍽 자리(가정)
+      exclude_min: [-0.30, -0.25, -0.10]   # ★ base_link 기준 버리는 상자: 차체(0.445 × 0.306 m) + 여유, 앞 0.35 m 는 집게에 든 퍽 자리(가정). 추적 · PuckArray 둘 다
       exclude_max: [ 0.35,  0.25,  0.60]
       min_confidence: 0.5
       gate: 0.06                # [m] 고른 뒤 같은 물체로 보는 거리 (odom). 한 선반(0.2 m) 위 퍽 사이가 수 cm 라 퍽 폭 2개

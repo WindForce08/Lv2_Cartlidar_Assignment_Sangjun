@@ -729,6 +729,9 @@ private:
       const cv::Point3d cp = sp * ((n + puck_geom_.half_width) / n);
       // 추적 목표와 PuckArray는 같은 퍽 중심. 표면점을 팔 카메라 seed로 쓰면 근접에서 큰 화소 오차.
       if (!to_base_odom(cp, frame, stamp, k.base, k.odom)) {continue;}
+      // target.exclude 상자(차체 + 집게) 안은 PuckArray 에도 내지 않는다. 추적은 원래 버림(target_tracker.hpp).
+      // YOLO 엔진이 주행 자세 집게 판을 퍽으로 봄(B0′ 렌더 D435 287장 중 111장, base_link x 0.19~0.25 · z 0.24~0.29 m)
+      if (tracker_.excluded(k.base)) {continue;}
       out.push_back(k);
       const tf2::Vector3 b = *tf_->fixed(base_frame_, frame) * tf2::Vector3(cp.x, cp.y, cp.z);   // to_base_odom 이 이미 찾아 둠
       Puck p;
