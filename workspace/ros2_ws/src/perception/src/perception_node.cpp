@@ -1299,7 +1299,9 @@ private:
       any = true;
       last_stamp = stamp;
       if (state) {
-        sequence_.update(t, *state);
+        const auto history = locator_.take_locked_history();
+        if (history.empty()) {sequence_.update(t, *state);}
+        else {for (const auto & sample : history) {sequence_.update(sample.first, sample.second);}}
         last_light_ = *state;
         visible = true;
         signal_cam_ = f.cam == &front_ ? Puck::CAMERA_FRONT : Puck::CAMERA_REAR;

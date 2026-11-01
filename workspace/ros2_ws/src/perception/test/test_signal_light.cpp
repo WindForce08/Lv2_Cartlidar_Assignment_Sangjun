@@ -313,3 +313,26 @@ TEST(SignalLight, BlobDepthUsesOwnPixelsWhenPartlyHidden)
   depth.convertTo(d16, CV_16U, 1000.0);
   EXPECT_NEAR(blob_median_depth(d16, b, 0.001, 0.15, 4.0), 0.50, 1e-6);
 }
+
+TEST(SignalLightHistory, ReplayOnlyLockedCandidateAndReset)
+{
+  perception::SignalLightLocator locator;
+  const auto in_view=[](const perception::Vec3 &) {return true;};
+  const perception::Vec3 fixed{2.0,2.0,0.1};
+  // 계속 빛나는 다른 물체는 잠금 후보로 채택되지 않는다.
+  for (int i=0;i<160;++i) {
+    std::vector<perception::LightObs> obs{{perception::Light::Green,fixed,1000.0}};
+    if (i%60<30) {obs.push_back({perception::Light::Red,{0.08,0.95,0.156},500.0});}
+    const auto state=locator.update(i/30.0,obs,in_view);
+    if (state) {break;}
+  }
+  ASSERT_TRUE(locator.locked());
+  const auto history=locator.take_locked_history();
+  ASSERT_FALSE(history.empty());
+  EXPECT_EQ(history.front().second,perception::Light::Red);
+  for (const auto & sample:history) {EXPECT_NE(sample.second,perception::Light::Green);}
+  EXPECT_TRUE(locator.take_locked_history().empty());
+  locator.reset();
+  EXPECT_FALSE(locator.locked());
+  EXPECT_TRUE(locator.take_locked_history().empty());
+}

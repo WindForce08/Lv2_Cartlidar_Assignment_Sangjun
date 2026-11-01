@@ -123,8 +123,16 @@ public:
   explicit SignalLightLocator(LocatorConfig c = {})
   : c_(c) {}
 
-  void reset() {sites_.clear(); blocked_.clear(); locked_ = -1;}
+  void reset() {sites_.clear(); blocked_.clear(); locked_ = -1; history_taken_ = false;}
   bool locked() const {return locked_ >= 0;}
+  using TimedLight = std::pair<double, Light>;
+  std::vector<TimedLight> take_locked_history() {
+    if (!locked() || history_taken_) {return {};}
+    history_taken_ = true;
+    auto history = std::move(sites_[locked_].history);
+    for (auto & site : sites_) {site.history.clear();}
+    return history;
+  }
   Vec3 position() const {return locked() ? sites_[locked_].pos : Vec3{};}
   using Segments = std::array<Vec3, 3>;   // 칸 중심 (아래부터 초록 · 노랑 · 빨강), odom [m]
   Segments segments() const {return locked() ? segments(sites_[locked_]) : Segments{};}
@@ -147,7 +155,7 @@ public:
       }
       if (best < 0) {
         if (locked() || sites_.size() >= c_.max_sites) {continue;}   // 고정 뒤에는 새 자리를 만들지 않음
-        sites_.push_back({obs[k].pos, t, false, 0, 0, {}, {}});
+        sites_.push_back({obs[k].pos, t, false, 0, 0, {}, {}, {}});
         sites_.back().seg[level(obs[k].color)] = obs[k].pos;
         sites_.back().seg_seen[level(obs[k].color)] = true;
         lit.push_back(static_cast<int>(k));
@@ -176,6 +184,15 @@ public:
         } else if (++s.off_frames >= c_.min_off_frames) {
           s.on = false;
         }
+      }
+    }
+    // 고정 전 후보별 실제 관측만 보관. 가림/화면 밖은 모름으로 남겨 임의 꺼짐을 만들지 않는다.
+    if (!history_taken_) {
+      for (std::size_t i = 0; i < sites_.size(); ++i) {
+        auto & history = sites_[i].history;
+        if (lit[i] >= 0) {history.emplace_back(t, obs[lit[i]].color);}
+        else if (in_view(sites_[i].pos) && !blocked_[i]) {history.emplace_back(t, Light::Off);}
+        if (history.size() > 4096) {history.erase(history.begin(), history.begin() + (history.size() - 4096));}
       }
     }
     if (!locked()) {
@@ -208,6 +225,7 @@ private:
     int off_frames = 0;
     Segments seg;                // 색별로 본 칸 중심 (level 순서)
     std::array<bool, 3> seg_seen{};
+    std::vector<TimedLight> history;
   };
 
   static int level(Light l) {return l == Light::Green ? 0 : l == Light::Yellow ? 1 : 2;}
@@ -241,6 +259,7 @@ private:
   LocatorConfig c_;
   std::vector<Site> sites_;
   std::vector<bool> blocked_;    // 마지막 update 에서 자리별로 가려졌는지
+  bool history_taken_ = false;
   int locked_ = -1;
 };
 
