@@ -72,6 +72,7 @@
 #include "perception/detector.hpp"
 #include "perception/dice_check.hpp"
 #include "perception/frame_gate.hpp"
+#include "perception/puck_class.hpp"
 #include "perception/geometry.hpp"
 #include "perception/puck_estimator.hpp"
 #include "perception/puck_merge.hpp"
@@ -223,6 +224,7 @@ public:
     dc.blur_ksize = static_cast<int>(declare_parameter("detector.blur_ksize", dc.blur_ksize));
     dc.morph_kernel = static_cast<int>(declare_parameter("detector.morph_kernel", dc.morph_kernel));
     dc.min_fill_ratio = declare_parameter("detector.min_fill_ratio", dc.min_fill_ratio);
+    class_names_ = declare_parameter<std::vector<std::string>>("detector.class_names", std::vector<std::string>{});
     {   // HSV 범위: detector.hsv.<key>.lower/upper = [H, S, V]. 조명이 바뀌면 yaml 만 고친다
       const char * keys[] = {"red", "red2", "green", "blue"};
       for (size_t i = 0; i < dc.hsv.size(); ++i) {
@@ -364,8 +366,27 @@ public:
       throw std::runtime_error("detector");
     }
     split_on_ = split_on_ && detector_->name() != "tensorrt";   // 깊이 나누기는 색 검출기 덩어리에만
-    // 팔 카메라(ARM_ALIGN): 색 검출기면 라벨 인식 검출기를 따로 둔다 (위에서 본 퍽의 라벨 구멍 · 조각 · 맞닿음, detector.hpp)
-    if (declare_parameter("arm.label.enabled", true) && detector_->name().rfind("color", 0) == 0) {
+    // class_names 는 엔진 클래스 번호의 뜻. 색 검출기(auto 대체 포함)는 번호가 0 빨강 · 1 초록 · 2 파랑으로 정해져 있어 쓰지 않는다
+    if (detector_->name() != "tensorrt" && !class_names_.empty()) {
+      RCLCPP_WARN(get_logger(), "detector.class_names 는 TensorRT 엔진에만 씀: %s 에서는 무시", detector_->name().c_str());
+      class_names_.clear();
+    }
+    // 번호 → 색 · 모양이 어긋나면 퍽 색을 틀리게 내므로 시작하지 않는다 (puck_class.hpp)
+    const std::string cls_err = class_names_mismatch(detector_->num_classes(), class_names_);
+    if (!cls_err.empty()) {
+      RCLCPP_FATAL(get_logger(), "%s", cls_err.c_str());
+      throw std::runtime_error("detector.class_names");
+    }
+    // 팔 카메라(ARM_ALIGN) 검출기: arm.detector = color(기본, 엔진이 있어도 색 검출) | main(주 검출기와 같은 것)
+    //   엔진(YOLO)은 D435 영상으로만 학습 · 평가했으므로 팔 영상에 쓰려면 main 을 명시한다
+    const std::string arm_det = declare_parameter("arm.detector", std::string("color"));
+    if (arm_det != "color" && arm_det != "main") {
+      RCLCPP_FATAL(get_logger(), "arm.detector 는 color 또는 main: %s", arm_det.c_str());
+      throw std::runtime_error("arm.detector");
+    }
+    const bool main_color = detector_->name().rfind("color", 0) == 0;
+    // 색 검출기면 라벨 인식 검출기를 따로 둔다 (위에서 본 퍽의 라벨 구멍 · 조각 · 맞닿음, detector.hpp)
+    if ((arm_det == "color" || main_color) && declare_parameter("arm.label.enabled", true)) {
       DetectorConfig ac = dc;
       ac.label_aware = true;
       ac.label_dark_v_max = static_cast<int>(declare_parameter("arm.label.dark_v_max", ac.label_dark_v_max));
@@ -381,11 +402,16 @@ public:
       ac.label_ring_frac = declare_parameter("arm.label.ring_frac", ac.label_ring_frac);
       ac.label_ring_min = declare_parameter("arm.label.ring_min", ac.label_ring_min);
       arm_detector_ = std::make_unique<ColorDetector>(ac);
+    } else if (arm_det == "color" && !main_color) {
+      arm_detector_ = std::make_unique<ColorDetector>(dc);   // 라벨 인식 끔: 라벨 없는 색 검출
     }
+    // target_class 는 주 검출기 번호. 팔이 다른 검출기(엔진 + 색)면 번호 뜻이 달라 팔에는 쓰지 않는다
+    arm_class_filter_ = !arm_detector_ || main_color;
     split_.min_m = depth_min_;
     split_.max_m = depth_max_;
     split_.max_piece_m = size_max_m_;
-    RCLCPP_INFO(get_logger(), "검출기: %s %s · 태그 %s · 마커 %s", detector_->name().c_str(), info.c_str(),
+    RCLCPP_INFO(get_logger(), "검출기: %s %s · 팔 %s · 태그 %s · 마커 %s", detector_->name().c_str(), info.c_str(),
+      (arm_detector_ ? *arm_detector_ : *detector_).name().c_str(),
       tag_->ok() ? "사용 가능" : "패밀리 오류", marker_->ok() ? "사용 가능" : "사전 이름 오류");
 
     tf_ = std::make_unique<TfHelper>(*this);
@@ -682,8 +708,9 @@ private:
       const tf2::Vector3 b = *tf_->fixed(base_frame_, frame) * tf2::Vector3(cp.x, cp.y, cp.z);   // to_base_odom 이 이미 찾아 둠
       Puck p;
       p.tag_id = -1;
-      p.color = (d.class_id >= 0 && d.class_id < 3) ? static_cast<uint8_t>(d.class_id + 1) : Puck::COLOR_UNKNOWN;
-      p.shape = Puck::SHAPE_UNKNOWN;
+      const PuckClass pc_cls = puck_class(d.class_id, class_names_);   // 색 검출기는 모양 모름 (puck_class.hpp)
+      p.color = pc_cls.color;
+      p.shape = pc_cls.shape;
       p.pose.position.x = b.x();
       p.pose.position.y = b.y();
       p.pose.position.z = b.z();
@@ -965,7 +992,7 @@ private:
     for (const auto * l : lists) {
       for (const auto & p : *l) {
         all.push_back(&p);
-        obs.push_back({p.pose.position.x, p.pose.position.y, p.pose.position.z, p.color, p.tag_id, p.camera, p.confidence});
+        obs.push_back({p.pose.position.x, p.pose.position.y, p.pose.position.z, p.color, p.tag_id, p.camera, p.confidence, p.shape});
       }
     }
     for (size_t i : merge_pucks(obs, merge_dist_)) {msg.pucks.push_back(*all[i]);}
@@ -1396,7 +1423,7 @@ private:
       std::vector<ArmBox> boxes;
       std::vector<size_t> idx;
       for (size_t i = 0; i < dets.size(); ++i) {
-        if (target_class_ >= 0 && dets[i].class_id != target_class_) {continue;}
+        if (arm_class_filter_ && target_class_ >= 0 && dets[i].class_id != target_class_) {continue;}
         const cv::Vec3d o = image_offset(dets[i].box, small.size());   // 정규화 값이라 해상도와 무관
         boxes.push_back({o[0], o[1], o[2], dets[i].class_id, dets[i].score,
                          static_cast<double>(dets[i].box.height) / small.rows,
@@ -1505,12 +1532,14 @@ private:
   std::string base_frame_, odom_frame_;
   double depth_min_, depth_max_, frame_max_age_;
   int depth_win_, detect_w_, target_class_;
+  std::vector<std::string> class_names_;   // 엔진 클래스 번호 → 이름 (TensorRT 일 때만, puck_class.hpp)
   int64_t depth_tol_ns_;
   double size_min_m_ = 0.015, size_max_m_ = 0.09;
   rclcpp::QoS image_qos_{rclcpp::KeepLast(2)};
 
   std::unique_ptr<Detector> detector_;
   std::unique_ptr<Detector> arm_detector_;   // ARM_ALIGN 전용 (없으면 detector_)
+  bool arm_class_filter_ = true;             // 팔 검출에 target_class 를 쓸지 (번호 뜻이 주 검출기와 같을 때만)
   std::unique_ptr<TagDetector> tag_, marker_;
   std::vector<int> marker_ids_, tag_ids_;
   std::vector<HsvRange> hsv_;

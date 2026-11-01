@@ -29,6 +29,8 @@ perception_node:
       window: 3                 # 깊이 중앙값 창 반폭 (7×7 px)
       sync_tol_s: 0.02          # [s] 컬러와 깊이 stamp 차이 허용 (이전 모듈 2026-10-06 Pi 실측: D435 640x480 30 Hz, 미리보기 끔에서 짝 놓침 0.4 %)
     arm:
+      detector: color           # ARM_ALIGN 검출기: color(엔진이 있어도 색 · 라벨 검출, A1 모의 검증 경로) | main(주 검출기, 엔진이면 YOLO)
+                                #   YOLO 후보는 D435 영상으로만 학습 · 평가(팔 카메라 영상 0장) → 팔 영상 검증 전에는 color
       detect_width: 640         # ARM_ALIGN 검출 해상도 (줄여서 15 Hz 확보, 오차는 정규화 값이라 해상도와 무관)
       lock_gate: 0.25           # ★ ARM_ALIGN 목표 유지(arm_target_lock.hpp): 따라가기 문턱 상한. 거리는 x 단위(화면 반폭, 세로는 × 높이/폭)
       lock_seed_gate: 0.10      # ★ 처음 잠글 때 · 놓친 뒤 다시 잡을 때 D435 목표 투영점에서 이 안만 (넘으면 그 장은 잡지 않음)
@@ -57,7 +59,10 @@ perception_node:
       engine_path: ""           # ★ TensorRT 엔진 (.engine). 비우면 색 검출기
       score_threshold: 0.3      # 색 검출 점수 = 0.5·채움 + 0.5·가로세로비. 퍽 끝면(태그 때문에 채움 약 0.44)도 0.7 이상
       nms_threshold: 0.45       # TensorRT(YOLOv8) 겹침 제거, YOLOv8 기본값
-      target_class: -1
+      target_class: -1          # 이 클래스 번호만 씀(-1 = 전부). 번호의 뜻은 검출기마다 다름(색 검출기 0 빨강 · 1 초록 · 2 파랑, 엔진은 class_names 순서)
+      # class_names: 엔진 클래스 번호 순서의 이름. 이름의 red · green · blue → 색, cylinder · cuboid → 모양 (include/perception/puck_class.hpp)
+      #   TensorRT 엔진일 때만 쓴다. 비우면(기본) 색 검출기 번호로 색만 정함. 엔진과 함께 지정한다. 예(YOLO 4 클래스):
+      # class_names: [red_cylinder, green_cylinder, red_cuboid, green_cuboid]
       target_color: any
       min_area_ratio: 0.0004    # 화면 넓이 대비 최소 영역 (640×480 에서 약 120 px). D435 로 2 m 의 퍽 30 × 60 mm 가 약 9 × 18 px
       blur_ksize: 3             # 2 m 의 퍽 폭 약 9 px 이라 큰 블러·열림 연산은 퍽을 지운다

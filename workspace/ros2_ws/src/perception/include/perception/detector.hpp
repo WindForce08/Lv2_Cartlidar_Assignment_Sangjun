@@ -80,6 +80,7 @@ public:
   virtual ~Detector() = default;
   virtual std::vector<Detection> detect(const cv::Mat & bgr) = 0;
   virtual std::string name() const = 0;
+  virtual int num_classes() const {return -1;}   // 엔진 출력 클래스 수 (-1 = 정해진 번호, ColorDetector)
 };
 
 class ColorDetector : public Detector

@@ -1,13 +1,13 @@
 // 카메라마다 따로 낸 퍽 관측에서 같은 퍽을 하나로 묶는다 (/perception/pucks 발행 전, ROS 의존 없음 → 단위 시험)
 //
-//   묶는 조건: 서로 다른 카메라의 관측, 색이 맞음(같은 색 · 한쪽이 모름), 중심 3D 거리 < merge_dist
+//   묶는 조건: 서로 다른 카메라의 관측, 색 · 모양이 맞음(같은 값 · 한쪽이 모름), 중심 3D 거리 < merge_dist
 //   배정: 조건을 만족하는 쌍을 거리가 가까운 것부터 일대일로 묶는다(탐욕). 한 관측은 다른 카메라의 관측 하나와만 묶인다
 //     → 35 mm 옆 다른 퍽은 더 가까운 같은 퍽 관측이 먼저 묶여 남는다
 //   1단계: D435 관측(tag_id < 0)끼리 카메라 사이로 묶는다. 묶음에서는 confidence 가 가장 높은 것(같으면 입력에서 앞선 것)을 남긴다
 //   2단계: 태그 퍽(tag_id ≥ 0, 번호 · 모양 · 자세가 있음)과 1단계 묶음을 일대일로 묶는다. 거리는 묶음 구성원 중 가장 가까운 것,
-//     색은 구성원 모두와 맞아야 한다. 묶인 D435 묶음은 통째로 빼고 태그 퍽을 남긴다
+//     색 · 모양은 구성원 모두와 맞아야 한다. 묶인 D435 묶음은 통째로 빼고 태그 퍽을 남긴다
 //   같은 카메라 관측끼리는 묶지 않는다 (D435 는 깊이 나누기로, 팔 태그는 번호로 이미 하나씩)
-//   한계: 위치 · 색만 본다. D435 가 퍽 A 를 못 보고 30~40 mm 옆 같은 색 B 만 보면 B 가 태그 A 와 묶여 빠진다.
+//   한계: 위치 · 색 · 모양만 본다(색 검출기는 모양 모름). D435 가 퍽 A 를 못 보고 30~40 mm 옆 같은 색 B 만 보면 B 가 태그 A 와 묶여 빠진다.
 //     앞 · 뒤 관측이 서로 merge_dist 이상 떨어지면(각각은 태그와 가까워도) 1단계에서 안 묶여 하나가 남는다
 #pragma once
 
@@ -27,11 +27,16 @@ struct PuckObs
   int tag_id = -1;              // 태그로 읽은 번호, D435 관측은 -1
   int camera = 0;               // 카메라 번호 (Puck.CAMERA_*). 같은 번호끼리는 묶지 않음
   double confidence = 0;
+  int shape = 0;                // 0 모름 · 1 원기둥 · 2 직육면체 (Puck.SHAPE_* 와 같음)
 };
 
 namespace detail
 {
-inline bool color_match(int a, int b) {return a == b || a == 0 || b == 0;}
+inline bool value_match(int a, int b) {return a == b || a == 0 || b == 0;}
+inline bool class_match(const PuckObs & a, const PuckObs & b)
+{
+  return value_match(a.color, b.color) && value_match(a.shape, b.shape);
+}
 
 inline double dist(const PuckObs & a, const PuckObs & b)
 {
@@ -42,7 +47,7 @@ inline double dist(const PuckObs & a, const PuckObs & b)
 // 남길 관측의 번호 (입력 순서)
 inline std::vector<size_t> merge_pucks(const std::vector<PuckObs> & obs, double merge_dist)
 {
-  using detail::color_match;
+  using detail::class_match;
   using detail::dist;
   std::vector<size_t> tags, cams;
   for (size_t i = 0; i < obs.size(); ++i) {(obs[i].tag_id >= 0 ? tags : cams).push_back(i);}
@@ -55,7 +60,7 @@ inline std::vector<size_t> merge_pucks(const std::vector<PuckObs> & obs, double 
   for (size_t a = 0; a < cams.size(); ++a) {
     for (size_t b = a + 1; b < cams.size(); ++b) {
       const PuckObs & p = obs[cams[a]], & q = obs[cams[b]];
-      if (p.camera == q.camera || !color_match(p.color, q.color)) {continue;}
+      if (p.camera == q.camera || !class_match(p, q)) {continue;}
       const double d = dist(p, q);
       if (d < merge_dist) {pairs.emplace_back(d, cams[a], cams[b]);}
     }
@@ -67,7 +72,7 @@ inline std::vector<size_t> merge_pucks(const std::vector<PuckObs> & obs, double 
     if (group_of[i] == group_of[j]) {continue;}
     bool overlap = false;
     for (size_t m : gi) {
-      for (size_t n : gj) {overlap = overlap || obs[m].camera == obs[n].camera || !color_match(obs[m].color, obs[n].color);}
+      for (size_t n : gj) {overlap = overlap || obs[m].camera == obs[n].camera || !class_match(obs[m], obs[n]);}
     }
     if (overlap) {continue;}
     const size_t to = group_of[i];
@@ -84,7 +89,7 @@ inline std::vector<size_t> merge_pucks(const std::vector<PuckObs> & obs, double 
       double best = merge_dist;
       bool ok = true;
       for (size_t m : groups[g]) {
-        if (obs[m].camera == obs[t].camera || !color_match(obs[m].color, obs[t].color)) {ok = false; break;}
+        if (obs[m].camera == obs[t].camera || !class_match(obs[m], obs[t])) {ok = false; break;}
         best = std::min(best, dist(obs[m], obs[t]));
       }
       if (ok && best < merge_dist) {tag_pairs.emplace_back(best, t, g);}

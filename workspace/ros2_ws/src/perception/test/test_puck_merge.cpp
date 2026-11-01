@@ -54,3 +54,16 @@ TEST(PuckMerge, UnknownColorMatchesAny)
   const std::vector<PuckObs> obs{tag(0.300, UNK, 3), cam(0.310, GREEN, FRONT), cam(0.400, RED, REAR)};
   EXPECT_EQ(merge_pucks(obs, D), (std::vector<size_t>{0, 2}));
 }
+
+// 검출기가 모양을 내면(YOLO) 같은 색이라도 모양이 다른 관측은 묶지 않는다. 모양 모름은 어느 모양과도 묶는다
+TEST(PuckMerge, ShapeMustMatchWhenKnown)
+{
+  constexpr int CYL = 1, CUB = 2;
+  auto shaped = [](PuckObs o, int shape) {o.shape = shape; return o;};
+  const std::vector<PuckObs> diff{shaped(cam(0.300, RED, FRONT), CYL), shaped(cam(0.310, RED, REAR), CUB)};
+  EXPECT_EQ(merge_pucks(diff, D), (std::vector<size_t>{0, 1}));
+  const std::vector<PuckObs> tag_vs_cam{shaped(tag(0.300, RED, 3), CYL), shaped(cam(0.310, RED, FRONT), CUB)};
+  EXPECT_EQ(merge_pucks(tag_vs_cam, D), (std::vector<size_t>{0, 1}));
+  const std::vector<PuckObs> unknown{shaped(tag(0.300, RED, 3), CYL), cam(0.310, RED, FRONT)};
+  EXPECT_EQ(merge_pucks(unknown, D), (std::vector<size_t>{0}));
+}

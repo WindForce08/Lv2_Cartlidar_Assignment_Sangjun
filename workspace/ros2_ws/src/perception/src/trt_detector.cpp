@@ -138,6 +138,7 @@ public:
   }
 
   std::string name() const override {return "tensorrt";}
+  int num_classes() const override {return out_c_ - 4;}
 
 private:
   DetectorConfig cfg_;
