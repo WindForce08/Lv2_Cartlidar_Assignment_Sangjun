@@ -117,14 +117,20 @@ perception_node:
       ids: [12, 13, 14]         # 이 번호만 씀. 빼면 모든 번호 (빈 목록은 yaml 에서 타입을 알 수 없어 쓰지 않음)
     signal:                     # 신호등 점멸 순서 (READ_SIGNAL). include/perception/signal_light.hpp · signal_sequence.hpp
       # 켜진 등 후보: 밝기 · 채도 하한과 색상(H) 범위 ★ Isaac Sim 렌더(R1) · 실물 영상으로 다시 정함 (지금은 가정값)
+      # 3000 K 조명에서 카메라 AWB 뒤 켜진 등의 색상이 돈다(빨강 H 4→151 자홍, 노랑 30→59, 초록 74→90). 렌더 판정 R1 · R2 3000 · 6500 K 통과 값(2026-10-31, 모의)
       v_min: 200
-      s_min: 90
+      s_min: 75                 # AWB 뒤 노랑 등 가운데 S 약 86
       red_h_max: 10
       red2_h_min: 170
       yellow_h_min: 15
-      yellow_h_max: 35
-      green_h_min: 40
-      green_h_max: 90
+      yellow_h_max: 67          # AWB 뒤 노랑 H 59. 대가: 순수 초록(H 58~67)은 노랑으로 봄 — 실물 초록 LED H 확인 필요
+      green_h_min: 68
+      green_h_max: 97           # AWB 뒤 초록 H 90
+      red_v_min: 180            # 색별 밝기 하한 (-1 = v_min). 빨강 퍽 V ≤ 165
+      yellow_v_min: 218         # 가까운 초록 퍽 밝은 면 H 36~67 · V ≤ 211 을 노랑으로 보지 않게
+      green_v_min: -1
+      red_warm_h_min: 140       # > 0 이면 H [red_warm_h_min, red2_h_min) 도 빨강 — 따뜻한 조명 AWB 아래 자홍으로 보이는 빨강 LED. 0 = 끔
+      red_warm_v_min: 150       # 그 띠의 밝기 하한 (-1 = 빨강 하한). 장면의 자홍 화소 V ≤ 68
       min_area_px: 4            # 3 m 의 등 한 칸이 D435 640 × 480(fx 약 606)에서 약 8 × 7 px
       segment_width_m: 0.0396   # 등 한 칸: 원통 지름 39.6 mm × 길이 34.9 mm (사용자 실측 2026-10-23)
       segment_height_m: 0.0349

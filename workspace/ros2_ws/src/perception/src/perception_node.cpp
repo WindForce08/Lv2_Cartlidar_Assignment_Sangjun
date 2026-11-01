@@ -293,6 +293,11 @@ public:
     lb.yellow_h_max = static_cast<int>(declare_parameter("signal.yellow_h_max", lb.yellow_h_max));
     lb.green_h_min = static_cast<int>(declare_parameter("signal.green_h_min", lb.green_h_min));
     lb.green_h_max = static_cast<int>(declare_parameter("signal.green_h_max", lb.green_h_max));
+    lb.red_v_min = static_cast<int>(declare_parameter("signal.red_v_min", lb.red_v_min));
+    lb.yellow_v_min = static_cast<int>(declare_parameter("signal.yellow_v_min", lb.yellow_v_min));
+    lb.green_v_min = static_cast<int>(declare_parameter("signal.green_v_min", lb.green_v_min));
+    lb.red_warm_h_min = static_cast<int>(declare_parameter("signal.red_warm_h_min", lb.red_warm_h_min));
+    lb.red_warm_v_min = static_cast<int>(declare_parameter("signal.red_warm_v_min", lb.red_warm_v_min));
     lb.min_area_px = static_cast<int>(declare_parameter("signal.min_area_px", lb.min_area_px));
     seg_w_ = declare_parameter("signal.segment_width_m", 0.0396);
     seg_h_ = declare_parameter("signal.segment_height_m", 0.0349);

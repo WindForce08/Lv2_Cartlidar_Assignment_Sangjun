@@ -85,6 +85,31 @@ TEST(SignalLight, BrightColorsAreBlobsDullAreNot)
   }
 }
 
+// 색별 밝기 하한과 자홍 빨강 띠: 기본값(-1 · 0)이면 이전과 같고, 켜면 그 색 · 띠만 바뀐다
+TEST(SignalLight, PerColorBrightnessAndWarmRedBand)
+{
+  const cv::Scalar magenta_red(164, 96, 167), dim_red(60, 40, 185);   // H 151 · V 167, H 176 · V 185
+  LightBlobConfig c;
+  EXPECT_TRUE(detect_light_blobs(image_with(magenta_red), c).empty());
+  EXPECT_TRUE(detect_light_blobs(image_with(dim_red), c).empty());
+  c.red_v_min = 180;
+  auto b = detect_light_blobs(image_with(dim_red), c);
+  ASSERT_EQ(b.size(), 1u);
+  EXPECT_EQ(b[0].color, Light::Red);
+  EXPECT_TRUE(detect_light_blobs(image_with(magenta_red), c).empty());
+  c.red_warm_h_min = 140;
+  c.red_warm_v_min = 150;
+  b = detect_light_blobs(image_with(magenta_red), c);
+  ASSERT_EQ(b.size(), 1u);
+  EXPECT_EQ(b[0].color, Light::Red);
+  // 노랑만 밝기 하한을 올리면 V 210 노랑(H 28)은 빠지고 같은 밝기 초록(H 58)은 남는다
+  c.yellow_v_min = 218;
+  EXPECT_TRUE(detect_light_blobs(image_with(cv::Scalar(20, 200, 210)), c).empty());
+  b = detect_light_blobs(image_with(cv::Scalar(30, 210, 40)), c);
+  ASSERT_EQ(b.size(), 1u);
+  EXPECT_EQ(b[0].color, Light::Green);
+}
+
 TEST(SignalLight, LocksOnBlinkingSiteNotOnSteadyPuck)
 {
   SignalLightLocator loc;

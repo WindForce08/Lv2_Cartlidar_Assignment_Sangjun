@@ -34,6 +34,10 @@ struct LightBlobConfig
   int red_h_max = 10, red2_h_min = 170;
   int yellow_h_min = 15, yellow_h_max = 35;
   int green_h_min = 40, green_h_max = 90;
+  int red_v_min = -1, yellow_v_min = -1, green_v_min = -1;   // 색별 밝기 하한. -1 = v_min
+  // 따뜻한 조명에서 카메라 AWB 가 파랑 이득을 올리면 빨강 LED 가 자홍(H 140~169)으로 보인다.
+  // red_warm_h_min > 0 이면 [red_warm_h_min, red2_h_min) 도 빨강 후보(밝기 하한 red_warm_v_min, -1 = 빨강 하한). 0 = 끔
+  int red_warm_h_min = 0, red_warm_v_min = -1;
   int min_area_px = 4;           // 3 m 의 등 한 칸(39.6 × 34.9 mm)이 D435 640 × 480(fx 약 606)에서 약 8 × 7 px
 };
 
@@ -54,11 +58,17 @@ inline std::vector<LightBlob> detect_light_blobs(const cv::Mat & bgr, const Ligh
   cv::cvtColor(bgr, hsv, cv::COLOR_BGR2HSV);
   std::vector<cv::Mat> ch;
   cv::split(hsv, ch);
-  cv::Mat bright = (ch[1] >= c.s_min) & (ch[2] >= c.v_min);
+  const cv::Mat sat = ch[1] >= c.s_min;
+  const auto bright = [&](int v) {return sat & (ch[2] >= (v < 0 ? c.v_min : v));};
+  cv::Mat red = ((ch[0] <= c.red_h_max) | (ch[0] >= c.red2_h_min)) & bright(c.red_v_min);
+  if (c.red_warm_h_min > 0) {
+    const int v = c.red_warm_v_min >= 0 ? c.red_warm_v_min : c.red_v_min;
+    red |= (ch[0] >= c.red_warm_h_min) & (ch[0] < c.red2_h_min) & bright(v);
+  }
   const std::pair<Light, cv::Mat> masks[] = {
-    {Light::Red, ((ch[0] <= c.red_h_max) | (ch[0] >= c.red2_h_min)) & bright},
-    {Light::Yellow, (ch[0] >= c.yellow_h_min) & (ch[0] <= c.yellow_h_max) & bright},
-    {Light::Green, (ch[0] >= c.green_h_min) & (ch[0] <= c.green_h_max) & bright},
+    {Light::Red, red},
+    {Light::Yellow, (ch[0] >= c.yellow_h_min) & (ch[0] <= c.yellow_h_max) & bright(c.yellow_v_min)},
+    {Light::Green, (ch[0] >= c.green_h_min) & (ch[0] <= c.green_h_max) & bright(c.green_v_min)},
   };
   for (const auto & [color, mask] : masks) {
     cv::Mat labels, stats, cents;
