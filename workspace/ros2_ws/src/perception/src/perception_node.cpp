@@ -68,6 +68,7 @@
 #include "perception/arm_target_lock.hpp"
 #include "perception/barcode_locator.hpp"
 #include "perception/barcode_reader.hpp"
+#include "perception/camera_info_check.hpp"
 #include "perception/depth_split.hpp"
 #include "perception/detector.hpp"
 #include "perception/dice_check.hpp"
@@ -597,6 +598,23 @@ private:
   }
 
   // ------------------------------ 처리 ------------------------------
+  // camera_info 형식 · 영상 크기 검사(camera_info_check.hpp). 맞지 않으면 그 영상으로 결과를 내지 않는다.
+  //   frame_id 가 영상과 다르면 경고만(영상 frame_id 를 쓰므로 위치 계산에는 영향 없음)
+  bool info_ok(const CameraInfo & info, uint32_t w, uint32_t h, bool allow_scale, const std::string & who,
+    const std::string & image_frame)
+  {
+    const std::string why = check_camera_info(info.k, info.width, info.height, w, h, allow_scale);
+    if (!why.empty()) {
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "%s camera_info 거부: %s", who.c_str(), why.c_str());
+      return false;
+    }
+    if (!info.header.frame_id.empty() && !image_frame.empty() && info.header.frame_id != image_frame) {
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 10000, "%s camera_info frame_id %s 가 영상 %s 와 다름", who.c_str(),
+        info.header.frame_id.c_str(), image_frame.c_str());
+    }
+    return true;
+  }
+
   // 카메라 광학 좌표 점 → base_link · odom. D435 는 차체에 고정이라 base 변환은 한 번 찾아 기억하고, odom 은 촬영 시각
   bool to_base_odom(const cv::Point3d & p, const std::string & cam_frame, const rclcpp::Time & stamp, Vec3 & base, Vec3 & odom)
   {
@@ -653,6 +671,7 @@ private:
         c.name.c_str(), !s.info ? "camera_info" : "stamp 맞는 깊이 영상");
       return;
     }
+    if (!info_ok(*s.info, s.color->width, s.color->height, false, c.name, s.color->header.frame_id)) {return;}
     const double scale = depth_scale_for_encoding(s.depth->encoding);
     if (scale <= 0.0) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "%s: 모르는 깊이 인코딩 %s", c.name.c_str(), s.depth->encoding.c_str());
@@ -827,6 +846,7 @@ private:
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "%s: camera_info 없음 — 마커 자세를 낼 수 없음", c.name.c_str());
       return std::nullopt;
     }
+    if (!info_ok(*s.info, s.color->width, s.color->height, false, c.name, s.color->header.frame_id)) {return std::nullopt;}
     cv::Mat K(3, 3, CV_64F);
     for (int i = 0; i < 9; ++i) {K.at<double>(i / 3, i % 3) = s.info->k[i];}
     cv::Mat D(1, static_cast<int>(s.info->d.size()), CV_64F);
@@ -1161,6 +1181,7 @@ private:
         avg.at<float>(y, x) = n >= need ? static_cast<float>(a.sum.at<double>(y, x) / n) : 0.0f;
       }
     }
+    if (!info_ok(*info, color_msg->width, color_msg->height, false, c.name, color_msg->header.frame_id)) {return;}
     const BarcodeK K{info->k[0], info->k[4], info->k[2], info->k[5]};
     cv::Matx44d T = cv::Matx44d::eye();
     for (int r = 0; r < 3; ++r) {
@@ -1224,6 +1245,7 @@ private:
       const double t = stamp.seconds();
       if (t <= signal_last_t_ || !f.info) {continue;}
       signal_last_t_ = t;
+      if (!info_ok(*f.info, f.color->width, f.color->height, false, f.cam->name, f.color->header.frame_id)) {continue;}   // 모름(빠진 프레임)
       if (!f.depth) {   // 깊이 짝이 없으면 켜진 등을 확인할 수 없음 → 꺼짐이 아니라 모름(빠진 프레임)
         RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "%s 신호등 프레임 깊이 짝 없음 — 모름으로 둠",
           f.cam->name.c_str());
@@ -1503,7 +1525,12 @@ private:
   // camera_info 로 왜곡 보정. camera_info 가 없으면 원본 그대로이고 태그 자세는 내지 않는다(newK_ 비움)
   cv::Mat undistort(const cv::Mat & img, const CameraInfo::ConstSharedPtr & info)
   {
-    if (!info || info->k[0] <= 0.0) {newK_ = cv::Mat(); return img;}
+    if (!info || info->k[0] <= 0.0 ||
+      !info_ok(*info, static_cast<uint32_t>(img.cols), static_cast<uint32_t>(img.rows), true, "arm", ""))
+    {
+      newK_ = cv::Mat();
+      return img;
+    }
     const bool same = map_info_ && map_info_->k == info->k && map_info_->d == info->d && map_size_ == img.size();
     if (!same) {
       cv::Mat K(3, 3, CV_64F);

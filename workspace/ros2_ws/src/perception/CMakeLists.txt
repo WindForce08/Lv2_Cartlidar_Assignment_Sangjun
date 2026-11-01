@@ -96,6 +96,9 @@ if(BUILD_TESTING)
   target_link_libraries(test_perception_logic tf2::tf2 ${geometry_msgs_TARGETS})
   target_compile_definitions(test_perception_logic PRIVATE
     PERCEPTION_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data" PERCEPTION_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/data")
+  # camera_info 형식 검사 (camera_info_check.hpp, 헤더만)
+  ament_add_gtest(test_camera_info test/test_camera_info.cpp)
+  target_include_directories(test_camera_info PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 endif()
 
 ament_package()
