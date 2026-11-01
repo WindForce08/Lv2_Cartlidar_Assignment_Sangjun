@@ -56,3 +56,31 @@ def test_invalid_yaw_cannot_partially_modify_state():
     s=Survey();x,y=BOX_CENTERS[0]
     assert not s.observe({'x':x-.04,'y':y,'id':0,'camera':'arm','confidence':1.,'yaw_deg':'bad'},10.)
     assert all(t['n_obs']==0 for t in s.snapshot()['slots'])
+
+
+def test_tag_ring_coverage_uses_explicit_parameter():
+    s=Survey(tagged_min_confidence=.4);x,y=BOX_CENTERS[0]
+    o={'x':x-.04,'y':y,'id':0,'color':'red','shape':'cylinder','pose':'standing','camera':'arm','confidence':.5}
+    assert s.observe(o,10.) and s.observe(o,11.)
+    slot=s.snapshot()['slots'][0]
+    assert (slot['color'],slot['shape'],slot['id'])==('red','cylinder',0)
+    assert not s.snapshot()['complete']
+
+def test_default_threshold_and_non_tag_threshold_are_preserved():
+    x,y=BOX_CENTERS[0]
+    for s,tid,camera in [(Survey(),0,'arm'),(Survey(tagged_min_confidence=.4),-1,'front_d435')]:
+        assert s.observe({'x':x-.04,'y':y,'id':tid,'color':'red','shape':'cylinder','pose':'standing','camera':camera,'confidence':.5},10.)
+        assert s.snapshot()['slots'][0]['color'] is None
+
+def test_low_tag_score_and_conflicting_color_still_refuse():
+    x,y=BOX_CENTERS[0];s=Survey(tagged_min_confidence=.4)
+    o={'x':x-.04,'y':y,'id':0,'color':'red','shape':'cylinder','pose':'standing','camera':'arm','confidence':.2}
+    assert s.observe(o,10.) and s.snapshot()['slots'][0]['color'] is None
+    for stamp,color in [(11.,'red'),(12.,'red'),(13.,'green')]:
+        assert s.observe(dict(o,color=color,confidence=.8),stamp)
+    assert s.snapshot()['slots'][0]['color'] is None and not s.snapshot()['complete']
+
+def test_invalid_tag_score_threshold_refused():
+    import pytest
+    for value in [-.1,1.1,float('nan'),float('inf')]:
+        with pytest.raises(ValueError):Survey(tagged_min_confidence=value)

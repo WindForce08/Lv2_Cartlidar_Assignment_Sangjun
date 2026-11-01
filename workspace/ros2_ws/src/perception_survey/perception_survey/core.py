@@ -11,9 +11,12 @@ BOX_CENTERS = ((1.468,.950),(3.670,3.152),(2.936,5.354),(.734,5.354),(2.202,5.35
 CAMERAS = {0:'front_d435',1:'rear_d435',2:'arm'}
 
 class Survey:
-    def __init__(self, frame='map', gate_m=.035, min_observations=2):
+    def __init__(self, frame='map', gate_m=.035, min_observations=2, tagged_min_confidence=.6):
         if not 0 < gate_m < .04 or min_observations < 1:
             raise ValueError('결합 문턱은 0~40mm 사이, 최소 관측은 1 이상')
+        if not math.isfinite(tagged_min_confidence) or not 0 <= tagged_min_confidence <= 1:
+            raise ValueError('태그 관측 색띠 점수 문턱은 0~1의 유한값이어야 함')
+        self.tagged_min_confidence = tagged_min_confidence
         self.frame, self.gate, self.minimum = frame, gate_m, min_observations
         self.reset()
 
@@ -65,7 +68,9 @@ class Survey:
         for field,value in (('color',color),('shape',shape),('pose',pose),('id',tid if tid>=0 else None)):
             if value is None:continue
             # Puck.confidence는 색/검출 신뢰도. 태그 ID를 이 값으로 버리지 않음.
-            if field in ('color','shape') and score<.6:continue
+            # 태그 색띠 점유율과 D435 검출 점수는 같은 수치 의미가 아니다.
+            threshold = self.tagged_min_confidence if tid >= 0 and camera == 'arm' else .6
+            if field in ('color','shape') and score < threshold:continue
             votes=t['_values'][field];votes[value]=votes.get(value,0)+1
             t[field]=next(iter(votes)) if len(votes)==1 else None
             if field in t['conf']:t['conf'][field]=(1. if field=='id' else score) if len(votes)==1 else 0.

@@ -29,7 +29,7 @@ class SurveyNode(Node):
     def __init__(self):
         super().__init__('puck_survey')
         frame=self.declare_parameter('world_frame','map').value
-        self.core=Survey(frame,self.declare_parameter('merge_gate_m',.035).value,self.declare_parameter('min_observations',2).value)
+        self.core=Survey(frame,self.declare_parameter('merge_gate_m',.035).value,self.declare_parameter('min_observations',2).value,self.declare_parameter('tagged_min_confidence',.6).value)
         self.age=self.declare_parameter('max_age_s',.5).value
         self.output=self.declare_parameter('output_path','').value
         self.enabled=False

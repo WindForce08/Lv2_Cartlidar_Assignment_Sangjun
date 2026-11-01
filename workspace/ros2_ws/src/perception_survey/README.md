@@ -1,6 +1,6 @@
 # B0 퍽 등록부 노드
 
-개인 폴더에서 검증한 독립 ROS 2 패키지. 팀 저장소에는 아직 반영하지 않았다.
+인지 관측을 누적하는 독립 ROS 2 패키지.
 
 - 입력: `/perception/pucks` (`robot_interfaces/PuckArray`), 메시지 촬영 시각의 world_frame←header.frame_id TF. 기본 지도 frame=`map`, 지도 좌표가 발제 원점에 정렬돼 있어야 한다. 모의 odom은 파라미터로 지정.
 - 출력: `/perception/puck_survey` (`std_msgs/String`, reliable·transient_local·depth1), B0의 boxes6개·slots12개 JSON. 좌표 mm, 초기 박스 중심은 발제 고정값. `complete`가 false인 결과는 할당에 쓰지 않는다.
@@ -14,3 +14,5 @@
 - 태그 ID를 못 읽은 D435 관측을 위치로 같은 슬롯에 연결한다. 모르는 ID·색·모양·자세를 채워 넣지 않는다. 충돌은 다수결로 덮지 않으며 조사 재시작이 필요하다. 다음 개선은 슬롯별 재관측 초기화 서비스다.
 
 기존 perception 노드/robot_interfaces/mission을 수정하지 않는다. 실제 카메라·YOLO·태그의 인식률이나 조사 경로 완주를 검증한 패키지가 아니라, 인지 관측을 누적·전달하는 노드다. 초기 박스가 발제 위치에서 35mm 이상 이동하거나 ±30° 가정을 넘으면 별도 박스 관측이 필요하다.
+
+- `tagged_min_confidence`(기본0.6): 태그 ID가 있고 camera=arm인 관측의 색·형상 점수 문턱. D435는 기존0.6을 유지한다. Puck.confidence는 태그의 경우 정사각 색띠 점유율이므로 원기둥의 곡면에서는 올바른 색도0.6 미만일 수 있다. 기존 R6 방식과 연결한 모의 구성에서는0.4를 명시해 검증한다. 이는 실물 최적값·확률 보정이 아니며 낮은 점수·충돌·미관측·최소관측 조건은 계속 거부한다.
