@@ -65,20 +65,34 @@ BarcodeRead BarcodeReader::read(const cv::Mat & img)
     cv::resize(g, big, cv::Size(), scale_, scale_, cv::INTER_CUBIC);
     g = big;
   }
-  zbar_image_t * zi = zbar_image_create();
-  zbar_image_set_format(zi, zbar_fourcc('Y', '8', '0', '0'));
-  zbar_image_set_size(zi, static_cast<unsigned>(g.cols), static_cast<unsigned>(g.rows));
-  zbar_image_set_data(zi, g.data, g.total(), nullptr);
-  zbar_scan_image(static_cast<zbar_image_scanner_t *>(scanner_), zi);
+  // 후보각은 영상 내용/정답과 무관하게 고정. 모든 각도의 문자열을 합쳐 충돌을 거부한다.
   int dropped = 0;
-  for (const zbar_symbol_t * s = zbar_image_first_symbol(zi); s; s = zbar_symbol_next(s)) {
-    if (zbar_symbol_get_quality(s) >= min_quality_) {
-      syms.emplace_back(zbar_symbol_get_data(s), zbar_symbol_get_data_length(s));
-    } else {
-      ++dropped;
+  for (const double angle : {0., -5., 5., -10., 10., -15., 15., -20., 20., -25., 25., -30., 30.}) {
+    cv::Mat scan;
+    if (angle == 0.0) {scan = g;}
+    else {
+      cv::Mat matrix = cv::getRotationMatrix2D(cv::Point2f(g.cols / 2.f, g.rows / 2.f), angle, 1.0);
+      const double c = std::abs(matrix.at<double>(0, 0)), sn = std::abs(matrix.at<double>(0, 1));
+      const int width = static_cast<int>(std::ceil(g.cols * c + g.rows * sn));
+      const int height = static_cast<int>(std::ceil(g.cols * sn + g.rows * c));
+      matrix.at<double>(0, 2) += (width - g.cols) / 2.0;
+      matrix.at<double>(1, 2) += (height - g.rows) / 2.0;
+      cv::warpAffine(g, scan, matrix, cv::Size(width, height), cv::INTER_LINEAR, cv::BORDER_CONSTANT, cv::Scalar(255));
     }
+    zbar_image_t * zi = zbar_image_create();
+    zbar_image_set_format(zi, zbar_fourcc('Y', '8', '0', '0'));
+    zbar_image_set_size(zi, static_cast<unsigned>(scan.cols), static_cast<unsigned>(scan.rows));
+    zbar_image_set_data(zi, scan.data, scan.total(), nullptr);
+    zbar_scan_image(static_cast<zbar_image_scanner_t *>(scanner_), zi);
+    for (const zbar_symbol_t * s = zbar_image_first_symbol(zi); s; s = zbar_symbol_next(s)) {
+      if (zbar_symbol_get_quality(s) >= min_quality_) {
+        syms.emplace_back(zbar_symbol_get_data(s), zbar_symbol_get_data_length(s));
+      } else {
+        ++dropped;
+      }
+    }
+    zbar_image_destroy(zi);
   }
-  zbar_image_destroy(zi);
   BarcodeRead r = decide_barcode(syms);
   r.dropped = dropped;
   return r;

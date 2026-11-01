@@ -253,3 +253,23 @@ TEST(BarcodeReader, Decide)
   EXPECT_FALSE(decide_barcode({"PF-&3", "P2-03"}).ok);   // 판정 1차 틀린 문자열 사례
   EXPECT_FALSE(decide_barcode({}).ok);
 }
+
+TEST(BarcodeReader, RotatedJpegKeepsChecksumAndDecision)
+{
+  const cv::Mat source = cv::imread(TEX, cv::IMREAD_COLOR);
+  ASSERT_FALSE(source.empty());
+  BarcodeReader reader;
+  for (double angle : {19.0, -162.0}) {
+    cv::Mat small, rotated;
+    cv::resize(source, small, cv::Size(264, 151), 0, 0, cv::INTER_AREA);
+    cv::Mat matrix = cv::getRotationMatrix2D(cv::Point2f(small.cols / 2.f, small.rows / 2.f), angle, 1.0);
+    matrix.at<double>(0, 2) += (480 - small.cols) / 2.0;
+    matrix.at<double>(1, 2) += (480 - small.rows) / 2.0;
+    cv::warpAffine(small, rotated, matrix, cv::Size(480, 480), cv::INTER_LINEAR, cv::BORDER_CONSTANT, cv::Scalar(255,255,255));
+    std::vector<uchar> jpeg;
+    ASSERT_TRUE(cv::imencode(".jpg", rotated, jpeg, {cv::IMWRITE_JPEG_QUALITY, 70}));
+    const auto result = reader.read(cv::imdecode(jpeg, cv::IMREAD_COLOR));
+    EXPECT_TRUE(result.ok) << angle;
+    EXPECT_EQ(result.text, "P2-01") << angle;
+  }
+}
