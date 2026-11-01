@@ -6,11 +6,15 @@
 //      면 전체 스티커, 직육면체 면은 스티커 둘레에 퍽 색이 보임) → 끝면 · 원기둥
 //   2) 어느 면인지: 태그 평면의 두 축 방향 ±axis_probe 지점이 양쪽 모두 퍽 색이면 그 축이 긴 축(옆면).
 //      두 축 모두 아니면 끝면(긴 축 = 태그 법선). 색을 모르면 판단하지 않는다(orientation_valid = false, 옆면으로 봄)
+//      탐침이 화면 밖이면(3 × 3 점 중 화면 안이 절반 미만) 그 지점은 모름 → 면을 정하지 않는다(옆면으로 봄).
+//      화면 가장자리에 잘린 누운 퍽을 끝면(서 있음)으로 보지 않게 (B0′ 모의 판정, 2026-10-31)
+//      옆면이면 직육면체다(원기둥 옆은 곡면이라 라벨이 없음 — 과제 라벨은 윗면 · 아랫면)
 //   3) 중심: 태그 중심에서 법선 반대로 옆면이면 half_width, 끝면이면 half_length
 //   4) 끝면의 모양: 태그 대각선 네 방향 중심에서 corner_probe × √2(18 mm) 지점이 퍽 색인지.
 //      직육면체 끝면(30 × 30)은 그 지점이 면 안, 원기둥 끝면(지름 30)은 면 밖이다.
-//      퍽 색이 3곳 이상이면 직육면체, 1곳 이하면 원기둥, 아니면 모름
+//      퍽 색이 3곳 이상이면 직육면체, 퍽 색 · 모름이 합쳐 1곳 이하면 원기둥, 아니면 모름
 //      (과제 자료 2026-10-23: 태그는 윗면 · 아랫면의 20 × 20 mm 라벨이라 끝면 둘레에 퍽 색이 보인다)
+//      원기둥이면 점수(confidence)를 원형 띠로 다시 센다. 정사각 띠 모서리는 끝면(반지름 15 mm) 밖 바닥이라 낮게 나온다
 #pragma once
 
 #include <algorithm>
@@ -103,8 +107,29 @@ inline int ring_votes(const cv::Mat & hsv, const cv::Matx33d & R, const cv::Vec3
   return n;
 }
 
-// 태그 평면 (x, y) 둘레 3 × 3 점 중 색 cls 가 절반 넘는지
-inline bool probe_is(const cv::Mat & hsv, const cv::Matx33d & R, const cv::Vec3d & t, const cv::Mat & K,
+// 원형 띠 [r_in, r_out] 의 색 표 (원기둥 끝면 점수). votes[3], 투영된 화소 수 반환
+inline int circle_votes(const cv::Mat & hsv, const cv::Matx33d & R, const cv::Vec3d & t, const cv::Mat & K,
+  const std::vector<HsvRange> & ranges, double r_in, double r_out, std::array<int, 3> & votes)
+{
+  votes = {0, 0, 0};
+  int n = 0;
+  for (double r = r_in; r <= r_out + 1e-9; r += 0.0005) {
+    for (int k = 0; k < 180; ++k) {
+      const double a = k * M_PI / 90.0;
+      cv::Point px;
+      if (!project(R, t, K, r * std::cos(a), r * std::sin(a), hsv.size(), px)) {continue;}
+      ++n;
+      const int c = classify_hsv(hsv.at<cv::Vec3b>(px), ranges);
+      if (c >= 0 && c < 3) {++votes[c];}
+    }
+  }
+  return n;
+}
+
+enum class Probe {kNo, kYes, kUnknown};
+
+// 태그 평면 (x, y) 둘레 3 × 3 점 중 색 cls 가 절반 넘는지. 화면 안 점이 절반 미만이면 모름
+inline Probe probe(const cv::Mat & hsv, const cv::Matx33d & R, const cv::Vec3d & t, const cv::Mat & K,
   const std::vector<HsvRange> & ranges, double x, double y, double h, int cls)
 {
   int hit = 0, n = 0;
@@ -116,7 +141,8 @@ inline bool probe_is(const cv::Mat & hsv, const cv::Matx33d & R, const cv::Vec3d
       hit += classify_hsv(hsv.at<cv::Vec3b>(px), ranges) == cls;
     }
   }
-  return n > 0 && 2 * hit > n;
+  if (2 * n < 9) {return Probe::kUnknown;}
+  return 2 * hit > n ? Probe::kYes : Probe::kNo;
 }
 
 // 원형 띠(반지름 r_in~r_out) 화소 중 흰 스티커(채도 max_s 미만, 밝기 ≥ ratio × ref_v)의 비율.
@@ -201,28 +227,42 @@ inline PuckEstimate estimate_puck(const cv::Mat & bgr, const cv::Mat & K, const 
     e.orientation_valid = true;
     e.shape = 1;
   } else if (e.color_cls >= 0) {
-    auto both = [&](double ux, double uy) {
-      return detail::probe_is(hsv, R, t, K, ranges, ux * g.axis_probe, uy * g.axis_probe, g.probe_half, e.color_cls) &&
-             detail::probe_is(hsv, R, t, K, ranges, -ux * g.axis_probe, -uy * g.axis_probe, g.probe_half, e.color_cls);
+    using detail::Probe;
+    auto at = [&](double x, double y) {
+      return detail::probe(hsv, R, t, K, ranges, x, y, g.probe_half, e.color_cls);
     };
-    const bool along_x = both(1, 0), along_y = both(0, 1);
-    if (along_x != along_y) {         // 옆면: 긴 축이 태그 평면 안
-      const cv::Vec3d z = along_x ? ex : ey;
+    // 두 방향 모두 퍽 색이면 Yes, 한쪽이라도 아니면 No, 그 밖(화면 밖이 섞임)은 Unknown
+    auto both = [&](double ux, double uy) {
+      const Probe a = at(ux * g.axis_probe, uy * g.axis_probe), b = at(-ux * g.axis_probe, -uy * g.axis_probe);
+      if (a == Probe::kNo || b == Probe::kNo) {return Probe::kNo;}
+      return a == Probe::kYes && b == Probe::kYes ? Probe::kYes : Probe::kUnknown;
+    };
+    const Probe along_x = both(1, 0), along_y = both(0, 1);
+    const bool known = along_x != Probe::kUnknown && along_y != Probe::kUnknown;
+    if (known && (along_x == Probe::kYes) != (along_y == Probe::kYes)) {   // 옆면: 긴 축이 태그 평면 안 → 직육면체
+      const cv::Vec3d z = along_x == Probe::kYes ? ex : ey;
       e.axes = detail::from_columns(ez, z.cross(ez), z);
       e.orientation_valid = true;
-    } else if (!along_x) {            // 끝면: 긴 축 = 법선
+      e.shape = 2;
+    } else if (known && along_x == Probe::kNo) {   // 끝면: 긴 축 = 법선
       e.end_face = true;
       depth = g.half_length;
       e.axes = detail::from_columns(ex, ez.cross(ex), ez);
       e.orientation_valid = true;
-      int corners = 0;
+      int corners = 0, unknown = 0;
       for (int sx : {-1, 1}) {
         for (int sy : {-1, 1}) {
-          corners += detail::probe_is(hsv, R, t, K, ranges, sx * g.corner_probe, sy * g.corner_probe, g.probe_half,
-            e.color_cls);
+          const Probe c = at(sx * g.corner_probe, sy * g.corner_probe);
+          corners += c == Probe::kYes;
+          unknown += c == Probe::kUnknown;
         }
       }
-      e.shape = corners >= 3 ? 2 : corners <= 1 ? 1 : 0;
+      e.shape = corners >= 3 ? 2 : corners + unknown <= 1 ? 1 : 0;
+      if (e.shape == 1) {
+        std::array<int, 3> cv_votes;
+        const int cn = detail::circle_votes(hsv, R, t, K, ranges, g.ring_in, g.ring_out, cv_votes);
+        if (cn > 0) {e.confidence = static_cast<double>(cv_votes[e.color_cls]) / cn;}
+      }
     }
   }
   e.center = t - ez * depth;

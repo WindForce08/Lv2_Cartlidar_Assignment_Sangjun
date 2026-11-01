@@ -85,6 +85,7 @@ TEST(Puck, SideFaceLongAxisVertical)
   EXPECT_NEAR(e.center[2], t.tvec[2] + 0.015, 0.001);   // 옆면: 법선 반대로 반폭
   EXPECT_GT(std::abs(e.axes(1, 2)), 0.95);              // 긴 축 = 화면 세로(광학 y)
   EXPECT_GT(-e.axes(2, 0), 0.95);                       // x = 보이는 면 바깥 법선 = 카메라 쪽
+  EXPECT_EQ(e.shape, 2);                                // 옆면 라벨 → 직육면체
 }
 
 TEST(Puck, SideFaceLongAxisHorizontal)
@@ -95,6 +96,24 @@ TEST(Puck, SideFaceLongAxisHorizontal)
   ASSERT_TRUE(e.orientation_valid);
   EXPECT_FALSE(e.end_face);
   EXPECT_GT(std::abs(e.axes(0, 2)), 0.95);              // 긴 축 = 화면 가로(광학 x)
+  EXPECT_EQ(e.shape, 2);
+}
+
+TEST(Puck, SideFaceCutByImageEdgeIsNotEndFace)
+{
+  // 누운 직육면체 옆면(긴 축 가로)이 화면 왼쪽 가장자리에 잘림: 왼쪽 긴 축 탐침이 화면 밖 → 끝면(서 있음)으로 보지 않음
+  cv::Mat full = face(0.06, 0.03, GREEN, 5);
+  const int shift = static_cast<int>(CX) - static_cast<int>(std::lround(0.016 * PPM));   // 태그 중심을 왼쪽 끝에서 16 mm 로
+  cv::Mat img(full.size(), full.type(), cv::Scalar(128, 128, 128));
+  full(cv::Rect(shift, 0, full.cols - shift, full.rows)).copyTo(img(cv::Rect(0, 0, full.cols - shift, full.rows)));
+  TagDetector d("tag36h11", 0.018);
+  const auto tags = d.detect(img, K(), cv::Mat());
+  ASSERT_EQ(tags.size(), 1u);
+  const auto e = estimate_puck(img, K(), tags[0], default_hsv(), PuckGeometry{});
+  EXPECT_EQ(e.color_cls, 1);
+  EXPECT_FALSE(e.end_face);
+  EXPECT_FALSE(e.orientation_valid);
+  EXPECT_EQ(e.shape, 0);
 }
 
 TEST(Puck, EndFace)
@@ -203,6 +222,7 @@ TEST(Puck, TopFaceCuboidAndCylinder)
     EXPECT_TRUE(e.end_face);
     EXPECT_FALSE(e.cylinder_cap);
     EXPECT_EQ(e.shape, 1) << "원기둥";
+    EXPECT_GT(e.confidence, 0.9) << "원기둥 점수는 원형 띠(끝면 안)로 셈";
   }
 }
 
