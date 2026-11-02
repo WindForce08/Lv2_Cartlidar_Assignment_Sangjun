@@ -1,7 +1,7 @@
 #usda 1.0
 (
     doc = """주사위 경기장 + waffle_4wd (full). 자동 생성: isaac/tools/make_maze_scene.py (start_zone, --yaw 3.14159). 직접 고치지 말 것.
-로봇: 출발 구역 (start_zone) 가운데 (차체 외곽 기준, 가장자리까지 117 mm 남음), 방향 180 deg, 팔 = drive 자세."""
+로봇: 출발 구역 (start_zone) 가운데 (차체 외곽 기준, 가장자리까지 127 mm 남음), 방향 180 deg, 팔 = drive 자세."""
     defaultPrim = "World"
     kilogramsPerUnit = 1
     metersPerUnit = 1
@@ -23,7 +23,7 @@ over "World"
         prepend references = @../usd/full/waffle_4wd_full/waffle_4wd_full.usda@
     )
     {
-        double3 xformOp:translate = (0.691150, 0.950000, 0.009750)
+        double3 xformOp:translate = (0.693650, 0.950000, 0.009750)
         quatd xformOp:orient = (0.000000000, 0, 0, 1.000000000)
         uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
 

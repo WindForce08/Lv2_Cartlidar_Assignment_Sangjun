@@ -1,0 +1,133 @@
+# 센서 사양 (실물) + 시뮬레이션 (Gazebo) 설정 — waffle_4wd_description
+#
+# spec: 실물 사양 (출처 표기). sim: Gazebo 센서 값 (tools/make_revision.py 가 읽어 URDF 의 <gazebo> 센서를 만든다).
+# frame · topic 은 팀 저장소 (Lv2_Cartlidar_Assignment: docs/interfaces.md, perception/config/*.yaml) 이름을 따른다.
+# (미확정) = 실물 · 공식 자료로 다시 확인할 값.
+#
+# 출처
+#   [LDS]   ROBOTIS e-Manual, TurtleBot3 appendix LDS-03  https://emanual.robotis.com/docs/en/platform/turtlebot3/appendix_lds_03/
+#   [TF]    Benewake TFmini Plus 사용자 매뉴얼 SJ-PM-TFmini Plus A02 (~/Downloads/SJ-PM-TFmini_Plus_A02_Product_Mannual_EN.pdf)
+#   [D435]  Intel RealSense 비교표 https://intelrealsense.com/compare-depth-cameras , D435 제품 소개 (D435_Series_ProductBrief)
+#   [OCR]   ROBOTIS e-Manual OpenCR 1.0  https://emanual.robotis.com/docs/en/parts/controller/opencr10/
+#   [ARDU]  팀 FreeCAD Gripper_Camera/make_gripper_cam_bracket.py (B0201 판매 정보 대각 120°, LN004 렌즈)
+#   [URDF]  이 패키지 URDF 의 frame (받은 waffle_4wd_description_261027_1711 의 카메라 frame 그대로)
+
+lds03:                                   # ROBOTIS LDS-03 (= COIN-D4) x 2, 상판 밑에 뒤집어 (scan frame roll π)
+  spec:
+    range_m: [0.05, 12.0]                # [LDS]
+    accuracy: "±10 mm (0.05~1 m), ±20 mm (1 m~)"   # [LDS]
+    scan_rate_hz: 10                     # [LDS] 제품마다 다를 수 있음
+    angular_range_deg: 360               # [LDS]
+    angular_resolution_deg: 0.9          # [LDS] 스캔 주기에 따라 달라짐 → 한 바퀴 400 점
+    interface: "3.3 V UART 115200 bps 8N1, Tx 만 (USB2LDS 로 USB 연결)"   # [LDS]
+    power: "5 V ±10 %, 240~320 mA"       # [LDS]
+    mass_kg: 0.042                       # [LDS]
+    size_mm: "54.7 W x 39.7 D x 34 H"    # [LDS]
+  units:
+    front: {frame: laser_front, topic: /scan_front}
+    rear: {frame: laser_rear, topic: /scan_rear}
+  sim:
+    update_rate_hz: 10
+    samples: 400                         # 0.9° 간격, -180° ~ +179.1°
+    range_m: [0.05, 12.0]
+    noise_stddev_m: 0.01                 # 정확도 ±10~20 mm 를 가우스 잡음으로 (가정)
+
+tfmini_plus:                             # Benewake TFmini Plus x 1, 하판 앞 가운데 (브라켓 v2)
+  spec:
+    range_m: [0.1, 12.0]                 # [TF] 흰 판 (반사율 90 %). 검은 판 (10 %) 은 0.1~5 m
+    accuracy: "±5 cm (0.1~6 m), ±1 % (6~12 m)"   # [TF]
+    resolution_m: 0.005                  # [TF] 거리 단위 cm (기본 출력)
+    fov_deg: 3.6                         # [TF] 이론값, 확산각 6°
+    frame_rate_hz: 100                   # [TF] 기본 100 Hz, 1~1000 Hz (1000/n) 설정
+    interface: "UART 115200 bps 8N1 (기본)"       # [TF] 팀 tfmini.yaml baud 115200 과 같음
+    power: "5 V ±0.5 V, 평균 ≤ 110 mA, 최대 500 mA"   # [TF]
+    mass_kg: 0.012                       # 데이터시트 12 ± 1 g (1안 build_rover.py 기록)
+    size_mm: "35 W x 18.5 H x 21 D"      # [TF] Figure 4
+  frame: tfmini_link                     # 렌즈 앞면 가운데, +x 측정 방향
+  topic: /tfmini/range                   # sensor_msgs/Range (팀 tfmini.yaml · lidar.yaml)
+  sim:
+    update_rate_hz: 100
+    range_m: [0.1, 12.0]
+    noise_stddev_m: 0.025                # ±5 cm 를 가우스 잡음으로 (가정)
+    scan_topic: /tfmini/scan             # Gazebo 는 광선 1 개짜리 LaserScan → scripts/tfmini_scan_to_range.py 가 Range 로
+
+d435:                                    # Intel RealSense D435 x 2, 위 가로대 앞 · 뒤 (35.2° 아래로)
+  spec:
+    depth_fov_deg: [87, 58]              # [D435] 가로 x 세로, 장치마다 ±3°
+    color_fov_deg: [69, 42]              # [D435] 1920 x 1080 기준
+    depth_min_m: 0.28                    # [D435] 최대 해상도 기준 (낮은 해상도에서 더 짧음)
+    depth_max_m: 10.0                    # [D435] 환경 따라 다름
+    stereo_baseline_m: 0.050             # [URDF] infra1 · infra2 frame 간격 50.04 mm
+    depth_rate_hz: "최대 90"             # [D435]
+    color: "1920 x 1080 최대, 30 Hz"     # [D435]
+  units:
+    front: {link: top_camera_front_link, prefix: /top_camera_front}
+    rear: {link: top_camera_rear_link, prefix: /top_camera_rear}
+  sim:                                   # 사용자 결정 2026-10-28: 640 x 480 30 Hz, IR 스테레오 포함
+    width: 640
+    height: 480
+    update_rate_hz: 30
+    color_hfov_rad: 0.9571               # fx ≈ 615 px (D435 컬러 640x480 대표값, 미확정 - 실물 camera_info 로 바꿀 것)
+    ir_hfov_rad: 1.3829                  # fx ≈ 383 px (D435 IR 640x480 대표값, 미확정)
+    depth_clip_m: [0.105, 10.0]
+    image_noise_stddev: 0.007            # 0~1 밝기 기준 가우스 잡음 (가정)
+    depth_noise_stddev_m: 0.005          # 깊이 가우스 잡음 (가정. 실물은 거리에 따라 커짐: 2 m 에서 약 2 %)
+    sensor_forward_m: 0.008              # 컬러 · 깊이 Gazebo 센서를 광축으로 8 mm 앞에 (frame 이 몸체 메시 0.2~0.6 mm 안이라 깊이가 막힘). scripts/camera_info_fix.py 가 깊이 영상 · 점구름을 frame 기준으로 고쳐 냄 (+8 mm, 점구름 축 optical 로) -> 받는 쪽은 더할 것 없음 (2026-10-29)
+    ir_stereo: true
+    # Gazebo 센서: 컬러 camera + 같은 자리 depth_camera (깊이 = 컬러에 맞춘 깊이) + IR camera 2. rgbd_camera 는 이 로봇에서 장면을 못 봐서 안 씀
+    # 토픽 (prefix 뒤): color/image_raw · color/camera_info · aligned_depth_to_color/image_raw · aligned_depth_to_color/camera_info ·
+    #                    depth/color/points · infra1/image_rect_raw · infra1/camera_info · infra2/image_rect_raw · infra2/camera_info
+    # frame: <prefix 이름>_color_optical_frame (컬러 · 깊이), _infra1_optical_frame, _infra2_optical_frame
+
+arm_camera:                              # Arducam UC-684 B0201, 손목 롤 링크 위 (아래로 15°)
+  spec:
+    fov_diag_deg: 120                    # [ARDU] 판매 정보 (LN004 렌즈, 왜곡 큼)
+    resolution: "미확정 (1080p 로 판매되는 모델로 봄)"
+  frame: arm_camera_optical_frame        # 팀 perception.yaml 은 영상 header frame 을 씀
+  topic_prefix: /arm_camera              # image_raw · camera_info (팀 perception.yaml)
+  sim:
+    width: 1280                          # 가정 (16:9)
+    height: 720
+    update_rate_hz: 30
+    hfov_rad: 1.9721                     # 대각 120° 를 바늘구멍 (왜곡 없음) 16:9 로 바꾼 가로 113.0° (가정)
+    clip_m: [0.02, 5.0]
+    image_noise_stddev: 0.007
+
+imu:                                     # OpenCR 1.0 아래층 보드 IMU 하나 (B안 하단 전장: OpenCR 2층, 위층 IMU 는 끔)
+  spec:
+    chip: MPU9250 (자이로 3 축 · 가속도 3 축 · 지자기 3 축)   # [OCR] (단종 표기)
+    mcu: STM32F746ZGT6                   # [OCR]
+  units:
+    lower: {parent: opencr_lower_link, frame: imu_link, topic: /imu/data}   # 팀 imu_sensor_broadcaster frame_id = imu_link, 평균 노드 없음
+  sim:
+    update_rate_hz: 100                  # 가정 (팀 펌웨어 주기 확인 필요)
+    xyz_m: [0.0, 0.0, 0.0022]            # opencr_lower_link 원점 (보드 밑면 가운데) 에서 = base_link (0.0095, 0, 0.0202). 칩 실제 자리 · 축 방향은 미확정
+    gyro_noise_stddev_rad_s: 0.0017      # MPU9250 대략값 (가정)
+    accel_noise_stddev_m_s2: 0.03        # 가정
+
+drive:                                   # Gazebo DiffDrive (사용자 2026-10-28). 실물은 팀 diff_drive_controller (ros2_control)
+  sim:
+    left_joints: [wheel_left_front_joint, wheel_left_rear_joint]     # 팀 controllers_4wd.yaml 과 같은 이름
+    right_joints: [wheel_right_front_joint, wheel_right_rear_joint]
+    wheel_separation_m: 0.317            # [URDF] 좌우 바퀴 폭 가운데 y ±0.1585 (바퀴 메시 · 충돌 원통). 관절 원점 ±0.1546 은 3.9 mm 안쪽이라 쓰지 않음. 팀 controllers_4wd.yaml 과 같음 (2026-10-29)
+    wheel_radius_m: 0.033                # [URDF]
+    max_wheel_speed_rad_s: 10.9956       # [URDF] 바퀴 관절 velocity 한계 (벨트 1:1.5)
+    odom_rate_hz: 50
+    cmd_topic: /cmd_vel                  # geometry_msgs/TwistStamped (팀 interfaces.md)
+    odom_topic: /odom
+    odom_frame: odom
+    base_frame: base_link                # 팀 diff_drive_controller · EKF 와 같음 (odom -> base_link)
+    wheel_friction: [1.0, 1.0]           # mu1 · mu2 (가정, 시험으로 맞출 것)
+    ground_truth_topic: /ground_truth/odom   # 시뮬레이터가 아는 실제 위치 (world 기준), SLAM 채점용
+
+arm:                                     # Gazebo 관절 위치 제어 (JointPositionController). 실물은 팀 arm_controller
+  sim:
+    joints: [joint1, joint2, joint3, joint4, joint5, gripper_roll, gripper_left_joint, gripper_right_joint]   # gripper_roll = 그리퍼 개폐 모터 각 (팀 칸 5)
+    cmd_topic_format: /arm/{joint}/cmd_pos   # std_msgs/Float64
+    # 속도 명령 방식: 관절 속도 = p x 위치 오차 (최대 = URDF velocity 한계, 힘은 URDF effort 한계 안).
+    # 힘 (토크) 명령 PID 는 손목 · 그리퍼처럼 관성이 아주 작은 관절에서 1 ms 스텝으로 떨림 (2026-10-28 시험: 속도 2~6 rad/s 떨림, 차체가 밀림)
+    use_velocity_commands: true
+    p_gain: {revolute: 10.0, prismatic: 10.0}   # [1/s] (가정)
+    # 최대 속도 (가정). URDF 한계 4.8 rad/s 로 순간 출발하면 반작용으로 차체가 27 mm 밀림 (2026-10-28 시험) -> 실물 속도 한계 확인 뒤 맞출 것
+    max_speed: {revolute: 1.0, prismatic: 0.05}   # [rad/s, m/s]
+    joint_states_rate_hz: 50             # 팀 /joint_states 50 Hz

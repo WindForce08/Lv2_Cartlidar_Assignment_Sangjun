@@ -19,12 +19,12 @@ over "waffle_4wd"
             prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsArticulationRootAPI", "NewtonArticulationRootAPI", "PhysicsMassAPI", "NewtonMassAPI"]
         )
         {
-            double[] newton:inertia = [0.1046860177, 0.1006229425, 0.04810011253, -0.0003766636526, 0.0219431, 0.0007030256694]
+            double[] newton:inertia = [0.1074054579, 0.1053377729, 0.05273049135, -0.0002622938477, 0.02551111489, 0.0007371105324]
             bool newton:selfCollisionEnabled = 1
-            point3f physics:centerOfMass = (-0.047354087, 0.0018823278, 0.11623545)
-            float3 physics:diagonalInertia = (0.040577848, 0.10063183, 0.112199396)
-            float physics:mass = 2.9876447
-            quatf physics:principalAxes = (-0.58142596, -0.0020989068, 0.81355387, 0.008335271)
+            point3f physics:centerOfMass = (-0.03190905, 0.0017836764, 0.11632639)
+            float3 physics:diagonalInertia = (0.04266631, 0.10534747, 0.117459945)
+            float physics:mass = 3.3900018
+            quatf physics:principalAxes = (-0.5627151, -0.005766398, 0.82662666, 0.002614675)
 
             over "wheel_left_front_link" (
                 prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI", "NewtonMassAPI"]
@@ -1412,18 +1412,6 @@ over "waffle_4wd"
                 }
             }
 
-            over "static_424" (
-                prepend apiSchemas = ["NewtonCollisionAPI"]
-            )
-            {
-            }
-
-            over "static_425" (
-                prepend apiSchemas = ["NewtonCollisionAPI"]
-            )
-            {
-            }
-
             over "static_426" (
                 prepend apiSchemas = ["NewtonCollisionAPI"]
             )
@@ -1431,18 +1419,6 @@ over "waffle_4wd"
             }
 
             over "static_427" (
-                prepend apiSchemas = ["NewtonCollisionAPI"]
-            )
-            {
-            }
-
-            over "static_428" (
-                prepend apiSchemas = ["NewtonCollisionAPI"]
-            )
-            {
-            }
-
-            over "static_429" (
                 prepend apiSchemas = ["NewtonCollisionAPI"]
             )
             {
@@ -1490,25 +1466,13 @@ over "waffle_4wd"
             {
             }
 
-            over "belt_bearing_block_FL" (
+            over "belt_block_FL" (
                 prepend apiSchemas = ["NewtonCollisionAPI"]
             )
             {
             }
 
-            over "belt_bearing_block_FR" (
-                prepend apiSchemas = ["NewtonCollisionAPI"]
-            )
-            {
-            }
-
-            over "belt_bearing_block_RL" (
-                prepend apiSchemas = ["NewtonCollisionAPI"]
-            )
-            {
-            }
-
-            over "belt_bearing_block_RR" (
+            over "belt_sled_FL" (
                 prepend apiSchemas = ["NewtonCollisionAPI"]
             )
             {
@@ -1520,7 +1484,43 @@ over "waffle_4wd"
             {
             }
 
+            over "belt_motor_FL" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "belt_block_FR" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "belt_sled_FR" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
             over "belt_guard_FR" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "belt_motor_FR" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "belt_block_RL" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "belt_sled_RL" (
                 prepend apiSchemas = ["NewtonCollisionAPI"]
             )
             {
@@ -1532,7 +1532,37 @@ over "waffle_4wd"
             {
             }
 
+            over "belt_motor_RL" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "belt_block_RR" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "belt_sled_RR" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
             over "belt_guard_RR" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "belt_motor_RR" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "deck_tray_1" (
                 prepend apiSchemas = ["NewtonCollisionAPI"]
             )
             {
@@ -1562,19 +1592,7 @@ over "waffle_4wd"
             {
             }
 
-            over "tfmini_bracket_base" (
-                prepend apiSchemas = ["NewtonCollisionAPI"]
-            )
-            {
-            }
-
-            over "tfmini_bracket_wall" (
-                prepend apiSchemas = ["NewtonCollisionAPI"]
-            )
-            {
-            }
-
-            over "tfmini_bracket_ledge" (
+            over "tfmini_holder_1" (
                 prepend apiSchemas = ["NewtonCollisionAPI"]
             )
             {
@@ -1598,25 +1616,13 @@ over "waffle_4wd"
             {
             }
 
-            over "opencr_left_1" (
+            over "opencr_lower" (
                 prepend apiSchemas = ["NewtonCollisionAPI"]
             )
             {
             }
 
-            over "battery_left" (
-                prepend apiSchemas = ["NewtonCollisionAPI"]
-            )
-            {
-            }
-
-            over "opencr_right_1" (
-                prepend apiSchemas = ["NewtonCollisionAPI"]
-            )
-            {
-            }
-
-            over "battery_right" (
+            over "opencr_upper" (
                 prepend apiSchemas = ["NewtonCollisionAPI"]
             )
             {
@@ -1641,7 +1647,7 @@ over "waffle_4wd"
             append rel physics:body0 = </waffle_4wd/Geometry/base_link>
             custom rel physics:body1
             append rel physics:body1 = </waffle_4wd/Geometry/base_link/wheel_left_front_link>
-            point3f physics:localPos0 = (0.08, 0.1546, 0.02625)
+            point3f physics:localPos0 = (0.0925, 0.1546, 0.02625)
             point3f physics:localPos1 = (0, 0, 0)
             quatf physics:localRot0 = (0.7071069, -0.70710665, 0, 0)
             quatf physics:localRot1 = (1, 0, 0, 0)
@@ -1663,7 +1669,7 @@ over "waffle_4wd"
             append rel physics:body0 = </waffle_4wd/Geometry/base_link>
             custom rel physics:body1
             append rel physics:body1 = </waffle_4wd/Geometry/base_link/wheel_right_front_link>
-            point3f physics:localPos0 = (0.08, -0.1546, 0.02625)
+            point3f physics:localPos0 = (0.0925, -0.1546, 0.02625)
             point3f physics:localPos1 = (0, 0, 0)
             quatf physics:localRot0 = (0.7071069, -0.70710665, 0, 0)
             quatf physics:localRot1 = (1, 0, 0, 0)
@@ -1685,7 +1691,7 @@ over "waffle_4wd"
             append rel physics:body0 = </waffle_4wd/Geometry/base_link>
             custom rel physics:body1
             append rel physics:body1 = </waffle_4wd/Geometry/base_link/wheel_left_rear_link>
-            point3f physics:localPos0 = (-0.08, 0.1546, 0.02625)
+            point3f physics:localPos0 = (-0.0675, 0.1546, 0.02625)
             point3f physics:localPos1 = (0, 0, 0)
             quatf physics:localRot0 = (0.7071069, -0.70710665, 0, 0)
             quatf physics:localRot1 = (1, 0, 0, 0)
@@ -1707,7 +1713,7 @@ over "waffle_4wd"
             append rel physics:body0 = </waffle_4wd/Geometry/base_link>
             custom rel physics:body1
             append rel physics:body1 = </waffle_4wd/Geometry/base_link/wheel_right_rear_link>
-            point3f physics:localPos0 = (-0.08, -0.1546, 0.02625)
+            point3f physics:localPos0 = (-0.0675, -0.1546, 0.02625)
             point3f physics:localPos1 = (0, 0, 0)
             quatf physics:localRot0 = (0.7071069, -0.70710665, 0, 0)
             quatf physics:localRot1 = (1, 0, 0, 0)

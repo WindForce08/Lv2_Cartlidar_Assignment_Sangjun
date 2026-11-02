@@ -12,23 +12,288 @@
 
 def Scope "Instances"
 {
-    def Xform "base_link" (
-        prepend references = @./geometries.usd@</Geometries/base_link>
+    def Xform "body_keep" (
+        prepend references = @./geometries.usd@</Geometries/body_keep>
     )
     {
-        over "base_link" (
+        over "body_keep" (
             apiSchemas = ["MaterialBindingAPI"]
         )
         {
             custom rel material:binding
-            prepend rel material:binding = </Instances/base_link/VisualMaterials/defaultmaterial>
+            prepend rel material:binding = </Instances/body_keep/VisualMaterials/a_body>
+            custom string urdf:name = "body_keep"
         }
 
         def Scope "VisualMaterials"
         {
-            def Material "defaultmaterial" (
+            def Material "a_body" (
                 instanceable = true
-                prepend references = @./materials.usda@</Materials/defaultmaterial>
+                prepend references = @./materials.usda@</Materials/a_body>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "body_frame" (
+        prepend references = @./geometries.usd@</Geometries/body_frame>
+    )
+    {
+        over "body_frame" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/body_frame/VisualMaterials/a_body>
+            custom string urdf:name = "body_frame"
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "a_body" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/a_body>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "brackets" (
+        prepend references = @./geometries.usd@</Geometries/brackets>
+    )
+    {
+        over "brackets" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/brackets/VisualMaterials/a_bracket>
+            custom string urdf:name = "brackets"
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "a_bracket" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/a_bracket>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "belt_printed" (
+        prepend references = @./geometries.usd@</Geometries/belt_printed>
+    )
+    {
+        over "belt_printed" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/belt_printed/VisualMaterials/a_pla_orange>
+            custom string urdf:name = "belt_printed"
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "a_pla_orange" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/a_pla_orange>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "belt_guard" (
+        prepend references = @./geometries.usd@</Geometries/belt_guard>
+    )
+    {
+        over "belt_guard" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/belt_guard/VisualMaterials/a_pla_tan>
+            custom string urdf:name = "belt_guard"
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "a_pla_tan" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/a_pla_tan>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "belt_metal" (
+        prepend references = @./geometries.usd@</Geometries/belt_metal>
+    )
+    {
+        over "belt_metal" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/belt_metal/VisualMaterials/a_metal>
+            custom string urdf:name = "belt_metal"
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "a_metal" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/a_metal>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "belt_belt" (
+        prepend references = @./geometries.usd@</Geometries/belt_belt>
+    )
+    {
+        over "belt_belt" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/belt_belt/VisualMaterials/a_black>
+            custom string urdf:name = "belt_belt"
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "a_black" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/a_black>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "motors" (
+        prepend references = @./geometries.usd@</Geometries/motors>
+    )
+    {
+        over "motors" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/motors/VisualMaterials/a_motor>
+            custom string urdf:name = "motors"
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "a_motor" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/a_motor>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "bolts" (
+        prepend references = @./geometries.usd@</Geometries/bolts>
+    )
+    {
+        over "bolts" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/bolts/VisualMaterials/a_black>
+            custom string urdf:name = "bolts"
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "a_black" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/a_black>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "deck_tray" (
+        prepend references = @./geometries.usd@</Geometries/deck_tray>
+    )
+    {
+        over "deck_tray" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/deck_tray/VisualMaterials/a_pla_peru>
+            custom string urdf:name = "deck_tray"
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "a_pla_peru" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/a_pla_peru>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "standoffs" (
+        prepend references = @./geometries.usd@</Geometries/standoffs>
+    )
+    {
+        over "standoffs" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/standoffs/VisualMaterials/a_metal>
+            custom string urdf:name = "standoffs"
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "a_metal" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/a_metal>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "pallet" (
+        prepend references = @./geometries.usd@</Geometries/pallet>
+    )
+    {
+        over "pallet" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/pallet/VisualMaterials/a_pla_tan>
+            custom string urdf:name = "pallet"
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "a_pla_tan" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/a_pla_tan>
             )
             {
             }
@@ -58,16 +323,16 @@ def Scope "Instances"
         }
     }
 
-    def Xform "tfmini_plus_bracket_v2" (
-        prepend references = @./geometries.usd@</Geometries/tfmini_plus_bracket_v2>
+    def Xform "tfmini_holder" (
+        prepend references = @./geometries.usd@</Geometries/tfmini_holder>
     )
     {
-        over "tfmini_plus_bracket_v2" (
+        over "tfmini_holder" (
             apiSchemas = ["MaterialBindingAPI"]
         )
         {
             custom rel material:binding
-            prepend rel material:binding = </Instances/tfmini_plus_bracket_v2/VisualMaterials/pla_print>
+            prepend rel material:binding = </Instances/tfmini_holder/VisualMaterials/pla_print>
         }
 
         def Scope "VisualMaterials"
@@ -144,52 +409,6 @@ def Scope "Instances"
             def Material "opencr" (
                 instanceable = true
                 prepend references = @./materials.usda@</Materials/opencr>
-            )
-            {
-            }
-        }
-    }
-
-    def Xform "opencr_right" (
-        prepend references = @./geometries.usd@</Geometries/opencr_right>
-    )
-    {
-        over "opencr_right" (
-            apiSchemas = ["MaterialBindingAPI"]
-        )
-        {
-            custom rel material:binding
-            prepend rel material:binding = </Instances/opencr_right/VisualMaterials/opencr>
-        }
-
-        def Scope "VisualMaterials"
-        {
-            def Material "opencr" (
-                instanceable = true
-                prepend references = @./materials.usda@</Materials/opencr>
-            )
-            {
-            }
-        }
-    }
-
-    def Xform "puck_plate" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate>
-    )
-    {
-        over "puck_plate" (
-            apiSchemas = ["MaterialBindingAPI"]
-        )
-        {
-            custom rel material:binding
-            prepend rel material:binding = </Instances/puck_plate/VisualMaterials/puck_plate>
-        }
-
-        def Scope "VisualMaterials"
-        {
-            def Material "puck_plate" (
-                instanceable = true
-                prepend references = @./materials.usda@</Materials/puck_plate>
             )
             {
             }
@@ -557,7 +776,7 @@ def Scope "Instances"
         {
             def Material "c_030030035" (
                 instanceable = true
-                prepend references = @./materials.usda@</Materials/battery>
+                prepend references = @./materials.usda@</Materials/c_030030035>
             )
             {
             }
@@ -791,422 +1010,6 @@ def Scope "Instances"
             )
             {
             }
-        }
-    }
-
-    def Xform "convex_146_0" (
-        prepend references = @./geometries.usd@</Geometries/convex_146_0>
-    )
-    {
-        over "convex_146_0" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_146_1" (
-        prepend references = @./geometries.usd@</Geometries/convex_146_1>
-    )
-    {
-        over "convex_146_1" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_146_2" (
-        prepend references = @./geometries.usd@</Geometries/convex_146_2>
-    )
-    {
-        over "convex_146_2" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_146_3" (
-        prepend references = @./geometries.usd@</Geometries/convex_146_3>
-    )
-    {
-        over "convex_146_3" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_146_4" (
-        prepend references = @./geometries.usd@</Geometries/convex_146_4>
-    )
-    {
-        over "convex_146_4" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_146_5" (
-        prepend references = @./geometries.usd@</Geometries/convex_146_5>
-    )
-    {
-        over "convex_146_5" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_146_6" (
-        prepend references = @./geometries.usd@</Geometries/convex_146_6>
-    )
-    {
-        over "convex_146_6" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_146_7" (
-        prepend references = @./geometries.usd@</Geometries/convex_146_7>
-    )
-    {
-        over "convex_146_7" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_146_8" (
-        prepend references = @./geometries.usd@</Geometries/convex_146_8>
-    )
-    {
-        over "convex_146_8" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_146_9" (
-        prepend references = @./geometries.usd@</Geometries/convex_146_9>
-    )
-    {
-        over "convex_146_9" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_146_10" (
-        prepend references = @./geometries.usd@</Geometries/convex_146_10>
-    )
-    {
-        over "convex_146_10" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_146_11" (
-        prepend references = @./geometries.usd@</Geometries/convex_146_11>
-    )
-    {
-        over "convex_146_11" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_146_12" (
-        prepend references = @./geometries.usd@</Geometries/convex_146_12>
-    )
-    {
-        over "convex_146_12" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_146_13" (
-        prepend references = @./geometries.usd@</Geometries/convex_146_13>
-    )
-    {
-        over "convex_146_13" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_146_14" (
-        prepend references = @./geometries.usd@</Geometries/convex_146_14>
-    )
-    {
-        over "convex_146_14" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_146_15" (
-        prepend references = @./geometries.usd@</Geometries/convex_146_15>
-    )
-    {
-        over "convex_146_15" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_146_16" (
-        prepend references = @./geometries.usd@</Geometries/convex_146_16>
-    )
-    {
-        over "convex_146_16" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_146_17" (
-        prepend references = @./geometries.usd@</Geometries/convex_146_17>
-    )
-    {
-        over "convex_146_17" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_146_18" (
-        prepend references = @./geometries.usd@</Geometries/convex_146_18>
-    )
-    {
-        over "convex_146_18" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_146_19" (
-        prepend references = @./geometries.usd@</Geometries/convex_146_19>
-    )
-    {
-        over "convex_146_19" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_146_20" (
-        prepend references = @./geometries.usd@</Geometries/convex_146_20>
-    )
-    {
-        over "convex_146_20" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_146_21" (
-        prepend references = @./geometries.usd@</Geometries/convex_146_21>
-    )
-    {
-        over "convex_146_21" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_146_22" (
-        prepend references = @./geometries.usd@</Geometries/convex_146_22>
-    )
-    {
-        over "convex_146_22" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_146_23" (
-        prepend references = @./geometries.usd@</Geometries/convex_146_23>
-    )
-    {
-        over "convex_146_23" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_146_24" (
-        prepend references = @./geometries.usd@</Geometries/convex_146_24>
-    )
-    {
-        over "convex_146_24" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_146_25" (
-        prepend references = @./geometries.usd@</Geometries/convex_146_25>
-    )
-    {
-        over "convex_146_25" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_146_26" (
-        prepend references = @./geometries.usd@</Geometries/convex_146_26>
-    )
-    {
-        over "convex_146_26" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_146_27" (
-        prepend references = @./geometries.usd@</Geometries/convex_146_27>
-    )
-    {
-        over "convex_146_27" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_146_28" (
-        prepend references = @./geometries.usd@</Geometries/convex_146_28>
-    )
-    {
-        over "convex_146_28" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_146_29" (
-        prepend references = @./geometries.usd@</Geometries/convex_146_29>
-    )
-    {
-        over "convex_146_29" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_146_30" (
-        prepend references = @./geometries.usd@</Geometries/convex_146_30>
-    )
-    {
-        over "convex_146_30" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_146_31" (
-        prepend references = @./geometries.usd@</Geometries/convex_146_31>
-    )
-    {
-        over "convex_146_31" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
         }
     }
 
@@ -1618,422 +1421,6 @@ def Scope "Instances"
     )
     {
         over "convex_157_31" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_165_0" (
-        prepend references = @./geometries.usd@</Geometries/convex_165_0>
-    )
-    {
-        over "convex_165_0" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_165_1" (
-        prepend references = @./geometries.usd@</Geometries/convex_165_1>
-    )
-    {
-        over "convex_165_1" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_165_2" (
-        prepend references = @./geometries.usd@</Geometries/convex_165_2>
-    )
-    {
-        over "convex_165_2" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_165_3" (
-        prepend references = @./geometries.usd@</Geometries/convex_165_3>
-    )
-    {
-        over "convex_165_3" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_165_4" (
-        prepend references = @./geometries.usd@</Geometries/convex_165_4>
-    )
-    {
-        over "convex_165_4" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_165_5" (
-        prepend references = @./geometries.usd@</Geometries/convex_165_5>
-    )
-    {
-        over "convex_165_5" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_165_6" (
-        prepend references = @./geometries.usd@</Geometries/convex_165_6>
-    )
-    {
-        over "convex_165_6" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_165_7" (
-        prepend references = @./geometries.usd@</Geometries/convex_165_7>
-    )
-    {
-        over "convex_165_7" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_165_8" (
-        prepend references = @./geometries.usd@</Geometries/convex_165_8>
-    )
-    {
-        over "convex_165_8" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_165_9" (
-        prepend references = @./geometries.usd@</Geometries/convex_165_9>
-    )
-    {
-        over "convex_165_9" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_165_10" (
-        prepend references = @./geometries.usd@</Geometries/convex_165_10>
-    )
-    {
-        over "convex_165_10" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_165_11" (
-        prepend references = @./geometries.usd@</Geometries/convex_165_11>
-    )
-    {
-        over "convex_165_11" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_165_12" (
-        prepend references = @./geometries.usd@</Geometries/convex_165_12>
-    )
-    {
-        over "convex_165_12" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_165_13" (
-        prepend references = @./geometries.usd@</Geometries/convex_165_13>
-    )
-    {
-        over "convex_165_13" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_165_14" (
-        prepend references = @./geometries.usd@</Geometries/convex_165_14>
-    )
-    {
-        over "convex_165_14" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_165_15" (
-        prepend references = @./geometries.usd@</Geometries/convex_165_15>
-    )
-    {
-        over "convex_165_15" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_165_16" (
-        prepend references = @./geometries.usd@</Geometries/convex_165_16>
-    )
-    {
-        over "convex_165_16" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_165_17" (
-        prepend references = @./geometries.usd@</Geometries/convex_165_17>
-    )
-    {
-        over "convex_165_17" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_165_18" (
-        prepend references = @./geometries.usd@</Geometries/convex_165_18>
-    )
-    {
-        over "convex_165_18" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_165_19" (
-        prepend references = @./geometries.usd@</Geometries/convex_165_19>
-    )
-    {
-        over "convex_165_19" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_165_20" (
-        prepend references = @./geometries.usd@</Geometries/convex_165_20>
-    )
-    {
-        over "convex_165_20" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_165_21" (
-        prepend references = @./geometries.usd@</Geometries/convex_165_21>
-    )
-    {
-        over "convex_165_21" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_165_22" (
-        prepend references = @./geometries.usd@</Geometries/convex_165_22>
-    )
-    {
-        over "convex_165_22" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_165_23" (
-        prepend references = @./geometries.usd@</Geometries/convex_165_23>
-    )
-    {
-        over "convex_165_23" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_165_24" (
-        prepend references = @./geometries.usd@</Geometries/convex_165_24>
-    )
-    {
-        over "convex_165_24" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_165_25" (
-        prepend references = @./geometries.usd@</Geometries/convex_165_25>
-    )
-    {
-        over "convex_165_25" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_165_26" (
-        prepend references = @./geometries.usd@</Geometries/convex_165_26>
-    )
-    {
-        over "convex_165_26" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_165_27" (
-        prepend references = @./geometries.usd@</Geometries/convex_165_27>
-    )
-    {
-        over "convex_165_27" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_165_28" (
-        prepend references = @./geometries.usd@</Geometries/convex_165_28>
-    )
-    {
-        over "convex_165_28" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_165_29" (
-        prepend references = @./geometries.usd@</Geometries/convex_165_29>
-    )
-    {
-        over "convex_165_29" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_165_30" (
-        prepend references = @./geometries.usd@</Geometries/convex_165_30>
-    )
-    {
-        over "convex_165_30" (
-            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
-        )
-        {
-            token physics:approximation = "convexHull"
-            token purpose = "guide"
-        }
-    }
-
-    def Xform "convex_165_31" (
-        prepend references = @./geometries.usd@</Geometries/convex_165_31>
-    )
-    {
-        over "convex_165_31" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2458,11 +1845,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_000" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_000>
+    def Xform "bracket_L_hull00" (
+        prepend references = @./geometries.usd@</Geometries/bracket_L_hull00>
     )
     {
-        over "puck_plate_plate_000" (
+        over "bracket_L_hull00" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2471,11 +1858,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_001" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_001>
+    def Xform "bracket_L_hull01" (
+        prepend references = @./geometries.usd@</Geometries/bracket_L_hull01>
     )
     {
-        over "puck_plate_plate_001" (
+        over "bracket_L_hull01" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2484,11 +1871,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_002" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_002>
+    def Xform "bracket_L_hull02" (
+        prepend references = @./geometries.usd@</Geometries/bracket_L_hull02>
     )
     {
-        over "puck_plate_plate_002" (
+        over "bracket_L_hull02" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2497,11 +1884,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_003" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_003>
+    def Xform "bracket_L_hull03" (
+        prepend references = @./geometries.usd@</Geometries/bracket_L_hull03>
     )
     {
-        over "puck_plate_plate_003" (
+        over "bracket_L_hull03" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2510,11 +1897,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_004" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_004>
+    def Xform "bracket_L_hull04" (
+        prepend references = @./geometries.usd@</Geometries/bracket_L_hull04>
     )
     {
-        over "puck_plate_plate_004" (
+        over "bracket_L_hull04" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2523,11 +1910,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_005" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_005>
+    def Xform "bracket_L_hull05" (
+        prepend references = @./geometries.usd@</Geometries/bracket_L_hull05>
     )
     {
-        over "puck_plate_plate_005" (
+        over "bracket_L_hull05" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2536,11 +1923,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_006" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_006>
+    def Xform "bracket_L_hull06" (
+        prepend references = @./geometries.usd@</Geometries/bracket_L_hull06>
     )
     {
-        over "puck_plate_plate_006" (
+        over "bracket_L_hull06" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2549,11 +1936,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_007" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_007>
+    def Xform "bracket_L_hull07" (
+        prepend references = @./geometries.usd@</Geometries/bracket_L_hull07>
     )
     {
-        over "puck_plate_plate_007" (
+        over "bracket_L_hull07" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2562,11 +1949,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_008" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_008>
+    def Xform "bracket_L_hull08" (
+        prepend references = @./geometries.usd@</Geometries/bracket_L_hull08>
     )
     {
-        over "puck_plate_plate_008" (
+        over "bracket_L_hull08" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2575,11 +1962,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_009" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_009>
+    def Xform "bracket_L_hull09" (
+        prepend references = @./geometries.usd@</Geometries/bracket_L_hull09>
     )
     {
-        over "puck_plate_plate_009" (
+        over "bracket_L_hull09" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2588,11 +1975,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_010" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_010>
+    def Xform "bracket_L_hull10" (
+        prepend references = @./geometries.usd@</Geometries/bracket_L_hull10>
     )
     {
-        over "puck_plate_plate_010" (
+        over "bracket_L_hull10" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2601,11 +1988,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_011" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_011>
+    def Xform "bracket_L_hull11" (
+        prepend references = @./geometries.usd@</Geometries/bracket_L_hull11>
     )
     {
-        over "puck_plate_plate_011" (
+        over "bracket_L_hull11" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2614,11 +2001,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_012" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_012>
+    def Xform "bracket_L_hull12" (
+        prepend references = @./geometries.usd@</Geometries/bracket_L_hull12>
     )
     {
-        over "puck_plate_plate_012" (
+        over "bracket_L_hull12" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2627,11 +2014,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_013" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_013>
+    def Xform "bracket_L_hull13" (
+        prepend references = @./geometries.usd@</Geometries/bracket_L_hull13>
     )
     {
-        over "puck_plate_plate_013" (
+        over "bracket_L_hull13" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2640,11 +2027,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_014" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_014>
+    def Xform "bracket_L_hull14" (
+        prepend references = @./geometries.usd@</Geometries/bracket_L_hull14>
     )
     {
-        over "puck_plate_plate_014" (
+        over "bracket_L_hull14" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2653,11 +2040,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_015" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_015>
+    def Xform "bracket_L_hull15" (
+        prepend references = @./geometries.usd@</Geometries/bracket_L_hull15>
     )
     {
-        over "puck_plate_plate_015" (
+        over "bracket_L_hull15" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2666,11 +2053,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_016" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_016>
+    def Xform "bracket_L_hull16" (
+        prepend references = @./geometries.usd@</Geometries/bracket_L_hull16>
     )
     {
-        over "puck_plate_plate_016" (
+        over "bracket_L_hull16" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2679,11 +2066,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_017" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_017>
+    def Xform "bracket_L_hull17" (
+        prepend references = @./geometries.usd@</Geometries/bracket_L_hull17>
     )
     {
-        over "puck_plate_plate_017" (
+        over "bracket_L_hull17" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2692,11 +2079,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_018" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_018>
+    def Xform "bracket_L_hull18" (
+        prepend references = @./geometries.usd@</Geometries/bracket_L_hull18>
     )
     {
-        over "puck_plate_plate_018" (
+        over "bracket_L_hull18" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2705,11 +2092,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_019" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_019>
+    def Xform "bracket_L_hull19" (
+        prepend references = @./geometries.usd@</Geometries/bracket_L_hull19>
     )
     {
-        over "puck_plate_plate_019" (
+        over "bracket_L_hull19" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2718,11 +2105,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_020" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_020>
+    def Xform "bracket_L_hull20" (
+        prepend references = @./geometries.usd@</Geometries/bracket_L_hull20>
     )
     {
-        over "puck_plate_plate_020" (
+        over "bracket_L_hull20" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2731,11 +2118,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_021" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_021>
+    def Xform "bracket_L_hull21" (
+        prepend references = @./geometries.usd@</Geometries/bracket_L_hull21>
     )
     {
-        over "puck_plate_plate_021" (
+        over "bracket_L_hull21" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2744,11 +2131,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_022" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_022>
+    def Xform "bracket_L_hull22" (
+        prepend references = @./geometries.usd@</Geometries/bracket_L_hull22>
     )
     {
-        over "puck_plate_plate_022" (
+        over "bracket_L_hull22" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2757,11 +2144,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_023" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_023>
+    def Xform "bracket_L_hull23" (
+        prepend references = @./geometries.usd@</Geometries/bracket_L_hull23>
     )
     {
-        over "puck_plate_plate_023" (
+        over "bracket_L_hull23" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2770,11 +2157,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_024" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_024>
+    def Xform "bracket_L_hull24" (
+        prepend references = @./geometries.usd@</Geometries/bracket_L_hull24>
     )
     {
-        over "puck_plate_plate_024" (
+        over "bracket_L_hull24" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2783,11 +2170,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_025" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_025>
+    def Xform "bracket_L_hull25" (
+        prepend references = @./geometries.usd@</Geometries/bracket_L_hull25>
     )
     {
-        over "puck_plate_plate_025" (
+        over "bracket_L_hull25" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2796,11 +2183,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_026" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_026>
+    def Xform "bracket_L_hull26" (
+        prepend references = @./geometries.usd@</Geometries/bracket_L_hull26>
     )
     {
-        over "puck_plate_plate_026" (
+        over "bracket_L_hull26" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2809,11 +2196,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_027" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_027>
+    def Xform "bracket_L_hull27" (
+        prepend references = @./geometries.usd@</Geometries/bracket_L_hull27>
     )
     {
-        over "puck_plate_plate_027" (
+        over "bracket_L_hull27" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2822,11 +2209,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_028" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_028>
+    def Xform "bracket_L_hull28" (
+        prepend references = @./geometries.usd@</Geometries/bracket_L_hull28>
     )
     {
-        over "puck_plate_plate_028" (
+        over "bracket_L_hull28" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2835,11 +2222,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_029" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_029>
+    def Xform "bracket_L_hull29" (
+        prepend references = @./geometries.usd@</Geometries/bracket_L_hull29>
     )
     {
-        over "puck_plate_plate_029" (
+        over "bracket_L_hull29" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2848,11 +2235,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_030" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_030>
+    def Xform "bracket_L_hull30" (
+        prepend references = @./geometries.usd@</Geometries/bracket_L_hull30>
     )
     {
-        over "puck_plate_plate_030" (
+        over "bracket_L_hull30" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2861,11 +2248,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_031" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_031>
+    def Xform "bracket_R_hull00" (
+        prepend references = @./geometries.usd@</Geometries/bracket_R_hull00>
     )
     {
-        over "puck_plate_plate_031" (
+        over "bracket_R_hull00" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2874,11 +2261,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_032" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_032>
+    def Xform "bracket_R_hull01" (
+        prepend references = @./geometries.usd@</Geometries/bracket_R_hull01>
     )
     {
-        over "puck_plate_plate_032" (
+        over "bracket_R_hull01" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2887,11 +2274,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_033" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_033>
+    def Xform "bracket_R_hull02" (
+        prepend references = @./geometries.usd@</Geometries/bracket_R_hull02>
     )
     {
-        over "puck_plate_plate_033" (
+        over "bracket_R_hull02" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2900,11 +2287,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_034" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_034>
+    def Xform "bracket_R_hull03" (
+        prepend references = @./geometries.usd@</Geometries/bracket_R_hull03>
     )
     {
-        over "puck_plate_plate_034" (
+        over "bracket_R_hull03" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2913,11 +2300,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_035" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_035>
+    def Xform "bracket_R_hull04" (
+        prepend references = @./geometries.usd@</Geometries/bracket_R_hull04>
     )
     {
-        over "puck_plate_plate_035" (
+        over "bracket_R_hull04" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2926,11 +2313,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_036" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_036>
+    def Xform "bracket_R_hull05" (
+        prepend references = @./geometries.usd@</Geometries/bracket_R_hull05>
     )
     {
-        over "puck_plate_plate_036" (
+        over "bracket_R_hull05" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2939,11 +2326,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_037" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_037>
+    def Xform "bracket_R_hull06" (
+        prepend references = @./geometries.usd@</Geometries/bracket_R_hull06>
     )
     {
-        over "puck_plate_plate_037" (
+        over "bracket_R_hull06" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2952,11 +2339,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_038" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_038>
+    def Xform "bracket_R_hull07" (
+        prepend references = @./geometries.usd@</Geometries/bracket_R_hull07>
     )
     {
-        over "puck_plate_plate_038" (
+        over "bracket_R_hull07" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2965,11 +2352,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_039" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_039>
+    def Xform "bracket_R_hull08" (
+        prepend references = @./geometries.usd@</Geometries/bracket_R_hull08>
     )
     {
-        over "puck_plate_plate_039" (
+        over "bracket_R_hull08" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2978,11 +2365,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_040" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_040>
+    def Xform "bracket_R_hull09" (
+        prepend references = @./geometries.usd@</Geometries/bracket_R_hull09>
     )
     {
-        over "puck_plate_plate_040" (
+        over "bracket_R_hull09" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -2991,11 +2378,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_041" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_041>
+    def Xform "bracket_R_hull10" (
+        prepend references = @./geometries.usd@</Geometries/bracket_R_hull10>
     )
     {
-        over "puck_plate_plate_041" (
+        over "bracket_R_hull10" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3004,11 +2391,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_042" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_042>
+    def Xform "bracket_R_hull11" (
+        prepend references = @./geometries.usd@</Geometries/bracket_R_hull11>
     )
     {
-        over "puck_plate_plate_042" (
+        over "bracket_R_hull11" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3017,11 +2404,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_043" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_043>
+    def Xform "bracket_R_hull12" (
+        prepend references = @./geometries.usd@</Geometries/bracket_R_hull12>
     )
     {
-        over "puck_plate_plate_043" (
+        over "bracket_R_hull12" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3030,11 +2417,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_044" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_044>
+    def Xform "bracket_R_hull13" (
+        prepend references = @./geometries.usd@</Geometries/bracket_R_hull13>
     )
     {
-        over "puck_plate_plate_044" (
+        over "bracket_R_hull13" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3043,11 +2430,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_045" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_045>
+    def Xform "bracket_R_hull14" (
+        prepend references = @./geometries.usd@</Geometries/bracket_R_hull14>
     )
     {
-        over "puck_plate_plate_045" (
+        over "bracket_R_hull14" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3056,11 +2443,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_046" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_046>
+    def Xform "bracket_R_hull15" (
+        prepend references = @./geometries.usd@</Geometries/bracket_R_hull15>
     )
     {
-        over "puck_plate_plate_046" (
+        over "bracket_R_hull15" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3069,11 +2456,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_047" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_047>
+    def Xform "bracket_R_hull16" (
+        prepend references = @./geometries.usd@</Geometries/bracket_R_hull16>
     )
     {
-        over "puck_plate_plate_047" (
+        over "bracket_R_hull16" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3082,11 +2469,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_048" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_048>
+    def Xform "bracket_R_hull17" (
+        prepend references = @./geometries.usd@</Geometries/bracket_R_hull17>
     )
     {
-        over "puck_plate_plate_048" (
+        over "bracket_R_hull17" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3095,11 +2482,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_049" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_049>
+    def Xform "bracket_R_hull18" (
+        prepend references = @./geometries.usd@</Geometries/bracket_R_hull18>
     )
     {
-        over "puck_plate_plate_049" (
+        over "bracket_R_hull18" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3108,11 +2495,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_050" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_050>
+    def Xform "bracket_R_hull19" (
+        prepend references = @./geometries.usd@</Geometries/bracket_R_hull19>
     )
     {
-        over "puck_plate_plate_050" (
+        over "bracket_R_hull19" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3121,11 +2508,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_051" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_051>
+    def Xform "bracket_R_hull20" (
+        prepend references = @./geometries.usd@</Geometries/bracket_R_hull20>
     )
     {
-        over "puck_plate_plate_051" (
+        over "bracket_R_hull20" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3134,11 +2521,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_052" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_052>
+    def Xform "bracket_R_hull21" (
+        prepend references = @./geometries.usd@</Geometries/bracket_R_hull21>
     )
     {
-        over "puck_plate_plate_052" (
+        over "bracket_R_hull21" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3147,11 +2534,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_053" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_053>
+    def Xform "bracket_R_hull22" (
+        prepend references = @./geometries.usd@</Geometries/bracket_R_hull22>
     )
     {
-        over "puck_plate_plate_053" (
+        over "bracket_R_hull22" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3160,11 +2547,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_054" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_054>
+    def Xform "bracket_R_hull23" (
+        prepend references = @./geometries.usd@</Geometries/bracket_R_hull23>
     )
     {
-        over "puck_plate_plate_054" (
+        over "bracket_R_hull23" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3173,11 +2560,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_055" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_055>
+    def Xform "bracket_R_hull24" (
+        prepend references = @./geometries.usd@</Geometries/bracket_R_hull24>
     )
     {
-        over "puck_plate_plate_055" (
+        over "bracket_R_hull24" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3186,11 +2573,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_056" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_056>
+    def Xform "bracket_R_hull25" (
+        prepend references = @./geometries.usd@</Geometries/bracket_R_hull25>
     )
     {
-        over "puck_plate_plate_056" (
+        over "bracket_R_hull25" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3199,11 +2586,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_057" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_057>
+    def Xform "bracket_R_hull26" (
+        prepend references = @./geometries.usd@</Geometries/bracket_R_hull26>
     )
     {
-        over "puck_plate_plate_057" (
+        over "bracket_R_hull26" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3212,11 +2599,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_058" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_058>
+    def Xform "bracket_R_hull27" (
+        prepend references = @./geometries.usd@</Geometries/bracket_R_hull27>
     )
     {
-        over "puck_plate_plate_058" (
+        over "bracket_R_hull27" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3225,11 +2612,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_059" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_059>
+    def Xform "bracket_R_hull28" (
+        prepend references = @./geometries.usd@</Geometries/bracket_R_hull28>
     )
     {
-        over "puck_plate_plate_059" (
+        over "bracket_R_hull28" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3238,11 +2625,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_060" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_060>
+    def Xform "bracket_R_hull29" (
+        prepend references = @./geometries.usd@</Geometries/bracket_R_hull29>
     )
     {
-        over "puck_plate_plate_060" (
+        over "bracket_R_hull29" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3251,11 +2638,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_061" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_061>
+    def Xform "bracket_R_hull30" (
+        prepend references = @./geometries.usd@</Geometries/bracket_R_hull30>
     )
     {
-        over "puck_plate_plate_061" (
+        over "bracket_R_hull30" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3264,11 +2651,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_062" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_062>
+    def Xform "pallet_base_hull00" (
+        prepend references = @./geometries.usd@</Geometries/pallet_base_hull00>
     )
     {
-        over "puck_plate_plate_062" (
+        over "pallet_base_hull00" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3277,11 +2664,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_063" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_063>
+    def Xform "pallet_base_hull01" (
+        prepend references = @./geometries.usd@</Geometries/pallet_base_hull01>
     )
     {
-        over "puck_plate_plate_063" (
+        over "pallet_base_hull01" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3290,11 +2677,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_064" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_064>
+    def Xform "pallet_base_hull02" (
+        prepend references = @./geometries.usd@</Geometries/pallet_base_hull02>
     )
     {
-        over "puck_plate_plate_064" (
+        over "pallet_base_hull02" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3303,11 +2690,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_065" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_065>
+    def Xform "pallet_base_hull03" (
+        prepend references = @./geometries.usd@</Geometries/pallet_base_hull03>
     )
     {
-        over "puck_plate_plate_065" (
+        over "pallet_base_hull03" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3316,11 +2703,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_066" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_066>
+    def Xform "pallet_base_hull04" (
+        prepend references = @./geometries.usd@</Geometries/pallet_base_hull04>
     )
     {
-        over "puck_plate_plate_066" (
+        over "pallet_base_hull04" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3329,11 +2716,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_067" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_067>
+    def Xform "pallet_base_hull05" (
+        prepend references = @./geometries.usd@</Geometries/pallet_base_hull05>
     )
     {
-        over "puck_plate_plate_067" (
+        over "pallet_base_hull05" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3342,11 +2729,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_068" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_068>
+    def Xform "pallet_base_hull06" (
+        prepend references = @./geometries.usd@</Geometries/pallet_base_hull06>
     )
     {
-        over "puck_plate_plate_068" (
+        over "pallet_base_hull06" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3355,11 +2742,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_069" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_069>
+    def Xform "pallet_base_hull07" (
+        prepend references = @./geometries.usd@</Geometries/pallet_base_hull07>
     )
     {
-        over "puck_plate_plate_069" (
+        over "pallet_base_hull07" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3368,11 +2755,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_070" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_070>
+    def Xform "pallet_base_hull08" (
+        prepend references = @./geometries.usd@</Geometries/pallet_base_hull08>
     )
     {
-        over "puck_plate_plate_070" (
+        over "pallet_base_hull08" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3381,11 +2768,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_071" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_071>
+    def Xform "pallet_base_hull09" (
+        prepend references = @./geometries.usd@</Geometries/pallet_base_hull09>
     )
     {
-        over "puck_plate_plate_071" (
+        over "pallet_base_hull09" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3394,11 +2781,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_072" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_072>
+    def Xform "pallet_base_hull10" (
+        prepend references = @./geometries.usd@</Geometries/pallet_base_hull10>
     )
     {
-        over "puck_plate_plate_072" (
+        over "pallet_base_hull10" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3407,11 +2794,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_plate_073" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_plate_073>
+    def Xform "pallet_base_hull11" (
+        prepend references = @./geometries.usd@</Geometries/pallet_base_hull11>
     )
     {
-        over "puck_plate_plate_073" (
+        over "pallet_base_hull11" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3420,11 +2807,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_074" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_074>
+    def Xform "pallet_base_hull12" (
+        prepend references = @./geometries.usd@</Geometries/pallet_base_hull12>
     )
     {
-        over "puck_plate_cup_074" (
+        over "pallet_base_hull12" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3433,11 +2820,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_075" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_075>
+    def Xform "pallet_base_hull13" (
+        prepend references = @./geometries.usd@</Geometries/pallet_base_hull13>
     )
     {
-        over "puck_plate_cup_075" (
+        over "pallet_base_hull13" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3446,11 +2833,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_076" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_076>
+    def Xform "pallet_base_hull14" (
+        prepend references = @./geometries.usd@</Geometries/pallet_base_hull14>
     )
     {
-        over "puck_plate_cup_076" (
+        over "pallet_base_hull14" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3459,11 +2846,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_077" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_077>
+    def Xform "pallet_base_hull15" (
+        prepend references = @./geometries.usd@</Geometries/pallet_base_hull15>
     )
     {
-        over "puck_plate_cup_077" (
+        over "pallet_base_hull15" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3472,11 +2859,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_078" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_078>
+    def Xform "pallet_base_hull16" (
+        prepend references = @./geometries.usd@</Geometries/pallet_base_hull16>
     )
     {
-        over "puck_plate_cup_078" (
+        over "pallet_base_hull16" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3485,11 +2872,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_079" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_079>
+    def Xform "pallet_base_hull17" (
+        prepend references = @./geometries.usd@</Geometries/pallet_base_hull17>
     )
     {
-        over "puck_plate_cup_079" (
+        over "pallet_base_hull17" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3498,11 +2885,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_080" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_080>
+    def Xform "pallet_base_hull18" (
+        prepend references = @./geometries.usd@</Geometries/pallet_base_hull18>
     )
     {
-        over "puck_plate_cup_080" (
+        over "pallet_base_hull18" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3511,11 +2898,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_081" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_081>
+    def Xform "pallet_base_hull19" (
+        prepend references = @./geometries.usd@</Geometries/pallet_base_hull19>
     )
     {
-        over "puck_plate_cup_081" (
+        over "pallet_base_hull19" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3524,11 +2911,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_082" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_082>
+    def Xform "pallet_base_hull20" (
+        prepend references = @./geometries.usd@</Geometries/pallet_base_hull20>
     )
     {
-        over "puck_plate_cup_082" (
+        over "pallet_base_hull20" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3537,11 +2924,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_083" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_083>
+    def Xform "pallet_base_hull21" (
+        prepend references = @./geometries.usd@</Geometries/pallet_base_hull21>
     )
     {
-        over "puck_plate_cup_083" (
+        over "pallet_base_hull21" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3550,11 +2937,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_084" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_084>
+    def Xform "pallet_base_hull22" (
+        prepend references = @./geometries.usd@</Geometries/pallet_base_hull22>
     )
     {
-        over "puck_plate_cup_084" (
+        over "pallet_base_hull22" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3563,11 +2950,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_085" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_085>
+    def Xform "pallet_base_hull23" (
+        prepend references = @./geometries.usd@</Geometries/pallet_base_hull23>
     )
     {
-        over "puck_plate_cup_085" (
+        over "pallet_base_hull23" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3576,11 +2963,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_086" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_086>
+    def Xform "pallet_base_hull24" (
+        prepend references = @./geometries.usd@</Geometries/pallet_base_hull24>
     )
     {
-        over "puck_plate_cup_086" (
+        over "pallet_base_hull24" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3589,11 +2976,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_087" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_087>
+    def Xform "pallet_base_hull25" (
+        prepend references = @./geometries.usd@</Geometries/pallet_base_hull25>
     )
     {
-        over "puck_plate_cup_087" (
+        over "pallet_base_hull25" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3602,11 +2989,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_088" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_088>
+    def Xform "pallet_base_hull26" (
+        prepend references = @./geometries.usd@</Geometries/pallet_base_hull26>
     )
     {
-        over "puck_plate_cup_088" (
+        over "pallet_base_hull26" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3615,11 +3002,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_089" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_089>
+    def Xform "pallet_base_hull27" (
+        prepend references = @./geometries.usd@</Geometries/pallet_base_hull27>
     )
     {
-        over "puck_plate_cup_089" (
+        over "pallet_base_hull27" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3628,11 +3015,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_090" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_090>
+    def Xform "pallet_base_hull28" (
+        prepend references = @./geometries.usd@</Geometries/pallet_base_hull28>
     )
     {
-        over "puck_plate_cup_090" (
+        over "pallet_base_hull28" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3641,11 +3028,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_091" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_091>
+    def Xform "pallet_base_hull29" (
+        prepend references = @./geometries.usd@</Geometries/pallet_base_hull29>
     )
     {
-        over "puck_plate_cup_091" (
+        over "pallet_base_hull29" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3654,11 +3041,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_092" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_092>
+    def Xform "pallet_base_hull30" (
+        prepend references = @./geometries.usd@</Geometries/pallet_base_hull30>
     )
     {
-        over "puck_plate_cup_092" (
+        over "pallet_base_hull30" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3667,11 +3054,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_093" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_093>
+    def Xform "pallet_base_hull31" (
+        prepend references = @./geometries.usd@</Geometries/pallet_base_hull31>
     )
     {
-        over "puck_plate_cup_093" (
+        over "pallet_base_hull31" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3680,11 +3067,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_094" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_094>
+    def Xform "cup_R_1_hull00" (
+        prepend references = @./geometries.usd@</Geometries/cup_R_1_hull00>
     )
     {
-        over "puck_plate_cup_094" (
+        over "cup_R_1_hull00" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3693,11 +3080,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_095" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_095>
+    def Xform "cup_R_1_hull01" (
+        prepend references = @./geometries.usd@</Geometries/cup_R_1_hull01>
     )
     {
-        over "puck_plate_cup_095" (
+        over "cup_R_1_hull01" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3706,11 +3093,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_096" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_096>
+    def Xform "cup_R_1_hull02" (
+        prepend references = @./geometries.usd@</Geometries/cup_R_1_hull02>
     )
     {
-        over "puck_plate_cup_096" (
+        over "cup_R_1_hull02" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3719,11 +3106,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_097" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_097>
+    def Xform "cup_R_1_hull03" (
+        prepend references = @./geometries.usd@</Geometries/cup_R_1_hull03>
     )
     {
-        over "puck_plate_cup_097" (
+        over "cup_R_1_hull03" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3732,11 +3119,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_098" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_098>
+    def Xform "cup_R_1_hull04" (
+        prepend references = @./geometries.usd@</Geometries/cup_R_1_hull04>
     )
     {
-        over "puck_plate_cup_098" (
+        over "cup_R_1_hull04" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3745,11 +3132,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_099" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_099>
+    def Xform "cup_R_1_hull05" (
+        prepend references = @./geometries.usd@</Geometries/cup_R_1_hull05>
     )
     {
-        over "puck_plate_cup_099" (
+        over "cup_R_1_hull05" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3758,11 +3145,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_100" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_100>
+    def Xform "cup_R_1_hull06" (
+        prepend references = @./geometries.usd@</Geometries/cup_R_1_hull06>
     )
     {
-        over "puck_plate_cup_100" (
+        over "cup_R_1_hull06" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3771,11 +3158,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_101" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_101>
+    def Xform "cup_R_1_hull07" (
+        prepend references = @./geometries.usd@</Geometries/cup_R_1_hull07>
     )
     {
-        over "puck_plate_cup_101" (
+        over "cup_R_1_hull07" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3784,11 +3171,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_102" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_102>
+    def Xform "cup_R_1_hull08" (
+        prepend references = @./geometries.usd@</Geometries/cup_R_1_hull08>
     )
     {
-        over "puck_plate_cup_102" (
+        over "cup_R_1_hull08" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3797,11 +3184,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_103" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_103>
+    def Xform "cup_R_1_hull09" (
+        prepend references = @./geometries.usd@</Geometries/cup_R_1_hull09>
     )
     {
-        over "puck_plate_cup_103" (
+        over "cup_R_1_hull09" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3810,11 +3197,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_104" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_104>
+    def Xform "cup_R_1_hull10" (
+        prepend references = @./geometries.usd@</Geometries/cup_R_1_hull10>
     )
     {
-        over "puck_plate_cup_104" (
+        over "cup_R_1_hull10" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3823,11 +3210,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_105" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_105>
+    def Xform "cup_R_1_hull11" (
+        prepend references = @./geometries.usd@</Geometries/cup_R_1_hull11>
     )
     {
-        over "puck_plate_cup_105" (
+        over "cup_R_1_hull11" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3836,11 +3223,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_106" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_106>
+    def Xform "cup_R_1_hull12" (
+        prepend references = @./geometries.usd@</Geometries/cup_R_1_hull12>
     )
     {
-        over "puck_plate_cup_106" (
+        over "cup_R_1_hull12" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3849,11 +3236,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_107" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_107>
+    def Xform "cup_R_1_hull13" (
+        prepend references = @./geometries.usd@</Geometries/cup_R_1_hull13>
     )
     {
-        over "puck_plate_cup_107" (
+        over "cup_R_1_hull13" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3862,11 +3249,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_108" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_108>
+    def Xform "cup_R_1_hull14" (
+        prepend references = @./geometries.usd@</Geometries/cup_R_1_hull14>
     )
     {
-        over "puck_plate_cup_108" (
+        over "cup_R_1_hull14" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3875,11 +3262,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_109" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_109>
+    def Xform "cup_R_1_hull15" (
+        prepend references = @./geometries.usd@</Geometries/cup_R_1_hull15>
     )
     {
-        over "puck_plate_cup_109" (
+        over "cup_R_1_hull15" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3888,11 +3275,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_110" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_110>
+    def Xform "cup_R_1_hull16" (
+        prepend references = @./geometries.usd@</Geometries/cup_R_1_hull16>
     )
     {
-        over "puck_plate_cup_110" (
+        over "cup_R_1_hull16" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3901,11 +3288,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_111" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_111>
+    def Xform "cup_R_1_hull17" (
+        prepend references = @./geometries.usd@</Geometries/cup_R_1_hull17>
     )
     {
-        over "puck_plate_cup_111" (
+        over "cup_R_1_hull17" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3914,11 +3301,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_112" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_112>
+    def Xform "cup_R_1_hull18" (
+        prepend references = @./geometries.usd@</Geometries/cup_R_1_hull18>
     )
     {
-        over "puck_plate_cup_112" (
+        over "cup_R_1_hull18" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3927,11 +3314,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_113" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_113>
+    def Xform "cup_R_1_hull19" (
+        prepend references = @./geometries.usd@</Geometries/cup_R_1_hull19>
     )
     {
-        over "puck_plate_cup_113" (
+        over "cup_R_1_hull19" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3940,11 +3327,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_114" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_114>
+    def Xform "cup_R_1_hull20" (
+        prepend references = @./geometries.usd@</Geometries/cup_R_1_hull20>
     )
     {
-        over "puck_plate_cup_114" (
+        over "cup_R_1_hull20" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3953,11 +3340,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_115" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_115>
+    def Xform "cup_R_1_hull21" (
+        prepend references = @./geometries.usd@</Geometries/cup_R_1_hull21>
     )
     {
-        over "puck_plate_cup_115" (
+        over "cup_R_1_hull21" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3966,11 +3353,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_116" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_116>
+    def Xform "cup_R_1_hull22" (
+        prepend references = @./geometries.usd@</Geometries/cup_R_1_hull22>
     )
     {
-        over "puck_plate_cup_116" (
+        over "cup_R_1_hull22" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3979,11 +3366,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_117" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_117>
+    def Xform "cup_R_1_hull23" (
+        prepend references = @./geometries.usd@</Geometries/cup_R_1_hull23>
     )
     {
-        over "puck_plate_cup_117" (
+        over "cup_R_1_hull23" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -3992,11 +3379,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_118" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_118>
+    def Xform "cup_R_1_hull24" (
+        prepend references = @./geometries.usd@</Geometries/cup_R_1_hull24>
     )
     {
-        over "puck_plate_cup_118" (
+        over "cup_R_1_hull24" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -4005,11 +3392,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_119" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_119>
+    def Xform "cup_R_1_hull25" (
+        prepend references = @./geometries.usd@</Geometries/cup_R_1_hull25>
     )
     {
-        over "puck_plate_cup_119" (
+        over "cup_R_1_hull25" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -4018,11 +3405,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_120" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_120>
+    def Xform "cup_R_1_hull26" (
+        prepend references = @./geometries.usd@</Geometries/cup_R_1_hull26>
     )
     {
-        over "puck_plate_cup_120" (
+        over "cup_R_1_hull26" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -4031,11 +3418,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_121" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_121>
+    def Xform "cup_R_1_hull27" (
+        prepend references = @./geometries.usd@</Geometries/cup_R_1_hull27>
     )
     {
-        over "puck_plate_cup_121" (
+        over "cup_R_1_hull27" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -4044,11 +3431,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_122" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_122>
+    def Xform "cup_R_1_hull28" (
+        prepend references = @./geometries.usd@</Geometries/cup_R_1_hull28>
     )
     {
-        over "puck_plate_cup_122" (
+        over "cup_R_1_hull28" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -4057,11 +3444,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_123" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_123>
+    def Xform "cup_R_1_hull29" (
+        prepend references = @./geometries.usd@</Geometries/cup_R_1_hull29>
     )
     {
-        over "puck_plate_cup_123" (
+        over "cup_R_1_hull29" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -4070,11 +3457,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_124" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_124>
+    def Xform "cup_R_1_hull30" (
+        prepend references = @./geometries.usd@</Geometries/cup_R_1_hull30>
     )
     {
-        over "puck_plate_cup_124" (
+        over "cup_R_1_hull30" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -4083,11 +3470,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_125" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_125>
+    def Xform "cup_R_1_hull31" (
+        prepend references = @./geometries.usd@</Geometries/cup_R_1_hull31>
     )
     {
-        over "puck_plate_cup_125" (
+        over "cup_R_1_hull31" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -4096,11 +3483,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_126" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_126>
+    def Xform "cup_G_1_hull00" (
+        prepend references = @./geometries.usd@</Geometries/cup_G_1_hull00>
     )
     {
-        over "puck_plate_cup_126" (
+        over "cup_G_1_hull00" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -4109,11 +3496,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_127" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_127>
+    def Xform "cup_G_1_hull01" (
+        prepend references = @./geometries.usd@</Geometries/cup_G_1_hull01>
     )
     {
-        over "puck_plate_cup_127" (
+        over "cup_G_1_hull01" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -4122,11 +3509,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_128" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_128>
+    def Xform "cup_G_1_hull02" (
+        prepend references = @./geometries.usd@</Geometries/cup_G_1_hull02>
     )
     {
-        over "puck_plate_cup_128" (
+        over "cup_G_1_hull02" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -4135,11 +3522,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_129" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_129>
+    def Xform "cup_G_1_hull03" (
+        prepend references = @./geometries.usd@</Geometries/cup_G_1_hull03>
     )
     {
-        over "puck_plate_cup_129" (
+        over "cup_G_1_hull03" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -4148,11 +3535,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_130" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_130>
+    def Xform "cup_G_1_hull04" (
+        prepend references = @./geometries.usd@</Geometries/cup_G_1_hull04>
     )
     {
-        over "puck_plate_cup_130" (
+        over "cup_G_1_hull04" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -4161,11 +3548,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_131" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_131>
+    def Xform "cup_G_1_hull05" (
+        prepend references = @./geometries.usd@</Geometries/cup_G_1_hull05>
     )
     {
-        over "puck_plate_cup_131" (
+        over "cup_G_1_hull05" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -4174,11 +3561,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_132" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_132>
+    def Xform "cup_G_1_hull06" (
+        prepend references = @./geometries.usd@</Geometries/cup_G_1_hull06>
     )
     {
-        over "puck_plate_cup_132" (
+        over "cup_G_1_hull06" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -4187,11 +3574,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_133" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_133>
+    def Xform "cup_G_1_hull07" (
+        prepend references = @./geometries.usd@</Geometries/cup_G_1_hull07>
     )
     {
-        over "puck_plate_cup_133" (
+        over "cup_G_1_hull07" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -4200,11 +3587,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_134" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_134>
+    def Xform "cup_G_1_hull08" (
+        prepend references = @./geometries.usd@</Geometries/cup_G_1_hull08>
     )
     {
-        over "puck_plate_cup_134" (
+        over "cup_G_1_hull08" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -4213,11 +3600,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_135" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_135>
+    def Xform "cup_G_1_hull09" (
+        prepend references = @./geometries.usd@</Geometries/cup_G_1_hull09>
     )
     {
-        over "puck_plate_cup_135" (
+        over "cup_G_1_hull09" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -4226,11 +3613,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_136" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_136>
+    def Xform "cup_G_1_hull10" (
+        prepend references = @./geometries.usd@</Geometries/cup_G_1_hull10>
     )
     {
-        over "puck_plate_cup_136" (
+        over "cup_G_1_hull10" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -4239,11 +3626,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_137" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_137>
+    def Xform "cup_G_1_hull11" (
+        prepend references = @./geometries.usd@</Geometries/cup_G_1_hull11>
     )
     {
-        over "puck_plate_cup_137" (
+        over "cup_G_1_hull11" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -4252,11 +3639,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_138" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_138>
+    def Xform "cup_G_1_hull12" (
+        prepend references = @./geometries.usd@</Geometries/cup_G_1_hull12>
     )
     {
-        over "puck_plate_cup_138" (
+        over "cup_G_1_hull12" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -4265,11 +3652,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_139" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_139>
+    def Xform "cup_G_1_hull13" (
+        prepend references = @./geometries.usd@</Geometries/cup_G_1_hull13>
     )
     {
-        over "puck_plate_cup_139" (
+        over "cup_G_1_hull13" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -4278,11 +3665,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_140" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_140>
+    def Xform "cup_G_1_hull14" (
+        prepend references = @./geometries.usd@</Geometries/cup_G_1_hull14>
     )
     {
-        over "puck_plate_cup_140" (
+        over "cup_G_1_hull14" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -4291,11 +3678,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_141" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_141>
+    def Xform "cup_G_1_hull15" (
+        prepend references = @./geometries.usd@</Geometries/cup_G_1_hull15>
     )
     {
-        over "puck_plate_cup_141" (
+        over "cup_G_1_hull15" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -4304,11 +3691,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_142" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_142>
+    def Xform "cup_G_1_hull16" (
+        prepend references = @./geometries.usd@</Geometries/cup_G_1_hull16>
     )
     {
-        over "puck_plate_cup_142" (
+        over "cup_G_1_hull16" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -4317,11 +3704,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_143" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_143>
+    def Xform "cup_G_1_hull17" (
+        prepend references = @./geometries.usd@</Geometries/cup_G_1_hull17>
     )
     {
-        over "puck_plate_cup_143" (
+        over "cup_G_1_hull17" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -4330,11 +3717,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_144" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_144>
+    def Xform "cup_G_1_hull18" (
+        prepend references = @./geometries.usd@</Geometries/cup_G_1_hull18>
     )
     {
-        over "puck_plate_cup_144" (
+        over "cup_G_1_hull18" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -4343,11 +3730,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_145" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_145>
+    def Xform "cup_G_1_hull19" (
+        prepend references = @./geometries.usd@</Geometries/cup_G_1_hull19>
     )
     {
-        over "puck_plate_cup_145" (
+        over "cup_G_1_hull19" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -4356,11 +3743,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_146" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_146>
+    def Xform "cup_G_1_hull20" (
+        prepend references = @./geometries.usd@</Geometries/cup_G_1_hull20>
     )
     {
-        over "puck_plate_cup_146" (
+        over "cup_G_1_hull20" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -4369,11 +3756,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_147" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_147>
+    def Xform "cup_G_1_hull21" (
+        prepend references = @./geometries.usd@</Geometries/cup_G_1_hull21>
     )
     {
-        over "puck_plate_cup_147" (
+        over "cup_G_1_hull21" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -4382,11 +3769,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_148" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_148>
+    def Xform "cup_G_1_hull22" (
+        prepend references = @./geometries.usd@</Geometries/cup_G_1_hull22>
     )
     {
-        over "puck_plate_cup_148" (
+        over "cup_G_1_hull22" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -4395,11 +3782,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_149" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_149>
+    def Xform "cup_G_1_hull23" (
+        prepend references = @./geometries.usd@</Geometries/cup_G_1_hull23>
     )
     {
-        over "puck_plate_cup_149" (
+        over "cup_G_1_hull23" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -4408,11 +3795,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_150" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_150>
+    def Xform "cup_G_1_hull24" (
+        prepend references = @./geometries.usd@</Geometries/cup_G_1_hull24>
     )
     {
-        over "puck_plate_cup_150" (
+        over "cup_G_1_hull24" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -4421,11 +3808,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_151" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_151>
+    def Xform "cup_G_1_hull25" (
+        prepend references = @./geometries.usd@</Geometries/cup_G_1_hull25>
     )
     {
-        over "puck_plate_cup_151" (
+        over "cup_G_1_hull25" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -4434,11 +3821,11 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_152" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_152>
+    def Xform "cup_G_1_hull26" (
+        prepend references = @./geometries.usd@</Geometries/cup_G_1_hull26>
     )
     {
-        over "puck_plate_cup_152" (
+        over "cup_G_1_hull26" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {
@@ -4447,11 +3834,479 @@ def Scope "Instances"
         }
     }
 
-    def Xform "puck_plate_cup_153" (
-        prepend references = @./geometries.usd@</Geometries/puck_plate_cup_153>
+    def Xform "cup_G_1_hull27" (
+        prepend references = @./geometries.usd@</Geometries/cup_G_1_hull27>
     )
     {
-        over "puck_plate_cup_153" (
+        over "cup_G_1_hull27" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
+        )
+        {
+            token physics:approximation = "convexHull"
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "cup_G_1_hull28" (
+        prepend references = @./geometries.usd@</Geometries/cup_G_1_hull28>
+    )
+    {
+        over "cup_G_1_hull28" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
+        )
+        {
+            token physics:approximation = "convexHull"
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "cup_G_1_hull29" (
+        prepend references = @./geometries.usd@</Geometries/cup_G_1_hull29>
+    )
+    {
+        over "cup_G_1_hull29" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
+        )
+        {
+            token physics:approximation = "convexHull"
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "cup_G_1_hull30" (
+        prepend references = @./geometries.usd@</Geometries/cup_G_1_hull30>
+    )
+    {
+        over "cup_G_1_hull30" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
+        )
+        {
+            token physics:approximation = "convexHull"
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "cup_G_1_hull31" (
+        prepend references = @./geometries.usd@</Geometries/cup_G_1_hull31>
+    )
+    {
+        over "cup_G_1_hull31" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
+        )
+        {
+            token physics:approximation = "convexHull"
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "cup_B_1_hull00" (
+        prepend references = @./geometries.usd@</Geometries/cup_B_1_hull00>
+    )
+    {
+        over "cup_B_1_hull00" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
+        )
+        {
+            token physics:approximation = "convexHull"
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "cup_B_1_hull01" (
+        prepend references = @./geometries.usd@</Geometries/cup_B_1_hull01>
+    )
+    {
+        over "cup_B_1_hull01" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
+        )
+        {
+            token physics:approximation = "convexHull"
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "cup_B_1_hull02" (
+        prepend references = @./geometries.usd@</Geometries/cup_B_1_hull02>
+    )
+    {
+        over "cup_B_1_hull02" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
+        )
+        {
+            token physics:approximation = "convexHull"
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "cup_B_1_hull03" (
+        prepend references = @./geometries.usd@</Geometries/cup_B_1_hull03>
+    )
+    {
+        over "cup_B_1_hull03" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
+        )
+        {
+            token physics:approximation = "convexHull"
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "cup_B_1_hull04" (
+        prepend references = @./geometries.usd@</Geometries/cup_B_1_hull04>
+    )
+    {
+        over "cup_B_1_hull04" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
+        )
+        {
+            token physics:approximation = "convexHull"
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "cup_B_1_hull05" (
+        prepend references = @./geometries.usd@</Geometries/cup_B_1_hull05>
+    )
+    {
+        over "cup_B_1_hull05" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
+        )
+        {
+            token physics:approximation = "convexHull"
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "cup_B_1_hull06" (
+        prepend references = @./geometries.usd@</Geometries/cup_B_1_hull06>
+    )
+    {
+        over "cup_B_1_hull06" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
+        )
+        {
+            token physics:approximation = "convexHull"
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "cup_B_1_hull07" (
+        prepend references = @./geometries.usd@</Geometries/cup_B_1_hull07>
+    )
+    {
+        over "cup_B_1_hull07" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
+        )
+        {
+            token physics:approximation = "convexHull"
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "cup_B_1_hull08" (
+        prepend references = @./geometries.usd@</Geometries/cup_B_1_hull08>
+    )
+    {
+        over "cup_B_1_hull08" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
+        )
+        {
+            token physics:approximation = "convexHull"
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "cup_B_1_hull09" (
+        prepend references = @./geometries.usd@</Geometries/cup_B_1_hull09>
+    )
+    {
+        over "cup_B_1_hull09" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
+        )
+        {
+            token physics:approximation = "convexHull"
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "cup_B_1_hull10" (
+        prepend references = @./geometries.usd@</Geometries/cup_B_1_hull10>
+    )
+    {
+        over "cup_B_1_hull10" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
+        )
+        {
+            token physics:approximation = "convexHull"
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "cup_B_1_hull11" (
+        prepend references = @./geometries.usd@</Geometries/cup_B_1_hull11>
+    )
+    {
+        over "cup_B_1_hull11" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
+        )
+        {
+            token physics:approximation = "convexHull"
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "cup_B_1_hull12" (
+        prepend references = @./geometries.usd@</Geometries/cup_B_1_hull12>
+    )
+    {
+        over "cup_B_1_hull12" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
+        )
+        {
+            token physics:approximation = "convexHull"
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "cup_B_1_hull13" (
+        prepend references = @./geometries.usd@</Geometries/cup_B_1_hull13>
+    )
+    {
+        over "cup_B_1_hull13" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
+        )
+        {
+            token physics:approximation = "convexHull"
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "cup_B_1_hull14" (
+        prepend references = @./geometries.usd@</Geometries/cup_B_1_hull14>
+    )
+    {
+        over "cup_B_1_hull14" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
+        )
+        {
+            token physics:approximation = "convexHull"
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "cup_B_1_hull15" (
+        prepend references = @./geometries.usd@</Geometries/cup_B_1_hull15>
+    )
+    {
+        over "cup_B_1_hull15" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
+        )
+        {
+            token physics:approximation = "convexHull"
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "cup_B_1_hull16" (
+        prepend references = @./geometries.usd@</Geometries/cup_B_1_hull16>
+    )
+    {
+        over "cup_B_1_hull16" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
+        )
+        {
+            token physics:approximation = "convexHull"
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "cup_B_1_hull17" (
+        prepend references = @./geometries.usd@</Geometries/cup_B_1_hull17>
+    )
+    {
+        over "cup_B_1_hull17" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
+        )
+        {
+            token physics:approximation = "convexHull"
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "cup_B_1_hull18" (
+        prepend references = @./geometries.usd@</Geometries/cup_B_1_hull18>
+    )
+    {
+        over "cup_B_1_hull18" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
+        )
+        {
+            token physics:approximation = "convexHull"
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "cup_B_1_hull19" (
+        prepend references = @./geometries.usd@</Geometries/cup_B_1_hull19>
+    )
+    {
+        over "cup_B_1_hull19" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
+        )
+        {
+            token physics:approximation = "convexHull"
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "cup_B_1_hull20" (
+        prepend references = @./geometries.usd@</Geometries/cup_B_1_hull20>
+    )
+    {
+        over "cup_B_1_hull20" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
+        )
+        {
+            token physics:approximation = "convexHull"
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "cup_B_1_hull21" (
+        prepend references = @./geometries.usd@</Geometries/cup_B_1_hull21>
+    )
+    {
+        over "cup_B_1_hull21" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
+        )
+        {
+            token physics:approximation = "convexHull"
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "cup_B_1_hull22" (
+        prepend references = @./geometries.usd@</Geometries/cup_B_1_hull22>
+    )
+    {
+        over "cup_B_1_hull22" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
+        )
+        {
+            token physics:approximation = "convexHull"
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "cup_B_1_hull23" (
+        prepend references = @./geometries.usd@</Geometries/cup_B_1_hull23>
+    )
+    {
+        over "cup_B_1_hull23" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
+        )
+        {
+            token physics:approximation = "convexHull"
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "cup_B_1_hull24" (
+        prepend references = @./geometries.usd@</Geometries/cup_B_1_hull24>
+    )
+    {
+        over "cup_B_1_hull24" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
+        )
+        {
+            token physics:approximation = "convexHull"
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "cup_B_1_hull25" (
+        prepend references = @./geometries.usd@</Geometries/cup_B_1_hull25>
+    )
+    {
+        over "cup_B_1_hull25" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
+        )
+        {
+            token physics:approximation = "convexHull"
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "cup_B_1_hull26" (
+        prepend references = @./geometries.usd@</Geometries/cup_B_1_hull26>
+    )
+    {
+        over "cup_B_1_hull26" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
+        )
+        {
+            token physics:approximation = "convexHull"
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "cup_B_1_hull27" (
+        prepend references = @./geometries.usd@</Geometries/cup_B_1_hull27>
+    )
+    {
+        over "cup_B_1_hull27" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
+        )
+        {
+            token physics:approximation = "convexHull"
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "cup_B_1_hull28" (
+        prepend references = @./geometries.usd@</Geometries/cup_B_1_hull28>
+    )
+    {
+        over "cup_B_1_hull28" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
+        )
+        {
+            token physics:approximation = "convexHull"
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "cup_B_1_hull29" (
+        prepend references = @./geometries.usd@</Geometries/cup_B_1_hull29>
+    )
+    {
+        over "cup_B_1_hull29" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
+        )
+        {
+            token physics:approximation = "convexHull"
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "cup_B_1_hull30" (
+        prepend references = @./geometries.usd@</Geometries/cup_B_1_hull30>
+    )
+    {
+        over "cup_B_1_hull30" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
+        )
+        {
+            token physics:approximation = "convexHull"
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "cup_B_1_hull31" (
+        prepend references = @./geometries.usd@</Geometries/cup_B_1_hull31>
+    )
+    {
+        over "cup_B_1_hull31" (
             apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI"]
         )
         {

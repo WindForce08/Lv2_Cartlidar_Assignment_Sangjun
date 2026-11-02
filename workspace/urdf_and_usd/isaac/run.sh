@@ -17,7 +17,7 @@ else echo "Isaac Lab 을 찾지 못했습니다: $LAB (ISAACLAB_DIR 또는 ISAAC
 cd "$HERE"
 CLEAN=(env -u PYTHONPATH -u LD_LIBRARY_PATH -u AMENT_PREFIX_PATH -u CMAKE_PREFIX_PATH -u ROS_DISTRO -u ROS_VERSION -u ROS_PYTHON_VERSION
        PYTHONPATH="$HERE")
-need_usd() { [ -f usd/light/waffle_4wd_light/waffle_4wd_light.usda ] && [ -f usd/full/waffle_4wd_full/waffle_4wd_full.usda ] \
+need_usd() { [ -f usd/light/waffle_4wd_light/waffle_4wd_light.usda ] && [ -f usd/full/waffle_4wd_full/waffle_4wd_full.usda ] && [ -f usd/loaded/waffle_4wd_loaded/waffle_4wd_loaded.usda ] \
              || { echo "USD 가 없어 먼저 만듭니다 (convert)"; HEADLESS=1 "${CLEAN[@]}" "${PY[@]}" convert_urdf.py || exit 1; }; }
 case "${1:-}" in
   convert) shift; HEADLESS=1 "${CLEAN[@]}" "${PY[@]}" convert_urdf.py "$@" ;;

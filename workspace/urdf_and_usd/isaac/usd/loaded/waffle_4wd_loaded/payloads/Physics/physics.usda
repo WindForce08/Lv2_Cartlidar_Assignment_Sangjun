@@ -1,0 +1,2017 @@
+#usda 1.0
+(
+    customLayerData = {
+        string creator = "URDF USD Converter v0.3.2"
+    }
+    defaultPrim = "waffle_4wd"
+    endTimeCode = 1000000
+    kilogramsPerUnit = 1
+    metersPerUnit = 1
+    startTimeCode = 0
+    upAxis = "Z"
+)
+
+over "waffle_4wd"
+{
+    over "Geometry"
+    {
+        over "base_link" (
+            prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsArticulationRootAPI", "NewtonArticulationRootAPI", "PhysicsMassAPI", "NewtonMassAPI"]
+        )
+        {
+            double[] newton:inertia = [0.1083507923, 0.1061031362, 0.05380155926, -0.0002499722711, 0.02557211965, 0.0007601139335]
+            bool newton:selfCollisionEnabled = 1
+            point3f physics:centerOfMass = (-0.03179348, 0.0016123768, 0.11825951)
+            float3 physics:diagonalInertia = (0.043678284, 0.10611318, 0.11846403)
+            float physics:mass = 3.5700018
+            quatf physics:principalAxes = (-0.5622272, -0.00636214, 0.8269559, 0.0020208335)
+
+            over "wheel_left_front_link" (
+                prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI", "NewtonMassAPI"]
+            )
+            {
+                double[] newton:inertia = [0.000011127635299831068, 0.000011128818936392597, 0.000020588783588307505, 2.531950270742378e-9, -1.616491577189184e-9, 1.483315013635248e-9]
+                point3f physics:centerOfMass = (0.000001747109, -0.0000010824816, 0.0031995652)
+                float3 physics:diagonalInertia = (0.000011125627, 0.000011130827, 0.000020588785)
+                float physics:mass = 0.028497806
+                quatf physics:principalAxes = (0.9443122, -0.000045908913, -0.0001064407, -0.32905075)
+
+                over "tire_cylinder" (
+                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                )
+                {
+                }
+            }
+
+            over "wheel_right_front_link" (
+                prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI", "NewtonMassAPI"]
+            )
+            {
+                double[] newton:inertia = [0.000011127635642403401, 0.000011128819201306387, 0.000020588784138750188, -3.93567305804213e-9, 1.5245757871497083e-9, -1.4771084369219048e-9]
+                point3f physics:centerOfMass = (-0.0000025169725, -0.0000010847905, -0.003199565)
+                float3 physics:diagonalInertia = (0.000011124247, 0.000011132207, 0.000020588785)
+                float physics:mass = 0.028497808
+                quatf physics:principalAxes = (0.9375125, 0.00010127037, 0.00004838937, 0.34795147)
+
+                over "tire_cylinder" (
+                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                )
+                {
+                }
+            }
+
+            over "wheel_left_rear_link" (
+                prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI", "NewtonMassAPI"]
+            )
+            {
+                double[] newton:inertia = [0.000011127635284880435, 0.000011128818929832525, 0.000020588783566473004, 2.5319488427578164e-9, -1.6164908686271215e-9, 1.4833156051946637e-9]
+                point3f physics:centerOfMass = (0.0000017471416, -0.0000010824834, 0.0031995652)
+                float3 physics:diagonalInertia = (0.000011125627, 0.000011130827, 0.000020588785)
+                float physics:mass = 0.028497806
+                quatf physics:principalAxes = (0.9443124, -0.000045909, -0.00010644065, -0.32905036)
+
+                over "tire_cylinder" (
+                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                )
+                {
+                }
+            }
+
+            over "wheel_right_rear_link" (
+                prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI", "NewtonMassAPI"]
+            )
+            {
+                double[] newton:inertia = [0.000011127635543753907, 0.000011128819092940098, 0.00002058878394695549, -3.935669916290641e-9, 1.5245757939230265e-9, -1.47710886976366e-9]
+                point3f physics:centerOfMass = (-0.0000025169343, -0.0000010847838, -0.003199565)
+                float3 physics:diagonalInertia = (0.000011124247, 0.000011132207, 0.000020588785)
+                float physics:mass = 0.028497808
+                quatf physics:principalAxes = (0.93751246, 0.00010127041, 0.00004838934, 0.34795174)
+
+                over "tire_cylinder" (
+                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                )
+                {
+                }
+            }
+
+            over "link2" (
+                prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI", "NewtonMassAPI"]
+            )
+            {
+                double[] newton:inertia = [0.000033802, 0.000029569, 0.00001761, 0, 0, -2.2122e-7]
+                point3f physics:centerOfMass = (0, 0.000569, 0.047433)
+                float3 physics:diagonalInertia = (0.00001760591, 0.000029573092, 0.000033802)
+                float physics:mass = 0.104833
+                quatf physics:principalAxes = (-0.70707655, 0.0065370277, 0.70707655, -0.0065370277)
+
+                over "link3" (
+                    prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI", "NewtonMassAPI"]
+                )
+                {
+                    double[] newton:inertia = [0.00023711, 0.00024488, 0.000042967, -2.7514e-7, -0.000026667, -0.0000013127]
+                    point3f physics:centerOfMass = (0.009162, 0.000419, 0.105999)
+                    float3 physics:diagonalInertia = (0.000039362, 0.00024070403, 0.00024489098)
+                    float physics:mass = 0.142346
+                    quatf physics:principalAxes = (0.5370133, -0.5276757, -0.4724727, -0.45819715)
+
+                    over "link4" (
+                        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI", "NewtonMassAPI"]
+                    )
+                    {
+                        double[] newton:inertia = [0.000024809, 0.00017818, 0.00018689, -0.0000012221, 1.829e-9, 0]
+                        point3f physics:centerOfMass = (0.09329, 0.000443, 0)
+                        float3 physics:diagonalInertia = (0.000024799263, 0.00017818974, 0.00018689)
+                        float physics:mass = 0.13467
+                        quatf physics:principalAxes = (0.9999921, 8.149961e-7, 0.000005645014, 0.003983782)
+
+                        over "link5" (
+                            prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI", "NewtonMassAPI"]
+                        )
+                        {
+                            double[] newton:inertia = [0.000002398, 0.0000019417, 0.0000015485, 0, 5.5149e-8, 0]
+                            point3f physics:centerOfMass = (0.023194, 0, 0.006912)
+                            float3 physics:diagonalInertia = (0.0000015449348, 0.0000019417, 0.0000024015653)
+                            float physics:mass = 0.008694
+                            quatf physics:principalAxes = (-0.68391764, 0, 0.72955924, 0)
+
+                            over "gripper_roll_link" (
+                                prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI", "NewtonMassAPI"]
+                            )
+                            {
+                                double[] newton:inertia = [0.00024695, 0.00034851, 0.00024414, 2.7108e-8, -0.000036251, 6.8162e-8]
+                                point3f physics:centerOfMass = (0.048499, -0.000012, 0.017596)
+                                float3 physics:diagonalInertia = (0.00020926676, 0.00028182322, 0.00034851005)
+                                float physics:mass = 0.26725
+                                quatf physics:principalAxes = (0.65083295, -0.65042746, -0.27681094, -0.27701318)
+
+                                over "gripper_left_link" (
+                                    prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI", "NewtonMassAPI"]
+                                )
+                                {
+                                    double[] newton:inertia = [0.000020137, 0.000039421, 0.000033625, 0.0000026405, 3.8628e-7, 5.6782e-7]
+                                    point3f physics:centerOfMass = (0.007687, 0.009183, 0.000553)
+                                    float3 physics:diagonalInertia = (0.000019775158, 0.00003357104, 0.000039836803)
+                                    float physics:mass = 0.050414
+                                    quatf physics:principalAxes = (0.6693083, 0.73992604, -0.041795477, -0.052810412)
+
+                                    over "box" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_1" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_2" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_3" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_4" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_5" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_6" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_7" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_8" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_9" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_10" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_11" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_12" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_13" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_14" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_15" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_16" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_17" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_18" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_19" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_20" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_21" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_22" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_23" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_24" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_25" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_26" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_27" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_28" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_29" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_30" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_31" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_32" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_33" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_34" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_35" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_36" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_37" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_38" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_39" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_40" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_41" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_42" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_43" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_44" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_45" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_46" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_47" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_48" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_49" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_50" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_51" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_52" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_53" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_54" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_55" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_56" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_57" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_58" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_59" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_60" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_61" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_62" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_63" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_64" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_65" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_66" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+                                }
+
+                                over "gripper_right_link" (
+                                    prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI", "NewtonMassAPI"]
+                                )
+                                {
+                                    double[] newton:inertia = [0.000020137, 0.000039428, 0.000033633, -0.0000026431, -3.8613e-7, 5.6782e-7]
+                                    point3f physics:centerOfMass = (0.007681, -0.009183, -0.000553)
+                                    float3 physics:diagonalInertia = (0.000019774609, 0.00003357902, 0.00003984437)
+                                    float physics:mass = 0.050414
+                                    quatf physics:principalAxes = (0.6693043, 0.73992634, 0.04183475, 0.052826792)
+
+                                    over "box" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_1" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_2" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_3" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_4" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_5" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_6" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_7" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_8" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_9" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_10" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_11" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_12" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_13" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_14" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_15" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_16" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_17" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_18" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_19" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_20" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_21" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_22" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_23" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_24" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_25" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_26" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_27" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_28" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_29" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_30" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_31" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_32" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_33" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_34" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_35" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_36" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_37" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_38" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_39" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_40" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_41" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_42" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_43" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_44" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_45" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_46" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_47" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_48" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_49" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_50" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_51" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_52" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_53" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_54" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_55" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_56" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_57" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_58" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_59" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_60" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_61" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_62" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_63" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_64" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_65" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+
+                                    over "box_66" (
+                                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                                    )
+                                    {
+                                    }
+                                }
+
+                                over "box" (
+                                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                                )
+                                {
+                                }
+
+                                over "box_1" (
+                                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                                )
+                                {
+                                }
+
+                                over "box_2" (
+                                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                                )
+                                {
+                                }
+
+                                over "box_3" (
+                                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                                )
+                                {
+                                }
+
+                                over "box_4" (
+                                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                                )
+                                {
+                                }
+
+                                over "box_5" (
+                                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                                )
+                                {
+                                }
+
+                                over "box_6" (
+                                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                                )
+                                {
+                                }
+
+                                over "box_7" (
+                                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                                )
+                                {
+                                }
+
+                                over "box_8" (
+                                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                                )
+                                {
+                                }
+
+                                over "box_9" (
+                                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                                )
+                                {
+                                }
+
+                                over "box_10" (
+                                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                                )
+                                {
+                                }
+
+                                over "box_11" (
+                                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                                )
+                                {
+                                }
+
+                                over "box_12" (
+                                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                                )
+                                {
+                                }
+
+                                over "box_13" (
+                                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                                )
+                                {
+                                }
+
+                                over "box_14" (
+                                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                                )
+                                {
+                                }
+
+                                over "box_15" (
+                                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                                )
+                                {
+                                }
+
+                                over "box_16" (
+                                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                                )
+                                {
+                                }
+
+                                over "box_17" (
+                                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                                )
+                                {
+                                }
+
+                                over "box_18" (
+                                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                                )
+                                {
+                                }
+
+                                over "box_19" (
+                                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                                )
+                                {
+                                }
+
+                                over "box_20" (
+                                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                                )
+                                {
+                                }
+
+                                over "box_21" (
+                                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                                )
+                                {
+                                }
+
+                                over "box_22" (
+                                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                                )
+                                {
+                                }
+
+                                over "box_23" (
+                                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                                )
+                                {
+                                }
+
+                                over "box_24" (
+                                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                                )
+                                {
+                                }
+
+                                over "box_25" (
+                                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                                )
+                                {
+                                }
+
+                                over "box_26" (
+                                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                                )
+                                {
+                                }
+
+                                over "box_27" (
+                                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                                )
+                                {
+                                }
+
+                                over "box_28" (
+                                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                                )
+                                {
+                                }
+
+                                over "box_29" (
+                                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                                )
+                                {
+                                }
+
+                                over "box_30" (
+                                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                                )
+                                {
+                                }
+
+                                over "box_31" (
+                                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                                )
+                                {
+                                }
+
+                                over "gripper_motor_link" (
+                                    prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI", "NewtonMassAPI"]
+                                )
+                                {
+                                    double[] newton:inertia = [1e-8, 1e-8, 1e-8, 0, 0, 0]
+                                    point3f physics:centerOfMass = (0, 0, 0)
+                                    float3 physics:diagonalInertia = (1e-8, 1e-8, 1e-8)
+                                    float physics:mass = 0.001
+                                    quatf physics:principalAxes = (1, 0, 0, 0)
+                                }
+                            }
+
+                            over "box" (
+                                prepend apiSchemas = ["NewtonCollisionAPI"]
+                            )
+                            {
+                            }
+
+                            over "box_1" (
+                                prepend apiSchemas = ["NewtonCollisionAPI"]
+                            )
+                            {
+                            }
+
+                            over "box_2" (
+                                prepend apiSchemas = ["NewtonCollisionAPI"]
+                            )
+                            {
+                            }
+
+                            over "box_3" (
+                                prepend apiSchemas = ["NewtonCollisionAPI"]
+                            )
+                            {
+                            }
+                        }
+
+                        over "box" (
+                            prepend apiSchemas = ["NewtonCollisionAPI"]
+                        )
+                        {
+                        }
+
+                        over "box_1" (
+                            prepend apiSchemas = ["NewtonCollisionAPI"]
+                        )
+                        {
+                        }
+
+                        over "box_2" (
+                            prepend apiSchemas = ["NewtonCollisionAPI"]
+                        )
+                        {
+                        }
+
+                        over "box_3" (
+                            prepend apiSchemas = ["NewtonCollisionAPI"]
+                        )
+                        {
+                        }
+
+                        over "box_4" (
+                            prepend apiSchemas = ["NewtonCollisionAPI"]
+                        )
+                        {
+                        }
+
+                        over "box_5" (
+                            prepend apiSchemas = ["NewtonCollisionAPI"]
+                        )
+                        {
+                        }
+
+                        over "box_6" (
+                            prepend apiSchemas = ["NewtonCollisionAPI"]
+                        )
+                        {
+                        }
+
+                        over "box_7" (
+                            prepend apiSchemas = ["NewtonCollisionAPI"]
+                        )
+                        {
+                        }
+
+                        over "box_8" (
+                            prepend apiSchemas = ["NewtonCollisionAPI"]
+                        )
+                        {
+                        }
+
+                        over "box_9" (
+                            prepend apiSchemas = ["NewtonCollisionAPI"]
+                        )
+                        {
+                        }
+
+                        over "box_10" (
+                            prepend apiSchemas = ["NewtonCollisionAPI"]
+                        )
+                        {
+                        }
+
+                        over "box_11" (
+                            prepend apiSchemas = ["NewtonCollisionAPI"]
+                        )
+                        {
+                        }
+
+                        over "box_12" (
+                            prepend apiSchemas = ["NewtonCollisionAPI"]
+                        )
+                        {
+                        }
+
+                        over "box_13" (
+                            prepend apiSchemas = ["NewtonCollisionAPI"]
+                        )
+                        {
+                        }
+                    }
+
+                    over "box" (
+                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                    )
+                    {
+                    }
+
+                    over "box_1" (
+                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                    )
+                    {
+                    }
+
+                    over "box_2" (
+                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                    )
+                    {
+                    }
+
+                    over "box_3" (
+                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                    )
+                    {
+                    }
+
+                    over "box_4" (
+                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                    )
+                    {
+                    }
+
+                    over "box_5" (
+                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                    )
+                    {
+                    }
+
+                    over "box_6" (
+                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                    )
+                    {
+                    }
+
+                    over "box_7" (
+                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                    )
+                    {
+                    }
+
+                    over "box_8" (
+                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                    )
+                    {
+                    }
+
+                    over "box_9" (
+                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                    )
+                    {
+                    }
+
+                    over "box_10" (
+                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                    )
+                    {
+                    }
+
+                    over "box_11" (
+                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                    )
+                    {
+                    }
+
+                    over "box_12" (
+                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                    )
+                    {
+                    }
+
+                    over "box_13" (
+                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                    )
+                    {
+                    }
+
+                    over "box_14" (
+                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                    )
+                    {
+                    }
+
+                    over "box_15" (
+                        prepend apiSchemas = ["NewtonCollisionAPI"]
+                    )
+                    {
+                    }
+                }
+
+                over "box" (
+                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                )
+                {
+                }
+
+                over "box_1" (
+                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                )
+                {
+                }
+
+                over "box_2" (
+                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                )
+                {
+                }
+
+                over "box_3" (
+                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                )
+                {
+                }
+
+                over "box_4" (
+                    prepend apiSchemas = ["NewtonCollisionAPI"]
+                )
+                {
+                }
+            }
+
+            over "static_426" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "static_427" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "static_431" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "static_432" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "static_433" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "static_434" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "static_435" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "static_436" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "static_437" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "belt_block_FL" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "belt_sled_FL" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "belt_guard_FL" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "belt_motor_FL" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "belt_block_FR" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "belt_sled_FR" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "belt_guard_FR" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "belt_motor_FR" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "belt_block_RL" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "belt_sled_RL" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "belt_guard_RL" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "belt_motor_RL" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "belt_block_RR" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "belt_sled_RR" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "belt_guard_RR" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "belt_motor_RR" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "deck_tray_1" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "light_part157" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "light_part176" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "light_bracket_L" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "light_bracket_R" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "light_pallet_base" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "light_cup_R_1" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "light_cup_R_2" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "light_cup_R_3" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "light_cup_R_4" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "light_cup_G_1" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "light_cup_G_2" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "light_cup_G_3" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "light_cup_G_4" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "light_cup_B_1" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "light_cup_B_2" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "light_cup_B_3" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "light_cup_B_4" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "lds_front_body" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "lds_front_head" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "lds_rear_body" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "lds_rear_head" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "tfmini_holder_1" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "tfmini_body" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "jetson_board" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "jetson_heatsink" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "opencr_lower" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+
+            over "opencr_upper" (
+                prepend apiSchemas = ["NewtonCollisionAPI"]
+            )
+            {
+            }
+        }
+    }
+
+    over "Physics"
+    {
+        def PhysicsRevoluteJoint "wheel_left_front_joint" (
+            prepend apiSchemas = ["NewtonJointAPI", "PhysicsDriveAPI:angular", "PhysicsJointStateAPI:angular"]
+        )
+        {
+            float drive:angular:physics:damping = 0.0037227874
+            float drive:angular:physics:maxForce = 1.8
+            float drive:angular:physics:stiffness = 0
+            uniform token drive:angular:physics:type = "force"
+            float newton:damping = 0.000017453292
+            float newton:velocityLimit = 630
+            uniform token physics:axis = "Z"
+            custom rel physics:body0
+            append rel physics:body0 = </waffle_4wd/Geometry/base_link>
+            custom rel physics:body1
+            append rel physics:body1 = </waffle_4wd/Geometry/base_link/wheel_left_front_link>
+            point3f physics:localPos0 = (0.0925, 0.1546, 0.02625)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (0.7071069, -0.70710665, 0, 0)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+            custom float urdf:limit:effort = 1.8
+        }
+
+        def PhysicsRevoluteJoint "wheel_right_front_joint" (
+            prepend apiSchemas = ["NewtonJointAPI", "PhysicsDriveAPI:angular", "PhysicsJointStateAPI:angular"]
+        )
+        {
+            float drive:angular:physics:damping = 0.0037227874
+            float drive:angular:physics:maxForce = 1.8
+            float drive:angular:physics:stiffness = 0
+            uniform token drive:angular:physics:type = "force"
+            float newton:damping = 0.000017453292
+            float newton:velocityLimit = 630
+            uniform token physics:axis = "Z"
+            custom rel physics:body0
+            append rel physics:body0 = </waffle_4wd/Geometry/base_link>
+            custom rel physics:body1
+            append rel physics:body1 = </waffle_4wd/Geometry/base_link/wheel_right_front_link>
+            point3f physics:localPos0 = (0.0925, -0.1546, 0.02625)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (0.7071069, -0.70710665, 0, 0)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+            custom float urdf:limit:effort = 1.8
+        }
+
+        def PhysicsRevoluteJoint "wheel_left_rear_joint" (
+            prepend apiSchemas = ["NewtonJointAPI", "PhysicsDriveAPI:angular", "PhysicsJointStateAPI:angular"]
+        )
+        {
+            float drive:angular:physics:damping = 0.0037227874
+            float drive:angular:physics:maxForce = 1.8
+            float drive:angular:physics:stiffness = 0
+            uniform token drive:angular:physics:type = "force"
+            float newton:damping = 0.000017453292
+            float newton:velocityLimit = 630
+            uniform token physics:axis = "Z"
+            custom rel physics:body0
+            append rel physics:body0 = </waffle_4wd/Geometry/base_link>
+            custom rel physics:body1
+            append rel physics:body1 = </waffle_4wd/Geometry/base_link/wheel_left_rear_link>
+            point3f physics:localPos0 = (-0.0675, 0.1546, 0.02625)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (0.7071069, -0.70710665, 0, 0)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+            custom float urdf:limit:effort = 1.8
+        }
+
+        def PhysicsRevoluteJoint "wheel_right_rear_joint" (
+            prepend apiSchemas = ["NewtonJointAPI", "PhysicsDriveAPI:angular", "PhysicsJointStateAPI:angular"]
+        )
+        {
+            float drive:angular:physics:damping = 0.0037227874
+            float drive:angular:physics:maxForce = 1.8
+            float drive:angular:physics:stiffness = 0
+            uniform token drive:angular:physics:type = "force"
+            float newton:damping = 0.000017453292
+            float newton:velocityLimit = 630
+            uniform token physics:axis = "Z"
+            custom rel physics:body0
+            append rel physics:body0 = </waffle_4wd/Geometry/base_link>
+            custom rel physics:body1
+            append rel physics:body1 = </waffle_4wd/Geometry/base_link/wheel_right_rear_link>
+            point3f physics:localPos0 = (-0.0675, -0.1546, 0.02625)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (0.7071069, -0.70710665, 0, 0)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+            custom float urdf:limit:effort = 1.8
+        }
+
+        def PhysicsRevoluteJoint "joint1" (
+            prepend apiSchemas = ["NewtonJointAPI", "PhysicsDriveAPI:angular", "PhysicsJointStateAPI:angular"]
+        )
+        {
+            float drive:angular:physics:damping = 0.014845771
+            float drive:angular:physics:maxForce = 4.1
+            float drive:angular:physics:stiffness = 0.32944137
+            uniform token drive:angular:physics:type = "force"
+            float newton:damping = 0.0017453292
+            float newton:velocityLimit = 275.01974
+            uniform token physics:axis = "Z"
+            custom rel physics:body0
+            append rel physics:body0 = </waffle_4wd/Geometry/base_link>
+            custom rel physics:body1
+            append rel physics:body1 = </waffle_4wd/Geometry/base_link/link2>
+            point3f physics:localPos0 = (0.096, 0, 0.131)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (1, 0, 0, 0)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+            float physics:lowerLimit = -179.99985
+            float physics:upperLimit = 179.99985
+            custom float urdf:limit:effort = 4.1
+        }
+
+        def PhysicsRevoluteJoint "joint2" (
+            prepend apiSchemas = ["NewtonJointAPI", "PhysicsDriveAPI:angular", "PhysicsJointStateAPI:angular"]
+        )
+        {
+            float drive:angular:physics:damping = 0.014845771
+            float drive:angular:physics:maxForce = 4.1
+            float drive:angular:physics:stiffness = 0.32944137
+            uniform token drive:angular:physics:type = "force"
+            float newton:damping = 0.0017453292
+            float newton:velocityLimit = 275.01974
+            uniform token physics:axis = "Y"
+            custom rel physics:body0
+            append rel physics:body0 = </waffle_4wd/Geometry/base_link/link2>
+            custom rel physics:body1
+            append rel physics:body1 = </waffle_4wd/Geometry/base_link/link2/link3>
+            point3f physics:localPos0 = (0, 0, 0.0595)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (1, 0, 0, 0)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+            float physics:lowerLimit = -122.61297
+            float physics:upperLimit = 91.67325
+            custom float urdf:limit:effort = 4.1
+        }
+
+        def PhysicsRevoluteJoint "joint3" (
+            prepend apiSchemas = ["NewtonJointAPI", "PhysicsDriveAPI:angular", "PhysicsJointStateAPI:angular"]
+        )
+        {
+            float drive:angular:physics:damping = 0.014845771
+            float drive:angular:physics:maxForce = 4.1
+            float drive:angular:physics:stiffness = 0.32944137
+            uniform token drive:angular:physics:type = "force"
+            float newton:damping = 0.0017453292
+            float newton:velocityLimit = 275.01974
+            uniform token physics:axis = "Y"
+            custom rel physics:body0
+            append rel physics:body0 = </waffle_4wd/Geometry/base_link/link2/link3>
+            custom rel physics:body1
+            append rel physics:body1 = </waffle_4wd/Geometry/base_link/link2/link3/link4>
+            point3f physics:localPos0 = (0.024, 0, 0.128)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (1, 0, 0, 0)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+            float physics:lowerLimit = -91.67325
+            float physics:upperLimit = 91.67325
+            custom float urdf:limit:effort = 4.1
+        }
+
+        def PhysicsRevoluteJoint "joint4" (
+            prepend apiSchemas = ["NewtonJointAPI", "PhysicsDriveAPI:angular", "PhysicsJointStateAPI:angular"]
+        )
+        {
+            float drive:angular:physics:damping = 0.014845771
+            float drive:angular:physics:maxForce = 4.1
+            float drive:angular:physics:stiffness = 0.32944137
+            uniform token drive:angular:physics:type = "force"
+            float newton:damping = 0.0017453292
+            float newton:velocityLimit = 275.01974
+            uniform token physics:axis = "Y"
+            custom rel physics:body0
+            append rel physics:body0 = </waffle_4wd/Geometry/base_link/link2/link3/link4>
+            custom rel physics:body1
+            append rel physics:body1 = </waffle_4wd/Geometry/base_link/link2/link3/link4/link5>
+            point3f physics:localPos0 = (0.124, 0, 0)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (1, 0, 0, 0)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+            float physics:lowerLimit = -110.0079
+            float physics:upperLimit = 114.59156
+            custom float urdf:limit:effort = 4.1
+        }
+
+        def PhysicsRevoluteJoint "joint5" (
+            prepend apiSchemas = ["NewtonJointAPI", "PhysicsDriveAPI:angular", "PhysicsJointStateAPI:angular"]
+        )
+        {
+            float drive:angular:physics:damping = 0.014845771
+            float drive:angular:physics:maxForce = 4.1
+            float drive:angular:physics:stiffness = 0.32944137
+            uniform token drive:angular:physics:type = "force"
+            float newton:damping = 0.0017453292
+            float newton:velocityLimit = 275.01974
+            uniform token physics:axis = "X"
+            custom rel physics:body0
+            append rel physics:body0 = </waffle_4wd/Geometry/base_link/link2/link3/link4/link5>
+            custom rel physics:body1
+            append rel physics:body1 = </waffle_4wd/Geometry/base_link/link2/link3/link4/link5/gripper_roll_link>
+            point3f physics:localPos0 = (0.028, 0, 0)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (1, 0, 0, 0)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+            float physics:lowerLimit = -160.42818
+            float physics:upperLimit = 160.42818
+            custom float urdf:limit:effort = 4.1
+        }
+
+        def PhysicsPrismaticJoint "gripper_left_joint" (
+            prepend apiSchemas = ["NewtonJointAPI", "PhysicsDriveAPI:linear", "PhysicsJointStateAPI:linear"]
+        )
+        {
+            float drive:linear:physics:damping = 130
+            float drive:linear:physics:maxForce = 20
+            float drive:linear:physics:stiffness = 6500
+            uniform token drive:linear:physics:type = "force"
+            float newton:damping = 0.1
+            float newton:velocityLimit = 4.8
+            uniform token physics:axis = "Y"
+            custom rel physics:body0
+            append rel physics:body0 = </waffle_4wd/Geometry/base_link/link2/link3/link4/link5/gripper_roll_link>
+            custom rel physics:body1
+            append rel physics:body1 = </waffle_4wd/Geometry/base_link/link2/link3/link4/link5/gripper_roll_link/gripper_left_link>
+            point3f physics:localPos0 = (0.0947, 0.021, 0)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (1, 0, 0, 0)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+            float physics:lowerLimit = -0.011
+            float physics:upperLimit = 0.02
+            custom float urdf:limit:effort = 20
+        }
+
+        def PhysicsPrismaticJoint "gripper_right_joint" (
+            prepend apiSchemas = ["NewtonJointAPI", "PhysicsDriveAPI:linear", "PhysicsJointStateAPI:linear"]
+        )
+        {
+            float drive:linear:physics:damping = 130
+            float drive:linear:physics:maxForce = 20
+            float drive:linear:physics:stiffness = 6500
+            uniform token drive:linear:physics:type = "force"
+            float newton:damping = 0.1
+            float newton:velocityLimit = 4.8
+            uniform token physics:axis = "Y"
+            custom rel physics:body0
+            append rel physics:body0 = </waffle_4wd/Geometry/base_link/link2/link3/link4/link5/gripper_roll_link>
+            custom rel physics:body1
+            append rel physics:body1 = </waffle_4wd/Geometry/base_link/link2/link3/link4/link5/gripper_roll_link/gripper_right_link>
+            point3f physics:localPos0 = (0.0947, -0.021, 0)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (0, -1, 0, 0)
+            quatf physics:localRot1 = (0, -1, 0, 0)
+            float physics:lowerLimit = -0.011
+            float physics:upperLimit = 0.02
+            custom float urdf:limit:effort = 20
+        }
+
+        def PhysicsRevoluteJoint "gripper_roll" (
+            prepend apiSchemas = ["NewtonJointAPI", "PhysicsDriveAPI:angular", "PhysicsJointStateAPI:angular"]
+        )
+        {
+            float drive:angular:physics:damping = 0.014845771
+            float drive:angular:physics:maxForce = 4.1
+            float drive:angular:physics:stiffness = 0.32944137
+            uniform token drive:angular:physics:type = "force"
+            float newton:velocityLimit = 275.01974
+            uniform token physics:axis = "X"
+            custom rel physics:body0
+            append rel physics:body0 = </waffle_4wd/Geometry/base_link/link2/link3/link4/link5/gripper_roll_link>
+            custom rel physics:body1
+            append rel physics:body1 = </waffle_4wd/Geometry/base_link/link2/link3/link4/link5/gripper_roll_link/gripper_motor_link>
+            point3f physics:localPos0 = (0, 0, 0)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (1, 0, 0, 0)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+            float physics:lowerLimit = -45.527225
+            float physics:upperLimit = 54.665905
+            custom float urdf:limit:effort = 4.1
+        }
+    }
+}
+
