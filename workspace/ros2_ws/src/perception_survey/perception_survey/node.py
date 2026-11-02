@@ -13,6 +13,7 @@ from std_msgs.msg import String
 from std_srvs.srv import Trigger
 from robot_interfaces.msg import PuckArray
 from .core import Survey,CAMERAS
+from .localization import accept_by_localization
 
 def rotation(q):
     x,y,z,w=q.x,q.y,q.z,q.w
@@ -37,6 +38,10 @@ class SurveyNode(Node):
         qos=QoSProfile(depth=1,reliability=ReliabilityPolicy.RELIABLE,durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.pub=self.create_publisher(String,'/perception/puck_survey',qos)
         self.sub=self.create_subscription(PuckArray,'/perception/pucks',self.receive,10)
+        # 위치 추정 상태(재위치 노드): OK 가 아니면 관측을 버림. 못 받았거나 localization_stale_s 넘게 안 오면 받음(localization.py)
+        self.loc_state=None;self.loc_rx=None
+        self.loc_stale=self.declare_parameter('localization_stale_s',1.).value
+        self.create_subscription(String,self.declare_parameter('localization_topic','/localization/status').value,self.on_localization,qos)
         self.create_service(Trigger,'/perception/survey/start',self.start)
         self.create_service(Trigger,'/perception/survey/reset',self.reset)
         self.create_service(Trigger,'/perception/survey/finish',self.finish)
@@ -61,8 +66,15 @@ class SurveyNode(Node):
         except (ValueError,OSError) as e:res.success=False;res.message=str(e)
         return res
 
+    def on_localization(self,msg):
+        self.loc_state=msg.data;self.loc_rx=self.get_clock().now()
+
     def receive(self,msg):
         if not self.enabled:return
+        age=float('inf') if self.loc_rx is None else (self.get_clock().now()-self.loc_rx).nanoseconds*1e-9
+        ok,why=accept_by_localization(self.loc_state,age,self.loc_stale)
+        if not ok:
+            self.core.reject(why);self.publish();return
         try:stamp=Time.from_msg(msg.header.stamp)
         except ValueError:
             self.core.reject('invalid_stamp');self.publish();return
