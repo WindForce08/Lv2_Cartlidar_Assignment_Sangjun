@@ -23,12 +23,30 @@
 //   skill <drive|manipulator> <policy> [timeout] [mode=이름+이름] [fallback=<단계>]
 //                                 예: mode=SEARCH_FRONT+ARM_ALIGN, fallback=navigate:home (':' = 공백)
 //
+// plan 모드 (mission_source: plan, 주사위 기억 로봇 발제 v5) — 시작 단계가 tag 대신 observe → plan
+//   observe                       팔 observe.arm_pose → READ_SIGNAL | READ_BARCODE → /perception/signal CONFIRMED +
+//                                 /perception/barcode READ(read_ok) 둘 다 받으면 성공. MISMATCH 면 안전 정지 (다시 보여주기 없음)
+//   plan                          /mission_planner/plan (std_srvs/Trigger) → message 의 단계 문장 (줄바꿈) 을 뒤에 붙임.
+//                                 실패 (풀 수 없음 · 미등록 바코드 등) 면 재시도 없이 FAILED (발제: 오류 기록 후 안전 정지)
+//   goto <x> <y> <yaw>            navigate 와 같고 위치 이름 대신 지도 좌표 (계획기 접근 자세표)
+//   pick_target <x> <y> <z>       pick 과 같고 /manipulator/pick target = 지도 좌표 퍽 중심
+//   verify <L> <cx> <cy> <z> <expect9> <yellow_shape>
+//                                 팔 verify.arm_pose → verify.mode → verify.settle_s 기다림 → /perception/check_dice.
+//                                 칸 = (cx, cy) ± 0.06 격자 (행 우선, 위 줄 +Y 부터, 줄 안은 -X 부터), expect9 = 칸마다 0 빈칸 · 1 R · 2 G · 3 Y.
+//                                 결과는 로그 (log_dir/mission_log.jsonl) 에 남기고, 틀려도 verify.stop_on_fail=false 면 계속 (복귀 점수)
+//   wait <s>                      제자리 대기 (복귀 후 정지 등)
+//
 // callback group
 // - mission_cb_group_: Action · Service 클라이언트 · 서버, 타이머. 상태는 이 그룹에서만 바뀐다
 // - sensor_cb_group_: /perception/result · /e_stop · /diagnostics 구독. sensor_mutex_ · atomic으로 보호
 
 #include <atomic>
+#include <chrono>
 #include <cmath>
+#include <ctime>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
 #include <functional>
 #include <map>
 #include <memory>
@@ -42,6 +60,7 @@
 #include "action_msgs/srv/cancel_goal.hpp"
 #include "diagnostic_msgs/msg/diagnostic_array.hpp"
 #include "diagnostic_msgs/msg/diagnostic_status.hpp"
+#include "geometry_msgs/msg/pose_stamped.hpp"
 #include "nav2_msgs/action/navigate_to_pose.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
@@ -51,7 +70,10 @@
 #include "robot_interfaces/action/execute_skill.hpp"
 #include "robot_interfaces/action/pick.hpp"
 #include "robot_interfaces/msg/mission_status.hpp"
+#include "robot_interfaces/msg/barcode.hpp"
 #include "robot_interfaces/msg/perception_result.hpp"
+#include "robot_interfaces/msg/signal_sequence.hpp"
+#include "robot_interfaces/srv/check_dice.hpp"
 #include "robot_interfaces/srv/set_perception_mode.hpp"
 #include "std_msgs/msg/bool.hpp"
 #include "std_srvs/srv/trigger.hpp"
@@ -76,6 +98,9 @@ public:
   using SetPerceptionMode = robot_interfaces::srv::SetPerceptionMode;
   using Mode = SetPerceptionMode::Request;
   using Trigger = std_srvs::srv::Trigger;
+  using SignalSequence = robot_interfaces::msg::SignalSequence;
+  using Barcode = robot_interfaces::msg::Barcode;
+  using CheckDice = robot_interfaces::srv::CheckDice;
   using Report = std::function<void (bool ok, const std::string & message)>;
 
   explicit MissionNode(const rclcpp::NodeOptions & options)
@@ -105,6 +130,15 @@ public:
       "/diagnostics", rclcpp::QoS(10),
       [this](diagnostic_msgs::msg::DiagnosticArray::ConstSharedPtr msg) {onDiagnostics(msg);},
       sub_opt);
+    if (plan_mode_) {
+      // plan 모드: 신호 · 바코드 (계약: Reliable, depth 1)
+      signal_sub_ = create_subscription<SignalSequence>(
+        "/perception/signal", rclcpp::QoS(1).reliable(),
+        [this](SignalSequence::ConstSharedPtr msg) {onSignal(msg);}, sub_opt);
+      barcode_sub_ = create_subscription<Barcode>(
+        "/perception/barcode", rclcpp::QoS(1).reliable(),
+        [this](Barcode::ConstSharedPtr msg) {onBarcode(msg);}, sub_opt);
+    }
 
     // --- 클라이언트 ---
     mode_client_ = create_client<SetPerceptionMode>(
@@ -117,6 +151,10 @@ public:
     pick_client_ = rclcpp_action::create_client<Pick>(this, "/manipulator/pick", mission_cb_group_);
     arm_skill_client_ =
       rclcpp_action::create_client<ExecuteSkill>(this, "/manipulator/execute_skill", mission_cb_group_);
+    if (plan_mode_) {
+      plan_client_ = create_client<Trigger>(plan_service_, rclcpp::ServicesQoS(), mission_cb_group_);
+      dice_client_ = create_client<CheckDice>("/perception/check_dice", rclcpp::ServicesQoS(), mission_cb_group_);
+    }
 
     // --- 서버: 시작 · 정지 (joy_teleop 버튼 또는 CLI에서 호출) ---
     start_srv_ = create_service<Trigger>(
@@ -138,8 +176,8 @@ public:
       this, get_clock(), rclcpp::Duration::from_seconds(0.5), [this]() {publishStatus();},
       mission_cb_group_);
 
-    RCLCPP_INFO(get_logger(), "mission_node ready (missions: %zu, auto_start: %s)",
-      missions_.size(), start_requested_ ? "true" : "false");
+    RCLCPP_INFO(get_logger(), "mission_node ready (source: %s, missions: %zu, auto_start: %s)",
+      plan_mode_ ? "plan" : "tag", missions_.size(), start_requested_ ? "true" : "false");
   }
 
 private:
@@ -251,6 +289,22 @@ private:
     // timeout > 0이면 그 시간 동안 opencr 진단이 안 오면 ERROR. 0 = 끔 (opencr 발행 확인 전)
     diag_prefix_ = declare_parameter<std::string>("diagnostics.name_prefix", "opencr/");
     diag_timeout_ = declare_parameter<double>("diagnostics.timeout", 3.0);
+
+    // plan 모드 (주사위 기억 로봇): tag 대신 observe → plan (mission_planner_node) 으로 단계를 받는다
+    const auto source = declare_parameter<std::string>("mission_source", "tag");
+    if (source != "tag" && source != "plan") {throw std::invalid_argument("mission_source must be tag or plan");}
+    plan_mode_ = source == "plan";
+    plan_service_ = declare_parameter<std::string>("plan.service", "/mission_planner/plan");
+    timeout_["observe"] = declare_parameter<double>("timeout.observe", 150.0);  // 점멸 12회 x 2 s x 2 묶음 + 텀 + 바코드
+    timeout_["plan"] = declare_parameter<double>("timeout.plan", 60.0);
+    timeout_["verify"] = declare_parameter<double>("timeout.verify", 40.0);
+    observe_arm_pose_ = declare_parameter<std::string>("observe.arm_pose", "TAG_VIEW");
+    verify_arm_pose_ = declare_parameter<std::string>("verify.arm_pose", "TAG_VIEW");
+    verify_mode_text_ = declare_parameter<std::string>("verify.mode", "READ_TAG+SEARCH_FRONT");
+    verify_settle_ = declare_parameter<double>("verify.settle_s", 2.0);
+    verify_tolerance_ = declare_parameter<double>("verify.tolerance", 0.0);   // 0 = perception 설정값
+    verify_stop_on_fail_ = declare_parameter<bool>("verify.stop_on_fail", false);
+    log_dir_ = declare_parameter<std::string>("log_dir", "");                // 비우면 기록 안 함
   }
 
   void validation()
@@ -290,6 +344,12 @@ private:
     if (!std::isfinite(diag_timeout_) || diag_timeout_ < 0.0) {
       throw std::invalid_argument("diagnostics.timeout must be >= 0 (0 = off)");
     }
+    if (plan_mode_) {
+      if (!parseModeNames(verify_mode_text_)) {throw std::invalid_argument("verify.mode: names joined by '+'");}
+      if (!(verify_settle_ >= 0.0) || !(verify_tolerance_ >= 0.0)) {
+        throw std::invalid_argument("verify.settle_s · verify.tolerance must be >= 0");
+      }
+    }
     // 미션표의 위치 이름 · 단계 인자 확인 (현장에서 오타로 멈추지 않게 시작 때 거부)
     for (const auto & [id, steps] : missions_) {
       for (const auto & s : steps) {
@@ -326,7 +386,8 @@ private:
   {
     static const std::map<std::string, uint8_t> names = {
       {"OFF", Mode::OFF}, {"SEARCH_FRONT", Mode::SEARCH_FRONT}, {"ARM_ALIGN", Mode::ARM_ALIGN},
-      {"READ_TAG", Mode::READ_TAG}, {"SEARCH_REAR", Mode::SEARCH_REAR}};
+      {"READ_TAG", Mode::READ_TAG}, {"SEARCH_REAR", Mode::SEARCH_REAR}, {"READ_MARKER", Mode::READ_MARKER},
+      {"READ_SIGNAL", Mode::READ_SIGNAL}, {"READ_BARCODE", Mode::READ_BARCODE}};
     if (text.empty()) {return std::nullopt;}
     uint8_t mode = 0;
     std::istringstream in(text);
@@ -374,13 +435,25 @@ private:
       }
       if (s.args.size() == 3 && (!isNumber(s.args[2], v) || v <= 0.0)) {bad("timeout must be > 0");}
       if (!s.mode_text.empty() && !parseModeNames(s.mode_text)) {
-        bad("mode= takes names joined by '+' (OFF · SEARCH_FRONT · ARM_ALIGN · READ_TAG · SEARCH_REAR), "
-          "no numbers");
+        bad("mode= takes names joined by '+' (OFF · SEARCH_FRONT · ARM_ALIGN · READ_TAG · SEARCH_REAR · "
+          "READ_MARKER · READ_SIGNAL · READ_BARCODE), no numbers");
       }
-    } else if (s.type == "search" || s.type == "pick") {
+    } else if (s.type == "search" || s.type == "pick" || s.type == "observe" || s.type == "plan") {
       if (!s.args.empty()) {bad("takes no arguments");}
+    } else if (s.type == "goto" || s.type == "pick_target") {
+      if (s.args.size() != 3 || !isNumber(s.args[0], v) || !isNumber(s.args[1], v) || !isNumber(s.args[2], v)) {
+        bad("needs <x> <y> <" + std::string(s.type == "goto" ? "yaw" : "z") + "> (map frame)");
+      }
+    } else if (s.type == "verify") {
+      bool ok = s.args.size() == 6 && isNumber(s.args[1], v) && isNumber(s.args[2], v) && isNumber(s.args[3], v) &&
+        s.args[4].size() == 9 && s.args[4].find_first_not_of("0123") == std::string::npos &&
+        (s.args[5] == "0" || s.args[5] == "1" || s.args[5] == "2");
+      if (!ok) {bad("needs <L> <cx> <cy> <z> <expect9: 0-3 x 9> <yellow_shape 0|1|2>");}
+    } else if (s.type == "wait") {
+      if (s.args.size() != 1 || !isNumber(s.args[0], v) || v < 0.0) {bad("needs <seconds> >= 0");}
     } else {
-      bad("unknown step type (navigate · search · approach · pick · pose · skill)");
+      bad("unknown step type (navigate · search · approach · pick · pose · skill · "
+        "observe · plan · goto · pick_target · verify · wait)");
     }
   }
 
@@ -415,6 +488,23 @@ private:
         last_tag_id_ = msg->tag_found ? msg->tag_id : -1;
       }
     }
+  }
+
+  // plan 모드: 신호 순서 (CONFIRMED · MISMATCH) 와 바코드 (READ) 는 observe 단계가 시작된 뒤 것만 쓴다
+  void onSignal(SignalSequence::ConstSharedPtr msg)
+  {
+    std::lock_guard<std::mutex> lock(sensor_mutex_);
+    signal_status_ = msg->status;
+    signal_seq_ = msg->sequence;
+    signal_rx_ = now();
+  }
+
+  void onBarcode(Barcode::ConstSharedPtr msg)
+  {
+    if (msg->source != Barcode::READ || !msg->read_ok || msg->text.empty()) {return;}
+    std::lock_guard<std::mutex> lock(sensor_mutex_);
+    barcode_text_ = msg->text;
+    barcode_rx_ = now();
   }
 
   // name_prefix("opencr/")로 시작하는 항목만 본다. 다른 패키지(controller_manager 등) 진단은 무시
@@ -491,7 +581,8 @@ private:
     if (start_requested_) {
       if (!allServersReady()) {
         RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000,
-          "waiting for servers (/drive/*, /manipulator/*, /perception/set_mode) before start");
+          "waiting for servers (/drive/*, /manipulator/*, /perception/set_mode%s) before start",
+          plan_mode_ ? ", /mission_planner/plan, /perception/check_dice" : "");
       } else {
         start_requested_ = false;
         if (run_ == Run::PAUSED) {
@@ -526,6 +617,12 @@ private:
       tickReadTag();
     } else if (s.type == "search") {
       tickSearch();
+    } else if (s.type == "observe") {
+      tickObserve();
+    } else if (s.type == "verify") {
+      tickVerify();
+    } else if (s.type == "wait") {
+      if (now() >= wait_until_) {stepSucceeded();}
     }
   }
 
@@ -533,7 +630,9 @@ private:
   {
     const Step & s = steps_[step_idx_];
     if (s.type == "skill") {return skillTimeout(s) + skill_timeout_margin_;}
-    auto it = timeout_.find(s.type);
+    if (s.type == "wait") {return std::stod(s.args[0]) + 5.0;}
+    const std::string key = s.type == "goto" ? "navigate" : s.type == "pick_target" ? "pick" : s.type;
+    auto it = timeout_.find(key);
     return it != timeout_.end() ? it->second : 60.0;
   }
 
@@ -547,7 +646,8 @@ private:
     // execute_skill 서버는 쓰는 단계에서 확인 (없으면 fallback)
     return nav_client_->action_server_is_ready() && align_client_->action_server_is_ready() &&
            pose_client_->action_server_is_ready() && pick_client_->action_server_is_ready() &&
-           mode_client_->service_is_ready();
+           mode_client_->service_is_ready() &&
+           (!plan_mode_ || (plan_client_->service_is_ready() && dice_client_->service_is_ready()));
   }
 
   // ------------------------------------------------------------------ 미션 · 단계 전이
@@ -555,17 +655,24 @@ private:
   void beginMission()
   {
     steps_.clear();
-    steps_.push_back(parseStep("pose TAG_VIEW"));
-    Step read;
-    read.type = "read_tag";
-    read.text = "read_tag";
-    steps_.push_back(read);
+    if (plan_mode_) {
+      // 출발 구역에서 신호 · 바코드 관측 → 계획기에 단계 요청 (뒤에 붙음)
+      steps_.push_back(parseStep("observe"));
+      steps_.push_back(parseStep("plan"));
+    } else {
+      steps_.push_back(parseStep("pose TAG_VIEW"));
+      Step read;
+      read.type = "read_tag";
+      read.text = "read_tag";
+      steps_.push_back(read);
+    }
     tag_id_ = -1;
     retry_count_.clear();
     fallback_used_.clear();
     run_ = Run::RUNNING;
     reason_.clear();
-    RCLCPP_INFO(get_logger(), "mission start");
+    RCLCPP_INFO(get_logger(), "mission start (%s)", plan_mode_ ? "plan" : "tag");
+    logEvent("start", "\"source\": \"" + std::string(plan_mode_ ? "plan" : "tag") + "\"");
     enterStep(0);
   }
 
@@ -612,6 +719,30 @@ private:
       // 바퀴는 정지 유지. approach FINE 과 같은 모드 (추적 위치 + arm_offset + 태그 → /arm_range)
       drive_done_ = true;
       setModeThen(kFineMode, [this]() {sendPick();});
+    } else if (s.type == "goto") {
+      const uint64_t id = stage_id_;
+      sendNavigate({std::stod(s.args[0]), std::stod(s.args[1]), std::stod(s.args[2])});
+      if (id != stage_id_) {return;}
+      sendArmPose("STOW");
+    } else if (s.type == "pick_target") {
+      drive_done_ = true;
+      geometry_msgs::msg::PoseStamped target;
+      target.header.frame_id = map_frame_;
+      target.header.stamp = now();
+      target.pose.position.x = std::stod(s.args[0]);
+      target.pose.position.y = std::stod(s.args[1]);
+      target.pose.position.z = std::stod(s.args[2]);
+      target.pose.orientation.w = 1.0;
+      setModeThen(kFineMode, [this, target]() {sendPick(target);});
+    } else if (s.type == "observe" || s.type == "verify") {
+      // ① 팔 자세 → ② 모드 → ③ tick 에서 확인 (sequenced)
+      drive_done_ = true;
+      dice_pending_ = false;
+      sendArmPose(s.type == "observe" ? observe_arm_pose_ : verify_arm_pose_);
+    } else if (s.type == "plan") {
+      requestPlan();
+    } else if (s.type == "wait") {
+      wait_until_ = now() + rclcpp::Duration::from_seconds(std::stod(s.args[0]));
     } else if (s.type == "skill") {
       const bool on_drive = s.args[0] == "drive";
       (on_drive ? arm_done_ : drive_done_) = true;
@@ -634,6 +765,11 @@ private:
             setModeThen(Mode::SEARCH_FRONT | Mode::SEARCH_REAR, [this]() {beginWatch();});
           });
       }
+    } else if (s.type == "observe" && phase_ == 1) {
+      // 팔 자세 완료 → 신호 · 바코드 읽기. 이 시각 뒤에 받은 값만 쓴다
+      setModeThen(Mode::READ_SIGNAL | Mode::READ_BARCODE, [this]() {beginWatch();});
+    } else if (s.type == "verify" && phase_ == 1) {
+      setModeThen(*parseModeNames(verify_mode_text_), [this]() {beginWatch();});
     } else if (s.type == "approach") {
       switch (phase_) {
         case 1:  // STOW 완료 → 전방 탐색만 켜고 먼 거리 정렬 (drive는 ARM_ALIGN 비트가 없으면 먼 거리 모드)
@@ -657,7 +793,7 @@ private:
   bool isSequenced() const
   {
     const auto & t = steps_[step_idx_].type;
-    return t == "search" || t == "approach";
+    return t == "search" || t == "approach" || t == "observe" || t == "verify";
   }
 
   void stepSucceeded()
@@ -721,6 +857,135 @@ private:
       return;
     }
     rotateIfNothing(search_, "search");
+  }
+
+  // ------------------------------------------------------------------ plan 모드 단계
+  void tickObserve()
+  {
+    if (!watching_) {return;}
+    uint8_t status;
+    std::string seq, code;
+    bool sig_new, code_new;
+    {
+      std::lock_guard<std::mutex> lock(sensor_mutex_);
+      sig_new = signal_rx_ >= view_since_;
+      code_new = barcode_rx_ >= view_since_;
+      status = signal_status_;
+      seq = signal_seq_;
+      code = barcode_text_;
+    }
+    if (sig_new && status == SignalSequence::MISMATCH) {
+      // 발제: 다시 보여주기 · 수동 수정 없음 → 오류 기록 후 안전 정지
+      logEvent("observe", "\"ok\": false, \"reason\": \"signal mismatch\", \"sequence\": \"" + seq + "\"");
+      finish(Run::FAILED, "signal MISMATCH (" + seq + ")");
+      return;
+    }
+    if (sig_new && status == SignalSequence::CONFIRMED && code_new) {
+      RCLCPP_INFO(get_logger(), "observe: signal %s, barcode %s", seq.c_str(), code.c_str());
+      logEvent("observe", "\"ok\": true, \"sequence\": \"" + seq + "\", \"barcode\": \"" + code + "\"");
+      stepSucceeded();
+    }
+  }
+
+  void requestPlan()
+  {
+    if (!plan_client_->service_is_ready()) {failStep(plan_service_ + " not ready"); return;}
+    const uint64_t id = stage_id_;
+    plan_client_->async_send_request(std::make_shared<Trigger::Request>(),
+      [this, id](rclcpp::Client<Trigger>::SharedFuture future) {
+        if (id != stage_id_) {return;}
+        const auto res = future.get();
+        if (!res->success) {
+          logEvent("plan", "\"ok\": false, \"reason\": \"" + escape(res->message) + "\"");
+          finish(Run::FAILED, "plan: " + res->message);   // 풀 수 없는 문제 · 미등록 바코드: 재시도 없음
+          return;
+        }
+        std::vector<Step> added;
+        std::istringstream in(res->message);
+        std::string line;
+        try {
+          while (std::getline(in, line)) {
+            if (line.find_first_not_of(" \t\r") == std::string::npos) {continue;}
+            Step st = parseStep(line);
+            checkStep(st, "plan");
+            added.push_back(st);
+          }
+        } catch (const std::invalid_argument & e) {
+          finish(Run::FAILED, std::string("plan step rejected: ") + e.what());
+          return;
+        }
+        if (added.empty()) {finish(Run::FAILED, "plan returned no steps"); return;}
+        RCLCPP_INFO(get_logger(), "plan -> %zu step(s)", added.size());
+        logEvent("plan", "\"ok\": true, \"steps\": " + std::to_string(added.size()));
+        steps_.resize(step_idx_ + 1);
+        steps_.insert(steps_.end(), added.begin(), added.end());
+        stepSucceeded();
+      });
+  }
+
+  void tickVerify()
+  {
+    if (!watching_ || dice_pending_ || (now() - view_since_).seconds() < verify_settle_) {return;}
+    const Step & s = steps_[step_idx_];
+    auto req = std::make_shared<CheckDice::Request>();
+    req->header.frame_id = map_frame_;
+    const double cx = std::stod(s.args[1]), cy = std::stod(s.args[2]), z = std::stod(s.args[3]);
+    for (int k = 0; k < 9; ++k) {
+      const int r = k / 3, c = k % 3;          // 위 줄 (+Y) 부터, 줄 안은 -X 부터
+      req->cells[k].x = cx + (c - 1) * 0.06;
+      req->cells[k].y = cy + (1 - r) * 0.06;
+      req->cells[k].z = z;
+      req->expect[k] = static_cast<uint8_t>(s.args[4][k] - '0');
+    }
+    req->yellow_shape = static_cast<uint8_t>(std::stoi(s.args[5]));
+    req->tolerance = static_cast<float>(verify_tolerance_);
+    if (!dice_client_->service_is_ready()) {failStep("/perception/check_dice not ready"); return;}
+    dice_pending_ = true;
+    const uint64_t id = stage_id_;
+    const std::string place = s.args[0];
+    dice_client_->async_send_request(req,
+      [this, id, place](rclcpp::Client<CheckDice>::SharedFuture future) {
+        if (id != stage_id_) {return;}
+        const auto r = future.get();
+        std::ostringstream o;
+        o << "\"place\": \"" << place << "\", \"observed\": " << (r->observed ? "true" : "false")
+          << ", \"passed\": " << (r->passed ? "true" : "false") << ", \"message\": \"" << escape(r->message) << "\", \"cells\": [";
+        for (int k = 0; k < 9; ++k) {
+          o << (k ? ", " : "") << "{\"error\": " << int(r->error[k]) << ", \"count\": " << int(r->count[k])
+            << ", \"offset\": " << r->offset[k] << ", \"color\": " << int(r->color[k]) << ", \"shape\": " << int(r->shape[k]) << "}";
+        }
+        o << "]";
+        logEvent("verify", o.str());
+        RCLCPP_INFO(get_logger(), "verify %s: observed %d, passed %d (%s)", place.c_str(), r->observed, r->passed, r->message.c_str());
+        if ((!r->observed || !r->passed) && verify_stop_on_fail_) {
+          failStep("verify " + place + ": " + (r->observed ? r->message : "nothing observed"));
+          return;
+        }
+        stepSucceeded();
+      });
+  }
+
+  static std::string escape(const std::string & in)
+  {
+    std::string out;
+    for (char c : in) {
+      if (c == '"' || c == '\\') {out += '\\';}
+      if (c == '\n') {out += "\\n"; continue;}
+      out += c;
+    }
+    return out;
+  }
+
+  // log_dir/mission_log.jsonl 에 한 줄 (관측 · 계획 · 재검증 기록 = 발제 제출물 근거)
+  void logEvent(const std::string & kind, const std::string & body)
+  {
+    if (log_dir_.empty()) {return;}
+    std::error_code ec;
+    std::filesystem::create_directories(log_dir_, ec);
+    std::ofstream f(log_dir_ + "/mission_log.jsonl", std::ios::app);
+    if (!f) {RCLCPP_WARN_ONCE(get_logger(), "cannot write %s/mission_log.jsonl", log_dir_.c_str()); return;}
+    f << std::fixed << std::setprecision(3) << "{\"t\": " << now().seconds() << ", \"kind\": \"" << kind << "\", \"step\": "
+      << step_idx_ << ", " << body << "}\n";
   }
 
   // view_wait 동안 못 찾으면 제자리 회전: 현재 위치 + yaw로 /drive/navigate (drive가 nav2 spin으로 처리)
@@ -844,6 +1109,10 @@ private:
     cancelAll();
     retry_pending_ = false;
     watching_ = false;
+    if (r != Run::IDLE || run_ != Run::IDLE) {
+      logEvent("finish", "\"state\": \"" + std::string(r == Run::DONE ? "DONE" : r == Run::FAILED ? "FAILED" : "IDLE") +
+        "\", \"reason\": \"" + escape(why) + "\"");
+    }
     run_ = r;
     reason_ = why;
     ++stage_id_;
@@ -1010,9 +1279,10 @@ private:
       armReport(), [](const ArmPose::Result & r, std::string &) {return r.success;});
   }
 
-  void sendPick()
+  void sendPick(const std::optional<geometry_msgs::msg::PoseStamped> & target = std::nullopt)
   {
     Pick::Goal goal;  // target 비움 → manipulator가 정밀 정렬 결과 → 추적 위치 순서로 정한다
+    if (target) {goal.target = *target;}   // pick_target: 계획기가 아는 퍽 자리 (지도 좌표)
     const bool need_grasp = require_grasped_;
     sendGoal<Pick>(pick_client_, goal, pick_goal_, "/manipulator/pick", armReport(),
       [need_grasp](const Pick::Result & r, std::string & msg) {
@@ -1055,6 +1325,10 @@ private:
   bool require_grasped_{true};
   std::string diag_prefix_{"opencr/"};
   double diag_timeout_{3.0};
+  bool plan_mode_{false};
+  std::string plan_service_, observe_arm_pose_, verify_arm_pose_, verify_mode_text_, log_dir_;
+  double verify_settle_{2.0}, verify_tolerance_{0.0};
+  bool verify_stop_on_fail_{false};
 
   // ROS 인터페이스
   rclcpp::CallbackGroup::SharedPtr mission_cb_group_, sensor_cb_group_;
@@ -1063,6 +1337,10 @@ private:
   rclcpp::Subscription<PerceptionResult>::SharedPtr result_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr estop_sub_;
   rclcpp::Subscription<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr diag_sub_;
+  rclcpp::Subscription<SignalSequence>::SharedPtr signal_sub_;
+  rclcpp::Subscription<Barcode>::SharedPtr barcode_sub_;
+  rclcpp::Client<Trigger>::SharedPtr plan_client_;
+  rclcpp::Client<CheckDice>::SharedPtr dice_client_;
   rclcpp::Client<SetPerceptionMode>::SharedPtr mode_client_;
   rclcpp_action::Client<NavigateToPose>::SharedPtr nav_client_;
   rclcpp_action::Client<AlignBase>::SharedPtr align_client_;
@@ -1085,6 +1363,9 @@ private:
   int found_count_{0}, tag_count_{0}, last_tag_id_{-1};
   std::string diag_error_;
   rclcpp::Time diag_rx_{0, 0, RCL_ROS_TIME};
+  uint8_t signal_status_{0};
+  std::string signal_seq_, barcode_text_;
+  rclcpp::Time signal_rx_{0, 0, RCL_ROS_TIME}, barcode_rx_{0, 0, RCL_ROS_TIME};
   std::atomic<bool> estop_active_{false};
 
   // 상태 (mission_cb_group_ 전용)
@@ -1107,6 +1388,8 @@ private:
   bool retry_pending_{false};
   size_t retry_idx_{0};
   rclcpp::Time retry_at_{0, 0, RCL_ROS_TIME};
+  rclcpp::Time wait_until_{0, 0, RCL_ROS_TIME};
+  bool dice_pending_{false};
 };
 
 }  // namespace mission

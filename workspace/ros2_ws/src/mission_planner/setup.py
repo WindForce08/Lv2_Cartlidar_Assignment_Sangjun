@@ -26,5 +26,6 @@ setup(
     entry_points={"console_scripts": [
         "mission_make_maps = mission_planner.cli:make_maps",
         "mission_plan = mission_planner.cli:plan_cmd",
+        "mission_planner_node = mission_planner.planner_node:main",
     ]},
 )

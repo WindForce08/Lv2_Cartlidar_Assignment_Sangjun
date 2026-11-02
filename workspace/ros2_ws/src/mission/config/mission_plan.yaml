@@ -1,0 +1,20 @@
+# plan 모드 덮어쓰기 (mission_bringup.launch.py source:=plan). 단계는 mission_planner_node 가 /mission_planner/plan 으로 준다.
+#   계획기 단계 문법: mission_node.cpp 머리말 · mission_planner/mission_lines.py
+mission_node:
+  ros__parameters:
+    mission_source: plan
+    plan:
+      service: /mission_planner/plan
+    timeout:
+      observe: 150.0             # 점멸 12 회 x (1 s 켜짐 + 1 s 꺼짐) x 확정 2 묶음 + 텀 + 바코드 읽기
+      plan: 60.0
+      verify: 40.0
+    observe:
+      arm_pose: TAG_VIEW         # ★ 바코드 (80, 650, 450 mm) 를 팔 카메라로 읽을 자세 — manipulator 와 맞출 것
+    verify:
+      arm_pose: TAG_VIEW         # ★ 팔 카메라로 장소 3 x 3 칸을 위에서 보는 자세 (CheckDice: READ_TAG 켜고 위에서 볼 때 부름)
+      mode: READ_TAG+SEARCH_FRONT
+      settle_s: 2.0              # 모드를 켠 뒤 퍽 목록이 모일 때까지
+      tolerance: 0.0             # 0 = perception 설정값 (발제 기준 10 mm)
+      stop_on_fail: false        # 틀려도 기록하고 계속 (복귀 10 점)
+    log_dir: /tmp/mission_log    # mission_log.jsonl (관측 · 계획 · 재검증 · 끝). 비우면 기록 안 함
