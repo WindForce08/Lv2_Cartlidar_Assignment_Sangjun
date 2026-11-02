@@ -32,7 +32,12 @@ class Survey:
                 self.tracks.append({'box':b,'side':side,'x_mm':(x+side*.04)*1000,'y_mm':y*1000,
                   'measured':False,'present':None,'color':None,'shape':None,'pose':None,'yaw_deg':None,'id':None,
                   'conf':{'color':0.,'shape':0.,'id':0.},'seen_by':[],'n_obs':0,'last_seen_stamp':None,
-                  '_points':[],'_values':{k:{} for k in ('color','shape','pose','id')},'_seen':set(),'_yaw':[]})
+                  '_points':[],'_values':{k:{} for k in ('color','shape','pose','id')},'_arm_values':{'color':{},'shape':{}},'_seen':set(),'_yaw':[]})
+
+    @staticmethod
+    def _votes(t,field):
+        arm=t['_arm_values'].get(field)
+        return arm if arm else t['_values'][field]
 
     def reject(self, reason):
         self.rejected[reason] = self.rejected.get(reason,0)+1
@@ -71,7 +76,11 @@ class Survey:
             # 태그 색띠 점유율과 D435 검출 점수는 같은 수치 의미가 아니다.
             threshold = self.tagged_min_confidence if tid >= 0 and camera == 'arm' else .6
             if field in ('color','shape') and score < threshold:continue
-            votes=t['_values'][field];votes[value]=votes.get(value,0)+1
+            # 색 · 모양은 팔 카메라 태그 관측(가까이서 본 것)이 있으면 그 표로만 정하고, 없을 때만 D435 표를 쓴다.
+            arm=field in ('color','shape') and tid>=0 and camera=='arm'
+            store=t['_arm_values'] if arm else t['_values']
+            votes=store[field];votes[value]=votes.get(value,0)+1
+            votes=self._votes(t,field)
             t[field]=next(iter(votes)) if len(votes)==1 else None
             if field in t['conf']:t['conf'][field]=(1. if field=='id' else score) if len(votes)==1 else 0.
         yaw=o.get('yaw_deg')
@@ -96,7 +105,7 @@ class Survey:
             name=f"{t['box']}:{t['side']}"
             if t['n_obs']<self.minimum:errors.append(f'{name}:insufficient_observations')
             for field in ('color','shape','pose','id'):
-                votes=t['_values'][field]
+                votes=self._votes(t,field)
                 if len(votes)!=1 or sum(votes.values())<self.minimum:errors.append(f'{name}:{field}_unknown_or_conflict')
             if t['shape']=='cylinder' and t['pose']=='lying':errors.append(f'{name}:lying_cylinder')
             if t['id'] is not None:ids.setdefault(t['id'],[]).append(name)
