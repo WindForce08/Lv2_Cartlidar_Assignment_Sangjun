@@ -20,7 +20,7 @@ from isaaclab.app import AppLauncher
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 parser = argparse.ArgumentParser(description="waffle_4wd URDF -> USD")
-parser.add_argument("--only", choices=["light", "full"], default=None, help="한 판만 변환 (기본: 둘 다)")
+parser.add_argument("--only", choices=["light", "full", "loaded"], default=None, help="한 판만 변환 (기본: 셋 다)")
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 args_cli.headless = True
@@ -138,7 +138,7 @@ def bake(usd_path: str) -> dict:
 
 
 def main():
-    kinds = [args_cli.only] if args_cli.only else ["light", "full"]
+    kinds = [args_cli.only] if args_cli.only else ["light", "full", "loaded"]
     log = {}
     for k in kinds:
         path = convert(k)

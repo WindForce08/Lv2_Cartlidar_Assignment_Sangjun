@@ -26,6 +26,7 @@ from isaaclab.app import AppLauncher
 HERE = os.path.dirname(os.path.abspath(__file__))
 parser = argparse.ArgumentParser(description="waffle_4wd 점검")
 parser.add_argument("--full", action="store_true", help="정밀 판 (차체 볼록 메시)")
+parser.add_argument("--loaded", action="store_true", help="퍽 12개를 실은 가벼운 판")
 parser.add_argument("--pose", default=None, choices=["drive", "stow", "zero"], help="시작 자세 (기본: robot_params.json)")
 parser.add_argument("--cameras", action="store_true", help="카메라 그림도")
 parser.add_argument("--window", action="store_true", help="창으로 보기 (run.sh window)")
@@ -49,7 +50,7 @@ from isaaclab_physx.physics import PhysxCfg  # noqa: E402
 from waffle_4wd_isaac import robot_cfg as R  # noqa: E402
 from waffle_4wd_isaac import sensors_cfg as S  # noqa: E402
 
-KIND = "full" if args_cli.full else "light"
+KIND = "full" if args_cli.full else ("loaded" if args_cli.loaded else "light")
 OUT = os.path.join(HERE, "results")
 os.makedirs(os.path.join(OUT, "img"), exist_ok=True)
 LOG = open(os.path.join(OUT, "check.log"), "a", encoding="utf-8")
@@ -131,7 +132,7 @@ def main():
                                     collision_props=sim_utils.CollisionPropertiesCfg())
         c.func(f"/World/Obstacles/{nm}", c, translation=(x, y, size[2] / 2))
     pose_name = args_cli.pose or R.PARAMS["poses"]["default"]
-    cfg = (R.WAFFLE_4WD_FULL_CFG if args_cli.full else R.WAFFLE_4WD_CFG).replace(prim_path=ROBOT)
+    cfg = {"full": R.WAFFLE_4WD_FULL_CFG, "loaded": R.WAFFLE_4WD_LOADED_CFG, "light": R.WAFFLE_4WD_CFG}[KIND].replace(prim_path=ROBOT)
     cfg.init_state.joint_pos = R.pose(pose_name)
     robot = Articulation(cfg)
     occ = S.spawn_lidar_occluders(ROBOT)

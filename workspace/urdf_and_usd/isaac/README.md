@@ -1,14 +1,14 @@
-# waffle_4wd Isaac Sim / Isaac Lab 공유본 (2026-10-29, 퍽 플레이트 2026-10-30)
+# waffle_4wd Isaac Sim / Isaac Lab 공유본 (2026-10-29, B안 판 2026-11-02)
 
-`../waffle_4wd_description_261028` (ROS 2 · Gazebo 패키지) 와 같은 로봇을 Isaac Sim 6.1 / Isaac Lab 3.0 에서 바로 쓰게 만든 폴더다.
+`../waffle_4wd_description` (ROS 2 · Gazebo 패키지, B안 상판 팔레트 v3) 와 같은 로봇을 Isaac Sim 6.1 / Isaac Lab 3.0 에서 바로 쓰게 만든 폴더다.
 물리값은 2026-10-29 에 하나씩 정했고 (아래 2절), 값 · 근거는 모두 `robot_params.json` 에 있다.
 학습 과제 (환경 · 보상) 코드는 들어 있지 않다. 과제에서 이 로봇 · 센서 설정을 불러 쓰면 된다 (4절).
 
 ## 1. 빠른 시작 (Linux)
 
 ```bash
-cd urdfusd_20261030v1/isaac
-./run.sh check                 # 창 없이 물리 · 센서 점검 -> results/ (약 1 분)
+cd workspace/urdf_and_usd/isaac
+./run.sh check                 # 창 없이 물리 · 센서 점검 -> results/ (약 1 분), --full · --loaded 로 다른 판
 ./run.sh check --cameras       # + D435 앞 · 뒤 · 팔 카메라 그림 (results/img/)
 ./run.sh window                # Isaac Sim 창으로 로봇 + 상자 장면 (창을 닫으면 끝)
 ./run.sh maze                  # Isaac Sim 창으로 주사위 경기장 + 로봇 (출발 구역), 로봇을 비추고 재생 (--light 가벼운 판)
@@ -16,26 +16,26 @@ cd urdfusd_20261030v1/isaac
 
 - Isaac Lab 위치가 `~/pa-course/IsaacLab-6.1` 이 아니면 `ISAACLAB_DIR=/경로/IsaacLab ./run.sh check` 또는 `ISAACLAB_PY=/경로/python ./run.sh check`.
 - ROS 2 를 source 한 터미널이어도 된다 (run.sh 가 ROS 환경 변수를 빼고 Isaac 을 실행).
-- 압축은 폴더 구조 그대로 풀 것: `isaac/urdf/*.urdf` 가 `../../waffle_4wd_description_261028/meshes/` 를 상대 경로로 쓴다 (USD 는 메시가 안에 들어 있어 USD 만 옮겨도 됨).
+- 압축은 폴더 구조 그대로 풀 것: `isaac/urdf/*.urdf` 가 `../../waffle_4wd_description/meshes/` 를 상대 경로로 쓴다 (USD 는 메시가 안에 들어 있어 USD 만 옮겨도 됨).
 - Windows: `run.sh` 대신 Isaac Lab Python 으로 `set PYTHONPATH=<이 폴더>` 뒤 `python sim_check.py` (시험 안 함).
 
 | 파일 | 내용 |
 |---|---|
-| `usd/light/waffle_4wd_light/waffle_4wd_light.usda` | 가벼운 판: 차체 충돌 = 상자 (퍽 플레이트 컵도 꽉 찬 상자). 주행 · 미로 학습 기본 (28 MB) |
-| `usd/full/waffle_4wd_full/waffle_4wd_full.usda` | 정밀 판: 차체 충돌 = 볼록 메시 128 개 + 퍽 플레이트 볼록 조각 154 개. 퍽 넣기 · 벽 가까이 시험 (28 MB) |
+| `usd/light/waffle_4wd_light/waffle_4wd_light.usda` | 가벼운 판: 차체 충돌 = 상자 (팔레트 = 바닥판 상자 + 칸마다 꽉 찬 상자). 주행 · 미로 학습 기본 |
+| `usd/full/waffle_4wd_full/waffle_4wd_full.usda` | 정밀 판: 차체 · 팔레트 충돌 = CoACD 볼록 조각 (전체 478). 퍽 집기 · 팔레트 · 벽 가까이 시험 |
+| `usd/loaded/waffle_4wd_loaded/waffle_4wd_loaded.usda` | 가벼운 판 + 팔레트 칸마다 퍽 (12개, 원기둥 12 g · 사각 18 g, 겉모양 · 질량만). 퍽 실은 주행 |
 | `robot_params.json` | 물리값 (value · 단위 · 근거 status · 출처 source) |
-| `waffle_4wd_isaac/robot_cfg.py` | Isaac Lab 관절체 설정 `WAFFLE_4WD_CFG` (가벼운) · `WAFFLE_4WD_FULL_CFG` (정밀), 시작 자세 `pose()` |
+| `waffle_4wd_isaac/robot_cfg.py` | Isaac Lab 관절체 설정 `WAFFLE_4WD_CFG` (가벼운) · `WAFFLE_4WD_FULL_CFG` (정밀) · `WAFFLE_4WD_LOADED_CFG` (퍽 12개), 시작 자세 `pose()` |
 | `waffle_4wd_isaac/sensors_cfg.py` | LDS-03 ×2 · TFmini · IMU · D435 ×2 · 팔 카메라 설정, LiDAR 자기 가림 |
-| `urdf/waffle_4wd_{light,full}.urdf`, `urdf/sensors.json` | 변환에 쓴 URDF (gazebo 태그 뺌), 센서 위치표 |
+| `urdf/waffle_4wd_{light,full,loaded}.urdf`, `urdf/sensors.json` | 변환에 쓴 URDF (gazebo 태그 뺌), 센서 위치표 |
 | `convert_urdf.py` | URDF -> USD + `robot_params.json` 값을 USD 에 씀 (`./run.sh convert`) |
 | `sim_check.py` | 점검 (`./run.sh check`) |
 | `scenes/dice_mission_waffle_{full,light}.usda` | **주사위 경기장 + 로봇 장면** (2026-10-30). Isaac Sim 에서 File → Open 후 Play. 로봇 = 출발 구역 (신호등 앞 0.6 m 사각) 가운데, 신호등을 봄, 팔 주행 자세 |
-| `scenes/dice_mission.usda` | 경기장만 (사용자 제공, `worlds/dice_mission.sdf` 를 sdf_to_usd.py 로 옮긴 것). 원점 = 왼쪽 아래 기둥, 칸 0.734 m |
+| `scenes/dice_mission.usda` | 경기장만 (`worlds/dice_mission.sdf` 를 `tools/sdf_to_usd.py` 로 옮긴 것, pxr 필요). 원점 = 왼쪽 아래 기둥, 칸 0.734 m |
 | `maze_view.py` | 위 장면을 창으로 열어 로봇을 비추고 재생 (`./run.sh maze`) |
 | `tools/make_maze_scene.py` | 위 장면 파일 생성 (기본 출발 구역, `--cell i j` 칸 · `--yaw` 방향 rad 로 바꿈) |
-| `puck_plate_check.py` | 퍽 플레이트 컵 12 개에 퍽 (원기둥 · 상자) 을 놓아 앉는지 점검 -> `results/puck_plate_*.json` |
 | `tools/make_isaac_urdf.py` | ROS 패키지 xacro -> `urdf/` (ROS 2 가 있는 PC 에서. 패키지를 바꿨을 때만) |
-| `results/` | 2026-10-29 점검 결과 (비교용) |
+| `results/` | `./run.sh check` 결과 (만들어짐) |
 
 ## 2. 정한 값 (2026-10-29)
 
@@ -93,18 +93,18 @@ cam = S.d435_cfg("{ENV_REGEX_NS}/Robot", "front", "color")                 # rgb
 | 센서 | 붙는 몸체 · 위치 [m] | 시뮬 값 | 기본 |
 |---|---|---|---|
 | LDS-03 앞 · 뒤 | base_link (±0.1089, 0, 0.0755), 상판 밑에 뒤집어. 스캔면 지면 위 0.0823 | 400 광선 (0.9°), 0.05 ~ 12 m, 10 Hz, 광선 시작 반경 25 mm | 켬 |
-| TFmini Plus | base_link (0.1403, 0, 0.0348) +x | 광선 1개, 0.1 ~ 12 m, 100 Hz | 켬 |
-| IMU | base_link (0.0207, 0, 0.017) = 두 OpenCR IMU 가운데 (`imu_left` · `imu_right` 도 있음) | 100 Hz | 켬 |
+| TFmini Plus | base_link (0.130, 0, 0.0243) +x | 광선 1개, 0.1 ~ 12 m, 100 Hz | 켬 |
+| IMU | base_link (0.0095, 0, 0.0202) = 아래층 OpenCR 칩 (`imu_link`, 하나뿐) | 100 Hz | 켬 |
 | D435 앞 · 뒤 컬러 + 깊이 | base_link, 컬러 optical frame 그대로 (깊이 = frame 기준, 더할 것 없음) | 640 × 480, 30 Hz, 가로 화각 0.9571 rad, 0.105 ~ 10 m | 끔 |
 | D435 IR 좌 · 우 | base_link, infra1 · infra2 optical frame | 640 × 480, 가로 화각 1.3829 rad (rgb 로 흉내, 패턴 투사 없음) | 끔 |
 | 팔 카메라 | gripper_roll_link | 1280 × 720, 30 Hz, 가로 화각 1.9721 rad (왜곡 없는 바늘구멍), 0.02 ~ 5 m | 끔 |
 
-## 6. 점검 결과 (2026-10-29, RTX 5060 Laptop 8 GB, 로봇 1대, 창 없이)
+## 6. 점검 결과 (2026-10-29 261028 판, RTX 5060 Laptop 8 GB, 로봇 1대, 창 없이)
 
 | 항목 | 가벼운 판 | 정밀 판 |
 |---|---|---|
 | USD 안 값 = robot_params.json | 같음 (관절 12, 팔끼리 뺀 쌍 28, 마찰 1.0) | 같음 |
-| 질량 · 가만히 | 3.8613 kg (2026-10-30 퍽 플레이트, 이전 4.0409), base_link 높이 0.0068 m (URDF 0.00675), 기울기 0° | 같음 |
+| 질량 · 가만히 | 3.8613 kg (10-30 퍽 플레이트 판) — **B안 판은 4.264 kg (loaded 4.444), 아래 6-1** | 같음 |
 | 주행 자세 처짐 (J2 · J3 · J4) | 0.007 · 0.047 · 0.015 rad | 같음 |
 | 자세 이동 zero → stow → zero → drive | 가장 큰 오차 0.059 rad (영 자세 J2 처짐) | 같음 |
 | 직진 0.1 m/s × 3 s | 0.298 m (미끄럼 없을 때 0.300) | 0.298 m |
@@ -115,19 +115,34 @@ cam = S.d435_cfg("{ENV_REGEX_NS}/Robot", "front", "color")                 # rgb
 | LDS-03 차체에 가림 | 앞 139.5°, **뒤 195.3°** | 같음 (가림 상자 공통) |
 | 카메라 (--cameras) | D435 앞 깊이 가운데 0.842 m (frame 높이 0.4905 m · 광축 35.57° 아래로 바닥까지 계산 0.843 m), 뒤 · 팔 카메라 정상 | 시험 안 함 |
 | 실시간 비율 | 카메라 끔 1.7 ~ 2.1배, 카메라 3대 1.5배 | 약 1.0 ~ 1.2배 |
-| 퍽 플레이트 (2026-10-30, `puck_plate_check.py`) | (컵이 꽉 찬 상자라 시험 안 함) | 로봇이 자리 잡은 뒤 턱 위 2 mm 에서 놓음: 원기둥 12/12 · 상자 12/12 앉음 (높이 0.00 mm, 수평 0.6 mm 안, 기울기 0°), CPU · GPU 같음. 30 mm 위에서 떨어뜨리면 4/12 (틈 0.9 mm 라 테두리에 맞고 튐) -> 넣을 때는 내려서 놓을 것 |
+
+### 6-1. B안 판 점검 (2026-11-02, 생성기 폴더에서, 자세히는 `../waffle_4wd_description/CHANGES_B.md`)
+
+| 항목 | light | full | loaded |
+|---|---|---|---|
+| 가만히 base_link 높이 | 6.8 mm, 기울기 0.03° | 같음 | 같음 |
+| 직진 0.1 m/s × 3 s | 0.298 m | 0.298 m | 0.298 m |
+| 제자리 회전 3 s | 74.0° (미끄럼 없을 때 108.4°) | 74.0° | 73.2° |
+| 자세 zero · drive 오차 | 0.059 · 0.047 rad | 같음 | 같음 |
+| **자세 stow 오차** | **0.211 rad** (위팔이 팔레트 칸에 걸림) | 0.200 | 0.211 |
+| USD 값 = robot_params.json | 같음 | 같음 | 같음 |
+
+- 센서 자리가 바뀌었다 (5절 표는 B안 값으로 고침): TFmini base_link (0.130, 0, 0.0243), IMU 하나 = `imu_link` (아래층 OpenCR 칩, `imu_left/right` 없음).
+- LDS-03 차체 가림이 늘었다: 앞 179.1°, 뒤 220.5° (위층 OpenCR 이 스캔면을 지남).
 
 ## 7. 알아 둘 점 · 미확정
 
 - **경기장 장면 (2026-10-30).** `scenes/dice_mission_waffle_full.usda` 는 경기장을 바탕 레이어로, 로봇 USD 를 참조로 넣은 것 (물리 장면 · 중력 포함).
-  로봇 base_link (0.691, 0.950, 0.00975) m, 방향 180° = 출발 구역 start_zone (가운데 (0.734, 0.95), 0.6 m 사각) 가운데에 차체 외곽 가운데를 맞추고
-  신호등 (x 0.08) 을 봄 (발제 주석 "(0.734 0.95) 에서 -X 를 봄"). 구역 가장자리까지 117 mm. 3 초 재생 시험: 그 자리에 바로 섬 (높이 6.75 mm).
+  로봇 base_link (0.6936, 0.950, 0.00975) m (B안 판 차체 외곽 x −0.2135 ~ +0.1328), 방향 180° = 출발 구역 start_zone (가운데 (0.734, 0.95), 0.6 m 사각) 가운데에 차체 외곽 가운데를 맞추고
+  신호등 (x 0.08) 을 봄 (발제 주석 "(0.734 0.95) 에서 -X 를 봄"). 구역 가장자리까지 127 mm. 3 초 재생 시험: 그 자리에 바로 섬 (높이 6.75 mm).
   `./run.sh maze` 는 Isaac Sim SimulationApp 으로 연다 (Isaac Lab 실행기는 Play 해도 물리를 안 돌려 팔이 영 자세로 보임).
   자리를 바꾸려면 `python3 tools/make_maze_scene.py --cell <i> <j> --yaw <rad>` (USD 를 다시 만들 필요 없음). 로봇 USD 를 다시 convert 해도 장면은 그대로 씀.
 
-- **퍽 보관 = 퍽 플레이트 (2026-10-30).** 옛 보관통 3 개 · 레일은 없다. 컵 12 개 자리 · 방향 · 턱 높이는 `../waffle_4wd_description_261028/meshes/parts/puck_plate.json` (`cups`, 플레이트 원점 = base_link (0.096, 0, 0.111)).
-  `rl/` 의 옮기기 · 넣기 과제 (store · insert) 는 아직 옛 통 축 (`store_starts.json` 의 C · P · N) 기준이라 컵 기준으로 바꿔야 한다.
-  Isaac Lab 3.0 쿼터니언 순서는 (x, y, z, w) - 퍽을 돌려 놓을 때 주의 (w 를 앞에 두면 퍽이 뒤집혀 컵 벽과 겹침).
+- **퍽 보관 = B안 상판 팔레트 v3 (2026-11-02).** 칸 12곳 자리 · 방향 · 칸 바닥 높이는 `../waffle_4wd_description/config/pallet_slots.yaml` (base_link 기준, 칸마다 loaded 판 퍽 이름).
+  팔레트는 base_link 에 합쳐져 따로 몸체가 없다. 10-30 판의 퍽 플레이트 (`puck_plate_link`, `puck_plate_check.py`) 는 없어졌다.
+  `rl/` 의 옮기기 · 넣기 과제 (store · insert) 는 아직 옛 통 축 (`store_starts.json` 의 C · P · N) 기준이라 팔레트 칸 기준으로 바꿔야 한다.
+  Isaac Lab 3.0 쿼터니언 순서는 (x, y, z, w) - 퍽을 돌려 놓을 때 주의.
+- **stow 자세 (B안).** zero → stow 를 모든 관절 같이 움직이면 J1 약 81° 에서 위팔이 팔레트 칸에 걸린다. J1 을 먼저 다 돌린 뒤 접을 것.
 
 - **바퀴: 벨트 vs 직결.** 이 공유본은 받은 URDF 대로 벨트 1:1.5 값이다. 팀 펌웨어 (`config.h`) 는 직결 (2026-10-26 실물 확인 주석) 이라, 실물과 맞추려면 `robot_params.json` 의 바퀴 한계 · 감쇠를 바꿔야 한다.
 - **바퀴 간격**은 0.317 m (바퀴 폭 가운데 기준) 로 URDF · 실물 · 팀 제어기가 같다. URDF 바퀴 관절 원점 (y ±0.1546) 은 바퀴 가운데가 아니니 바퀴 간격으로 쓰지 말 것.

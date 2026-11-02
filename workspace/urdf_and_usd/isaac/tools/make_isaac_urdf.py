@@ -6,7 +6,7 @@
 
 - urdf/waffle_4wd_full.urdf  : 충돌 = 차체 볼록 메시 423 개 (패키지 urdf/waffle_4wd.urdf 와 같음)
 - urdf/waffle_4wd_light.urdf : 충돌 = 차체 상자 12 개 (xacro collision:=light)
-- 두 파일 모두 <gazebo> 를 빼고, 메시 경로를 package:// 대신 이 폴더 기준 상대 경로 (../../waffle_4wd_description_261028/meshes/...) 로 바꾼다.
+- 두 파일 모두 <gazebo> 를 빼고, 메시 경로를 package:// 대신 이 폴더 기준 상대 경로 (../../waffle_4wd_description/meshes/...) 로 바꾼다.
 - urdf/sensors.json : USD 변환 때 고정 관절 (센서 frame) 이 부모 몸체에 합쳐지므로, 센서마다 붙는 몸체와 그 몸체 기준 위치 · 자세,
   사양 (config/sensors.yaml 의 시뮬 값), 몸체의 USD 경로, LiDAR 스캔면에 걸리는 차체 상자 (자기 가림용) 를 적는다.
 팀원은 이 스크립트를 돌릴 필요 없음 (결과 파일이 함께 들어 있음). ROS 패키지 xacro 를 바꿨을 때만 다시 돌리고 convert 도 다시.
@@ -21,8 +21,8 @@ from pathlib import Path
 import numpy as np
 import yaml
 
-HERE = Path(__file__).resolve().parents[1]             # .../urdfusd_20261030v1/isaac
-PKG_NAME = 'waffle_4wd_description_261028'
+HERE = Path(__file__).resolve().parents[1]             # .../urdf_and_usd/isaac
+PKG_NAME = 'waffle_4wd_description'
 PKG = HERE.parent / PKG_NAME
 XACRO = PKG / 'urdf' / 'waffle_4wd.urdf.xacro'
 SENSORS_YAML = PKG / 'config' / 'sensors.yaml'
@@ -35,8 +35,6 @@ SENSORS = {
     'lds03_rear': ('laser_rear', 'lidar'),
     'tfmini': ('tfmini_link', 'range'),
     'imu': ('imu_link', 'imu'),
-    'imu_left': ('imu_left_link', 'imu'),
-    'imu_right': ('imu_right_link', 'imu'),
     'd435_front_color': ('top_camera_front_color_optical_frame', 'camera'),
     'd435_front_infra1': ('top_camera_front_infra1_optical_frame', 'camera'),
     'd435_front_infra2': ('top_camera_front_infra2_optical_frame', 'camera'),
@@ -71,8 +69,11 @@ def origin_tf(el):
     return T
 
 
-def xacro(collision):
-    return subprocess.run(['xacro', str(XACRO), f'collision:={collision}'], check=True, capture_output=True, text=True).stdout
+XACRO_ARGS = {'full': ['collision:=full'], 'light': ['collision:=light'], 'loaded': ['collision:=light', 'pucks:=true']}   # loaded = 가벼운 판 + 퍽 12개 (주행용 질량)
+
+
+def xacro(kind):
+    return subprocess.run(['xacro', str(XACRO)] + XACRO_ARGS[kind], check=True, capture_output=True, text=True).stdout
 
 
 def clean(text):
@@ -108,12 +109,12 @@ def tree(root):
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     roots = {}
-    for kind in ('full', 'light'):
+    for kind in ('full', 'light', 'loaded'):
         root, n = clean(xacro(kind))
         roots[kind] = root
         ET.indent(root)
         path = OUT / f'waffle_4wd_{kind}.urdf'
-        path.write_text('<?xml version="1.0" encoding="utf-8"?>\n<!-- 자동 생성: isaac/tools/make_isaac_urdf.py (xacro collision:=' + kind
+        path.write_text('<?xml version="1.0" encoding="utf-8"?>\n<!-- 자동 생성: isaac/tools/make_isaac_urdf.py (xacro ' + ' '.join(XACRO_ARGS[kind])
                         + ', gazebo 태그 뺌, 메시는 상대 경로). 직접 고치지 말 것 -->\n' + ET.tostring(root, encoding='unicode') + '\n', encoding='utf-8')
         cols = sum(1 for _ in root.iter('collision'))
         print(f'{path.name}: 메시 경로 {n} 개, 충돌 형상 {cols} 개')

@@ -8,7 +8,7 @@ USD 변환은 고정 관절 (센서 frame) 을 부모 몸체에 합치므로, �
 |---|---|---|
 | ``lds03_cfg('lds03_front'|'lds03_rear', robot_prim, targets)`` | LDS-03 2D 라이다 (400 광선, 0.05 ~ 12 m, 10 Hz) | 켬 |
 | ``tfmini_cfg(robot_prim, targets)`` | TFmini Plus (광선 1개, 0.1 ~ 12 m, 100 Hz) | 켬 |
-| ``imu_cfg(robot_prim, 'imu'|'imu_left'|'imu_right')`` | OpenCR IMU (100 Hz). 'imu' = 두 IMU 가운데 (팀 imu_link) | 켬 |
+| ``imu_cfg(robot_prim, 'imu')`` | OpenCR IMU (100 Hz). B안: 아래층 OpenCR 칩 하나 = imu_link (위층은 끔) | 켬 |
 | ``d435_cfg(robot_prim, 'front'|'rear', stream)`` | D435 컬러 (rgb + 깊이) 또는 IR 좌 · 우 (640 x 480, 30 Hz) | 끔 (GPU) |
 | ``arm_camera_cfg(robot_prim)`` | 팔 카메라 (1280 x 720, 30 Hz, 왜곡 없는 바늘구멍) | 끔 (GPU) |
 

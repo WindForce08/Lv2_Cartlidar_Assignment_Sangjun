@@ -1,4 +1,4 @@
-"""waffle_4wd (4륜 스키드 + RM-X52 팔 + 그리퍼) Isaac Lab 3.0 관절체 설정.
+"""waffle_4wd B안 (4륜 스키드 + 증속벨트 v4.2 + RM-X52 팔 + B안 상판 팔레트 v3) Isaac Lab 3.0 관절체 설정.
 
 USD 는 ``convert_urdf.py`` 가 ``urdf/waffle_4wd_{light,full}.urdf`` 에서 만든다 (``usd/{light,full}/waffle_4wd_{light,full}/waffle_4wd_{light,full}.usda``).
 관절 이름은 팀 Lv2 (origin/dev) 와 같다: 바퀴 ``wheel_{left,right}_{front,rear}_joint``, 팔 ``joint1~5`` (joint5 = 손목 롤),
@@ -28,8 +28,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 PARAMS_PATH = os.path.join(ROOT, "robot_params.json")
 SENSORS_PATH = os.path.join(ROOT, "urdf", "sensors.json")
-URDF_PATHS = {k: os.path.join(ROOT, "urdf", f"waffle_4wd_{k}.urdf") for k in ("light", "full")}
-USD_PATHS = {k: os.path.join(ROOT, "usd", k, f"waffle_4wd_{k}", f"waffle_4wd_{k}.usda") for k in ("light", "full")}
+KINDS = ("light", "full", "loaded")
+URDF_PATHS = {k: os.path.join(ROOT, "urdf", f"waffle_4wd_{k}.urdf") for k in KINDS}
+USD_PATHS = {k: os.path.join(ROOT, "usd", k, f"waffle_4wd_{k}", f"waffle_4wd_{k}.usda") for k in KINDS}
 
 WHEEL_JOINTS_LEFT = ["wheel_left_front_joint", "wheel_left_rear_joint"]
 WHEEL_JOINTS_RIGHT = ["wheel_right_front_joint", "wheel_right_rear_joint"]
@@ -117,7 +118,10 @@ def _cfg(kind: str) -> ArticulationCfg:
 WAFFLE_4WD_CFG = _cfg("light")
 """가벼운 판 (차체 충돌 = 상자). 주행 · 미로 학습 기본."""
 WAFFLE_4WD_FULL_CFG = _cfg("full")
-"""정밀 판 (차체 충돌 = 볼록 메시 423 개). 퍽 · 보관함 · 벽 가까이 시험."""
+"""정밀 판 (차체 충돌 = 볼록 메시). 퍽 집기 · 팔레트 · 벽 가까이 시험."""
+
+WAFFLE_4WD_LOADED_CFG = _cfg("loaded")
+"""가벼운 판 + 팔레트에 퍽 12개 (원기둥 12 g · 사각 18 g) 질량. 주행용."""
 
 
 def describe() -> str:

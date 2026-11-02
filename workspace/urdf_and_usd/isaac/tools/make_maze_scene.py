@@ -22,7 +22,7 @@ HERE = Path(__file__).resolve().parents[1]                # .../isaac
 SCENES = HERE / 'scenes'
 CELL = 0.734                                               # 경기장 칸 간격 [m]
 START_ZONE = (0.734, 0.95, 0.6)                            # 출발 구역 가운데 x, y · 한 변 [m] (worlds/dice_mission.sdf start_zone)
-BODY_X = (-0.226, 0.1403)                                  # 차체 외곽 x (뒤 끝 ~ TFmini 렌즈) [m], base_link 기준
+BODY_X = (-0.2135, 0.1328)                                 # 차체 외곽 x (뒤 끝 ~ 상판 앞 끝) [m], base_link 기준. B안 모델: 뒤 무리 +12.5 mm, TFmini 렌즈 x 0.130
 BODY_Y = 0.1676                                            # 바퀴 바깥 |y|
 
 

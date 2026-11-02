@@ -1,0 +1,21 @@
+# B안 상판 팔레트 v3 칸 12곳 (시뮬레이션 모델 B안 build/stl/pallet_vals.json = puck_pallet.scad 값을 옮김).
+# 좌표: base_link 기준 [m] (x 앞, y 왼쪽, z 위). 팔레트 원점 = 팀 조인트1 축 (0.096, 0, 0.111) = 상판 윗면.
+#   x, y      = 칸 가운데 (퍽 축)
+#   theta_deg = 칸 방향각 (조인트1 에서 칸을 보는 방향, base_link +x = 0°, 반시계 +)
+#   floor_z   = 칸 바닥 (퍽 밑면이 앉는 높이), wall_top_z = 칸 벽 윗면
+#   puck      = pucks:=true 일 때 그 칸에 놓이는 퍽 링크 이름 (원기둥 12 g · 사각 18 g, (열 + 칸) 짝수 = 원기둥)
+# 설계 쪽 B안_팔레트/pallet_slots.yaml 의 joints_deg · grasp_z 는 OM-X 팔 기준이라 넣지 않음 (팀 RM-X52 팔로 다시 구할 것).
+pallet_origin: [0.096, 0.0, 0.111]
+slots:
+  - {row: 1, index: 0, color: red, puck: puck_R_1, shape: cylinder, x: 0.0489, y: 0.0767, theta_deg: 121.6, floor_z: 0.114, wall_top_z: 0.144}
+  - {row: 1, index: 1, color: red, puck: puck_R_2, shape: box, x: 0.0111, y: 0.0300, theta_deg: 160.5, floor_z: 0.114, wall_top_z: 0.144}
+  - {row: 1, index: 2, color: red, puck: puck_R_3, shape: cylinder, x: 0.0111, y: -0.0300, theta_deg: 199.5, floor_z: 0.114, wall_top_z: 0.144}
+  - {row: 1, index: 3, color: red, puck: puck_R_4, shape: box, x: 0.0489, y: -0.0767, theta_deg: 238.4, floor_z: 0.114, wall_top_z: 0.144}
+  - {row: 2, index: 0, color: green, puck: puck_G_1, shape: box, x: -0.0232, y: 0.0771, theta_deg: 147.1, floor_z: 0.124, wall_top_z: 0.154}
+  - {row: 2, index: 1, color: green, puck: puck_G_2, shape: cylinder, x: -0.0434, y: 0.0270, theta_deg: 169.0, floor_z: 0.124, wall_top_z: 0.154}
+  - {row: 2, index: 2, color: green, puck: puck_G_3, shape: box, x: -0.0434, y: -0.0270, theta_deg: 191.0, floor_z: 0.124, wall_top_z: 0.154}
+  - {row: 2, index: 3, color: green, puck: puck_G_4, shape: cylinder, x: -0.0232, y: -0.0771, theta_deg: 212.9, floor_z: 0.124, wall_top_z: 0.154}
+  - {row: 3, index: 0, color: blue, puck: puck_B_1, shape: cylinder, x: -0.0780, y: 0.0788, theta_deg: 155.6, floor_z: 0.136, wall_top_z: 0.166}
+  - {row: 3, index: 1, color: blue, puck: puck_B_2, shape: box, x: -0.0931, y: 0.0270, theta_deg: 171.9, floor_z: 0.136, wall_top_z: 0.166}
+  - {row: 3, index: 2, color: blue, puck: puck_B_3, shape: cylinder, x: -0.0931, y: -0.0270, theta_deg: 188.1, floor_z: 0.136, wall_top_z: 0.166}
+  - {row: 3, index: 3, color: blue, puck: puck_B_4, shape: box, x: -0.0780, y: -0.0788, theta_deg: 204.4, floor_z: 0.136, wall_top_z: 0.166}

@@ -1,0 +1,1016 @@
+#usda 1.0
+(
+    customLayerData = {
+        string creator = "URDF USD Converter v0.3.2"
+    }
+    endTimeCode = 1000000
+    kilogramsPerUnit = 1
+    metersPerUnit = 1
+    startTimeCode = 0
+    upAxis = "Z"
+)
+
+def Scope "Instances"
+{
+    def Xform "body_keep" (
+        prepend references = @./geometries.usd@</Geometries/body_keep>
+    )
+    {
+        over "body_keep" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/body_keep/VisualMaterials/a_body>
+            custom string urdf:name = "body_keep"
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "a_body" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/a_body>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "body_frame" (
+        prepend references = @./geometries.usd@</Geometries/body_frame>
+    )
+    {
+        over "body_frame" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/body_frame/VisualMaterials/a_body>
+            custom string urdf:name = "body_frame"
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "a_body" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/a_body>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "brackets" (
+        prepend references = @./geometries.usd@</Geometries/brackets>
+    )
+    {
+        over "brackets" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/brackets/VisualMaterials/a_bracket>
+            custom string urdf:name = "brackets"
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "a_bracket" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/a_bracket>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "belt_printed" (
+        prepend references = @./geometries.usd@</Geometries/belt_printed>
+    )
+    {
+        over "belt_printed" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/belt_printed/VisualMaterials/a_pla_orange>
+            custom string urdf:name = "belt_printed"
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "a_pla_orange" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/a_pla_orange>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "belt_guard" (
+        prepend references = @./geometries.usd@</Geometries/belt_guard>
+    )
+    {
+        over "belt_guard" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/belt_guard/VisualMaterials/a_pla_tan>
+            custom string urdf:name = "belt_guard"
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "a_pla_tan" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/a_pla_tan>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "belt_metal" (
+        prepend references = @./geometries.usd@</Geometries/belt_metal>
+    )
+    {
+        over "belt_metal" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/belt_metal/VisualMaterials/a_metal>
+            custom string urdf:name = "belt_metal"
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "a_metal" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/a_metal>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "belt_belt" (
+        prepend references = @./geometries.usd@</Geometries/belt_belt>
+    )
+    {
+        over "belt_belt" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/belt_belt/VisualMaterials/a_black>
+            custom string urdf:name = "belt_belt"
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "a_black" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/a_black>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "motors" (
+        prepend references = @./geometries.usd@</Geometries/motors>
+    )
+    {
+        over "motors" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/motors/VisualMaterials/a_motor>
+            custom string urdf:name = "motors"
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "a_motor" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/a_motor>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "bolts" (
+        prepend references = @./geometries.usd@</Geometries/bolts>
+    )
+    {
+        over "bolts" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/bolts/VisualMaterials/a_black>
+            custom string urdf:name = "bolts"
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "a_black" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/a_black>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "deck_tray" (
+        prepend references = @./geometries.usd@</Geometries/deck_tray>
+    )
+    {
+        over "deck_tray" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/deck_tray/VisualMaterials/a_pla_peru>
+            custom string urdf:name = "deck_tray"
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "a_pla_peru" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/a_pla_peru>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "standoffs" (
+        prepend references = @./geometries.usd@</Geometries/standoffs>
+    )
+    {
+        over "standoffs" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/standoffs/VisualMaterials/a_metal>
+            custom string urdf:name = "standoffs"
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "a_metal" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/a_metal>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "pallet" (
+        prepend references = @./geometries.usd@</Geometries/pallet>
+    )
+    {
+        over "pallet" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/pallet/VisualMaterials/a_pla_tan>
+            custom string urdf:name = "pallet"
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "a_pla_tan" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/a_pla_tan>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "lds03" (
+        prepend references = @./geometries.usd@</Geometries/lds03>
+    )
+    {
+        over "lds03" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/lds03/VisualMaterials/lds03_dark>
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "lds03_dark" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/lds03_dark>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "tfmini_holder" (
+        prepend references = @./geometries.usd@</Geometries/tfmini_holder>
+    )
+    {
+        over "tfmini_holder" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/tfmini_holder/VisualMaterials/pla_print>
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "pla_print" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/pla_print>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "tfmini_plus" (
+        prepend references = @./geometries.usd@</Geometries/tfmini_plus>
+    )
+    {
+        over "tfmini_plus" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/tfmini_plus/VisualMaterials/tfmini_dark>
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "tfmini_dark" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/tfmini_dark>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "jetson_orin_nano" (
+        prepend references = @./geometries.usd@</Geometries/jetson_orin_nano>
+    )
+    {
+        over "jetson_orin_nano" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/jetson_orin_nano/VisualMaterials/jetson>
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "jetson" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/jetson>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "opencr_left" (
+        prepend references = @./geometries.usd@</Geometries/opencr_left>
+    )
+    {
+        over "opencr_left" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/opencr_left/VisualMaterials/opencr>
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "opencr" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/opencr>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "wheel_front_left" (
+        prepend references = @./geometries.usd@</Geometries/wheel_front_left>
+    )
+    {
+        over "wheel_front_left" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/wheel_front_left/VisualMaterials/____________________________________>
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "____________________________________" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/____________________________________>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "wheel_front_right" (
+        prepend references = @./geometries.usd@</Geometries/wheel_front_right>
+    )
+    {
+        over "wheel_front_right" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/wheel_front_right/VisualMaterials/_____________________________________1>
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "_____________________________________1" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/____________________________________>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "wheel_rear_left" (
+        prepend references = @./geometries.usd@</Geometries/wheel_rear_left>
+    )
+    {
+        over "wheel_rear_left" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/wheel_rear_left/VisualMaterials/_____________________________________2>
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "_____________________________________2" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/____________________________________>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "wheel_rear_right" (
+        prepend references = @./geometries.usd@</Geometries/wheel_rear_right>
+    )
+    {
+        over "wheel_rear_right" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/wheel_rear_right/VisualMaterials/_____________________________________3>
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "_____________________________________3" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/____________________________________>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "link2_0" (
+        prepend references = @./geometries.usd@</Geometries/link2_0>
+    )
+    {
+        over "link2_0" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/link2_0/VisualMaterials/c_080080080>
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "c_080080080" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/c_080080080>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "link2_1" (
+        prepend references = @./geometries.usd@</Geometries/link2_1>
+    )
+    {
+        over "link2_1" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/link2_1/VisualMaterials/c_015015015>
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "c_015015015" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/opencr>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "link3_0" (
+        prepend references = @./geometries.usd@</Geometries/link3_0>
+    )
+    {
+        over "link3_0" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/link3_0/VisualMaterials/c_080080080>
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "c_080080080" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/c_080080080>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "link3_1" (
+        prepend references = @./geometries.usd@</Geometries/link3_1>
+    )
+    {
+        over "link3_1" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/link3_1/VisualMaterials/c_015015015>
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "c_015015015" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/opencr>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "link4_0" (
+        prepend references = @./geometries.usd@</Geometries/link4_0>
+    )
+    {
+        over "link4_0" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/link4_0/VisualMaterials/c_080080080>
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "c_080080080" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/c_080080080>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "link4_1" (
+        prepend references = @./geometries.usd@</Geometries/link4_1>
+    )
+    {
+        over "link4_1" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/link4_1/VisualMaterials/c_015015015>
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "c_015015015" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/opencr>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "link5_0" (
+        prepend references = @./geometries.usd@</Geometries/link5_0>
+    )
+    {
+        over "link5_0" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/link5_0/VisualMaterials/c_025025030>
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "c_025025030" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/c_025025030>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "link5_1" (
+        prepend references = @./geometries.usd@</Geometries/link5_1>
+    )
+    {
+        over "link5_1" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/link5_1/VisualMaterials/c_080080080>
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "c_080080080" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/c_080080080>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "gripper_link_0" (
+        prepend references = @./geometries.usd@</Geometries/gripper_link_0>
+    )
+    {
+        over "gripper_link_0" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/gripper_link_0/VisualMaterials/c_095055010>
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "c_095055010" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/c_095055010>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "gripper_link_1" (
+        prepend references = @./geometries.usd@</Geometries/gripper_link_1>
+    )
+    {
+        over "gripper_link_1" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/gripper_link_1/VisualMaterials/c_060060060>
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "c_060060060" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/c_060060060>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "gripper_link_2" (
+        prepend references = @./geometries.usd@</Geometries/gripper_link_2>
+    )
+    {
+        over "gripper_link_2" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/gripper_link_2/VisualMaterials/c_025025030>
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "c_025025030" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/c_025025030>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "gripper_link_3" (
+        prepend references = @./geometries.usd@</Geometries/gripper_link_3>
+    )
+    {
+        over "gripper_link_3" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/gripper_link_3/VisualMaterials/c_030030035>
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "c_030030035" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/c_030030035>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "gripper_link_4" (
+        prepend references = @./geometries.usd@</Geometries/gripper_link_4>
+    )
+    {
+        over "gripper_link_4" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/gripper_link_4/VisualMaterials/c_095050010>
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "c_095050010" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/c_095050010>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "gripper_link_5" (
+        prepend references = @./geometries.usd@</Geometries/gripper_link_5>
+    )
+    {
+        over "gripper_link_5" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/gripper_link_5/VisualMaterials/c_015015015>
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "c_015015015" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/opencr>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "gripper_link_6" (
+        prepend references = @./geometries.usd@</Geometries/gripper_link_6>
+    )
+    {
+        over "gripper_link_6" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/gripper_link_6/VisualMaterials/c_080080080>
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "c_080080080" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/c_080080080>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "gripper_link_7" (
+        prepend references = @./geometries.usd@</Geometries/gripper_link_7>
+    )
+    {
+        over "gripper_link_7" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/gripper_link_7/VisualMaterials/c_035035035>
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "c_035035035" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/c_035035035>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "gripper_left_link_0" (
+        prepend references = @./geometries.usd@</Geometries/gripper_left_link_0>
+    )
+    {
+        over "gripper_left_link_0" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/gripper_left_link_0/VisualMaterials/c_080080080>
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "c_080080080" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/c_080080080>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "gripper_left_link_1" (
+        prepend references = @./geometries.usd@</Geometries/gripper_left_link_1>
+    )
+    {
+        over "gripper_left_link_1" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/gripper_left_link_1/VisualMaterials/c_035035035>
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "c_035035035" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/c_035035035>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "gripper_left_link_2" (
+        prepend references = @./geometries.usd@</Geometries/gripper_left_link_2>
+    )
+    {
+        over "gripper_left_link_2" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/gripper_left_link_2/VisualMaterials/c_025025025>
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "c_025025025" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/c_025025025>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "gripper_right_link_0" (
+        prepend references = @./geometries.usd@</Geometries/gripper_right_link_0>
+    )
+    {
+        over "gripper_right_link_0" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/gripper_right_link_0/VisualMaterials/c_080080080>
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "c_080080080" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/c_080080080>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "gripper_right_link_1" (
+        prepend references = @./geometries.usd@</Geometries/gripper_right_link_1>
+    )
+    {
+        over "gripper_right_link_1" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/gripper_right_link_1/VisualMaterials/c_035035035>
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "c_035035035" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/c_035035035>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "gripper_right_link_2" (
+        prepend references = @./geometries.usd@</Geometries/gripper_right_link_2>
+    )
+    {
+        over "gripper_right_link_2" (
+            apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/gripper_right_link_2/VisualMaterials/c_025025025>
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "c_025025025" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/c_025025025>
+            )
+            {
+            }
+        }
+    }
+}
+
