@@ -19,7 +19,7 @@ mission_make_maps                                   # worlds/dice_mission.sdf �
 mission_plan --problem config/problem_q1_example.yaml --mode per_location --out /tmp/plan   # plan.json · signal.json · allocation.json
 mission_plan --problem <문제>.yaml --mode compare   # 두 운영 방식 비용 비교
 ros2 launch mission_planner localization.launch.py  # /map (주행) · /map_amcl (AMCL) · amcl
-python3 -m pytest test                               # 시험 13 개 (할당 6 건 = 도전 B 형식, GTSP 최적성, 지도 · 자세, 계획)
+python3 -m pytest test                               # 시험 15 개 (할당 6 건 = 도전 B 형식, GTSP 최적성, 지도 · 자세, 계획)
 ```
 
 문제 파일 (`config/problem_q1_example.yaml` 형식): `signal` (12 점멸), `barcode` (P2-01 ~ 04), `pucks` (id 0 ~ 11 · color red/green · shape cylinder/box · box 1 ~ 6 · side −1/+1).
@@ -70,8 +70,37 @@ Q1 예제 (설명용 색 · 모양): per_location 비용 66.5 (주행 44.5 m), s
 
 시뮬레이션 결과 (가짜 스캔) — 실물은 벽판 설치 오차 · LDS 잡음 · 바퀴 미끄럼으로 커질 수 있음. 출발 구역에서 시작 자세를 정확히 놓는 것이 전제 (전역 위치 찾기 안 함).
 
+## mission_node 연동 (plan 모드)
+
+```bash
+ros2 launch mission_planner planner.launch.py pucks_file:=<퍽 등록표>.yaml [mode:=per_location] [log_dir:=/tmp/mission_log]
+ros2 launch mission mission_bringup.launch.py source:=plan        # mission_plan.yaml 덧씌움 (기본 source:=tag 는 그대로)
+ros2 service call /mission/start std_srvs/srv/Trigger
+```
+
+흐름: `observe` (팔 TAG_VIEW → READ_SIGNAL | READ_BARCODE → /perception/signal CONFIRMED + /perception/barcode READ)
+→ `plan` (/mission_planner/plan, std_srvs/Trigger → 단계 문장) → 계획 단계 실행.
+robot_interfaces 는 바꾸지 않음 (동결). 계획 단계 (`mission_planner/mission_lines.py`):
+
+| 단계 | mission_node 동작 |
+|---|---|
+| `goto x y yaw` | /drive/navigate (지도 좌표) + 팔 STOW |
+| `approach 0.13` | 기존 approach (COARSE → READY → FINE, TFmini 하한 0.13) |
+| `pick_target x y z` | /manipulator/pick, target = 지도 좌표 퍽 중심 |
+| `skill manipulator <이름>` | /manipulator/execute_skill — ★ manipulator 구현 필요: `toppick_tilt`, `pallet_load_<열>_<칸>[_tilt]`, `pallet_unload_<열>_<칸>[_tilt]`, `place_<L>_<dx>_<dy>[_tilt]` (dx, dy = m1 · 0 · p1) |
+| `verify L cx cy z expect9 yshape` | 팔 TAG_VIEW → READ_TAG+SEARCH_FRONT → /perception/check_dice (지도 좌표 칸) → 기록, 틀려도 계속 (stop_on_fail false) |
+| `wait 3` | 복귀 뒤 정지 |
+
+기록: 계획기 log_dir 에 signal.json · allocation.json · plan.json · mission_lines.txt, mission_node log_dir 에 mission_log.jsonl (observe · plan · verify · finish).
+실패: 점멸 MISMATCH · 미등록 바코드 · 풀 수 없는 문제 = 재시도 없이 FAILED (발제: 오류 기록 후 안전 정지). 그 밖의 단계는 max_retries 재시도.
+
+연동 시험 (`test/mock_robot.py` = 가짜 drive · manipulator · perception): Q1 예제로 /mission/start → DONE (단계 85, 주행 18 · 정렬 30 · 집기 12 · skill 36 · check_dice 3, 23 s),
+skill 거절 → 재시도 2 번 뒤 FAILED, 미등록 바코드 → 바로 FAILED.
+
 ## 남은 것 · 주의
 
 - `placement.csv` 가 나오면 문제 파일로 옮겨 계획을 다시 돌릴 것. 경기장 설치 실측이 발제 좌표와 다르면 SDF (generate_world.py) 를 고치고 `mission_make_maps`.
 - L2 가운데 · 먼 줄 기울여 놓기, 박스 6 inline 집기, single_load 의 상자 퍽 기울여 집기 (주행이 퍽 면을 J1 반경 ±3° 로 맞춰야 함) 는 Isaac · 실물 확인 전.
-- mission_node 연동 (plan.json 단계 → navigate · approach · pick · place 실행) 은 아직 — 단계 형식은 plan.json `steps` 참고.
+- manipulator: 위 skill 이름 (팔레트 싣기 · 꺼내기, 칸 놓기, 기울여 집기) 구현 필요. 팔레트 궤적은 `urdf_and_usd/isaac/rl/pallet_place_traj.json`.
+- approach FINE 은 TFmini 하한 0.13 m 라 범퍼-박스 약 0.13 m 에서 멈춤 → 접근 자세표 final (0.02 m) 까지는 manipulator pick 의 최종 전진 (/arm_range) 이 맡아야 함.
+- observe · verify 팔 자세 (TAG_VIEW) 는 바코드 · 칸을 볼 수 있는지 실물 확인 (mission_plan.yaml observe.arm_pose · verify.arm_pose).

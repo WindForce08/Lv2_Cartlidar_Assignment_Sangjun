@@ -5,6 +5,9 @@
   <description>주사위 기억 로봇: 할당 · 적재 · 경로 계획기 (GTSP), 문서 좌표 정적 지도 · 접근 자세표, AMCL 위치 추정 설정</description>
   <maintainer email="kanichong1@gmail.com">Lv2 Cartlidar</maintainer>
   <license>Apache-2.0</license>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>std_srvs</exec_depend>
+  <exec_depend>robot_interfaces</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
   <exec_depend>nav2_map_server</exec_depend>
