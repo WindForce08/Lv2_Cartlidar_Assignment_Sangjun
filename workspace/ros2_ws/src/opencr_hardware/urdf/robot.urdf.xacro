@@ -104,9 +104,11 @@
   <!-- Arducam: 그리퍼에 장착 (2026-10-28 확인). UVC 드라이버 frame_id = arm_camera_optical_frame (광학 축: +z 앞 · +x 오른쪽 · +y 아래) -->
   <xacro:fixed_link name="arm_camera_link" parent="gripper_roll_link" xyz="0.02 0 0.035" rpy="0 0 0"/>
   <xacro:fixed_link name="arm_camera_optical_frame" parent="arm_camera_link" xyz="0 0 0" rpy="-1.570796 0 -1.570796"/>
-  <!-- ★ 적용 필요: TFmini 는 차체 1층 플레이트에 장착 (2026-10-28 확인) → parent base_link 로 옮길 것.
-       urdfv2 tfmini_joint 는 base_link 기준 xyz "0.132 0 -0.02125". 옮기면 manipulator.yaml pick ① (range_offset) 가정도 다시 볼 것 -->
-  <xacro:fixed_link name="tfmini_link"     parent="gripper_roll_link" xyz="0.02 0 -0.035" rpy="0 0 0"/>
+  <!-- TFmini 는 차체 1층 플레이트 앞쪽 바닥 브라켓에 장착, 정면 수평 (2026-10-28 확인).
+       위치는 waffle_4wd_description tfmini_link (B 모델 base_link 기준 0.130 0 0.0243, 그 base_link 는 바닥 위 6.75 mm) 를
+       바닥 높이로 맞춰 옮긴 값: 바닥 위 31.05 mm − 이 파일 base_link 바닥 위 56.25 mm = −0.0252.
+       팔 끝이 아니라 차체 앞에서 잰 거리이므로 manipulator.yaml pick ① (range_offset) 가정도 다시 볼 것 -->
+  <xacro:fixed_link name="tfmini_link"     parent="base_link" xyz="0.130 0 -0.0252" rpy="0 0 0"/>
   <xacro:fixed_link name="tool_link"       parent="gripper_roll_link" xyz="0.086 0 0" rpy="0 0 0"/>
 
   <xacro:opencr_ros2_control ports="$(arg ports)" wheel_count="${wheel_count}" use_gripper="$(arg use_gripper)"

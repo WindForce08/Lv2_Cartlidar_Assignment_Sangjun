@@ -216,8 +216,9 @@ TEST(RobotDescription, RobotUrdfProvidesFramesUsedByOtherNodes)
   EXPECT_NEAR(optical.rpy[0], -M_PI / 2, 1e-5);
   EXPECT_NEAR(optical.rpy[1], 0.0, 1e-5);
   EXPECT_NEAR(optical.rpy[2], -M_PI / 2, 1e-5);
-  // ★ 적용 필요: TFmini 는 차체 1층 플레이트에 장착 (2026-10-28 확인) — URDF 를 옮기면
-  //   EXPECT_EQ(joints.at("tfmini_link_joint").parent, "base_link") 를 켠다.
+  // TFmini 는 차체 1층 플레이트에 장착 (2026-10-28 확인) — 팔이 움직여도 거리 기준이 바뀌지 않아야 한다
+  ASSERT_EQ(joints.count("tfmini_link_joint"), 1u);
+  EXPECT_EQ(joints.at("tfmini_link_joint").parent, "base_link");
   // ★ C: realsense2_camera 의 TF 뿌리 <camera_name>_link 가 URDF 에 없다 (camera_front_link · camera_rear_link 로 되어 있음).
   //   이름을 바꾸면 {"top_camera_front_link", "top_camera_rear_link"} 를 위 링크 목록에 넣는다.
   // realsense 드라이버가 발행하는 좌표를 URDF 가 또 만들면 TF 부모가 둘이 됨
