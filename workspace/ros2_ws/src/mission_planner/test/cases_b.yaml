@@ -1,0 +1,34 @@
+# 도전 B 고정 시험 6 건 (유효 4 · 불가능 2). 불가능 사례는 소프트웨어 오류 시험용 (공식 출제 아님). ID 와 색은 고정 대응 아님.
+# pucks 는 "색 모양" 12 개를 ID 0 ~ 11 순서로 (박스 = id // 2 + 1, 자리 = 짝수 -1 · 홀수 +1). c = cylinder, b = box
+cases:
+  - name: V1_Q1_오름차순
+    signal: RGRRGRGGYGYG          # R4 Y2 G6
+    barcode: P2-01
+    pucks: [rc, gb, rb, gc, rc, gc, rb, gb, rc, gc, rb, gb]   # 빨강 6 (c3 b3), 초록 6
+    expect: {L1: Y, L2: R, L3: G, y_count: 2}
+  - name: V2_동률_내림차순        # R4 Y4 G4 -> 내림차순 동률이면 R, Y, G
+    signal: RRRRYYYYGGGG
+    barcode: P2-02
+    pucks: [rc, rc, rb, rb, rc, rb, gc, gc, gb, gb, gc, gb]   # 빨강 6, 초록 6 -> Y 에 빨강 2 · 초록 2 (같은 모양)
+    expect: {L1: R, L2: Y, L3: G, y_count: 4}
+  - name: V3_한모양_부족_순차실패   # 빨강 8 (원기둥 3 · 상자 5), R5 Y3 G4 -> Y = 빨강 3 개 같은 모양
+    signal: RRRRRYYYGGGG
+    barcode: P2-03
+    pucks: [rc, rb, rc, rb, rb, rc, rb, rb, gc, gb, gc, gb]   # ID 순 순차 선택: R 이 앞 5 개 (c,b,c,b,b) 를 가져가면 남은 빨강 = c,b,b -> 모양 섞여 실패
+    expect: {L1: Y, L2: G, L3: R, y_count: 3}
+    greedy_fails: true
+  - name: V4_내림차순_Y6
+    signal: YYYYYYRRRGGG          # R3 Y6 G3
+    barcode: P2-04
+    pucks: [rc, rc, rc, rb, rb, rb, gc, gc, gc, gb, gb, gb]   # 빨강 6 · 초록 6 -> Y 에 빨강 3 · 초록 3 같은 모양
+    expect: {L1: Y, L2: R, L3: G, y_count: 6}
+  - name: X1_불가능_색수부족       # 빨강 2 · 초록 10 인데 R3 -> 빨강 부족
+    signal: RRRYYYGGGGGG
+    barcode: P2-01
+    pucks: [rc, rb, gc, gb, gc, gb, gc, gb, gc, gb, gc, gb]
+    impossible: true
+  - name: X2_불가능_한모양없음     # 빨강 7 (c3 b4), 초록 5 (c1 b4), R2 Y6 G4 -> Y = 빨강 5 + 초록 1 한 모양: c 는 빨강 3 < 5, b 는 빨강 4 < 5 -> 불가능
+    signal: RRYYYYYYGGGG
+    barcode: P2-02
+    pucks: [rc, rc, rc, rb, rb, rb, rb, gc, gb, gb, gb, gb]
+    impossible: true

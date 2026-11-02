@@ -1,0 +1,66 @@
+# AMCL (nav2_amcl) — 문서 좌표로 만든 정적 지도 (maps/map_amcl) 에 맞춘 값. launch/localization.launch.py 가 씀.
+# 왜 이렇게 두나:
+#   - 지도가 SLAM 이 아니라 발제 좌표 그대로 (벽판 · 기둥 위치 오차 = 설치 오차뿐) -> 레이저 모델 sigma_hit 을 작게.
+#   - AMCL 지도에는 LiDAR 스캔면 (바닥 위 0.082 m) 을 지나는 것만 (벽판 · 기둥 · 신호등 · 바코드 받침). 박스 · 받침대 (0.07) 는 스캔에 안 보여 뺐음.
+#     박스 위 퍽 (0.07 ~ 0.13) 은 보이지만 미션 중 옮겨지므로 지도에 없음 -> z_rand 를 조금 높여 버팀.
+#   - 시작 자세를 알고 (출발 구역, 로봇 중심 (0.734, 0.95), -X 를 봄) 경기장이 거의 대칭 -> 무작위 입자 주입 끔 (recovery_alpha 0), 전역 위치 찾기 안 함.
+#   - 4 륜 스키드 조향은 제자리 회전에서 미끄러짐이 큼 -> 회전 잡음 (alpha1) 을 직진 잡음보다 크게.
+amcl:
+  ros__parameters:
+    use_sim_time: false
+    global_frame_id: map
+    odom_frame_id: odom              # ekf (bringup/config/ekf.yaml) 가 odom -> base_link 발행
+    base_frame_id: base_link
+    scan_topic: /scan                # perception scan_merger (앞 · 뒤 LDS-03 합침, base_link, 1°)
+    map_topic: /map_amcl             # 주행용 /map (박스 포함) 과 따로
+    robot_model_type: nav2_amcl::DifferentialMotionModel
+    tf_broadcast: true
+    transform_tolerance: 0.3
+    # 입자
+    min_particles: 500
+    max_particles: 3000
+    pf_err: 0.02
+    pf_z: 0.99
+    resample_interval: 1
+    update_min_d: 0.03               # [m] 이만큼 움직이면 갱신 (정밀 정렬 구간에서도 따라오게)
+    update_min_a: 0.05               # [rad]
+    recovery_alpha_slow: 0.0
+    recovery_alpha_fast: 0.0
+    # 움직임 잡음 (차동 모델): alpha1 회전->회전, alpha2 직진->회전, alpha3 직진->직진, alpha4 회전->직진
+    alpha1: 0.25
+    alpha2: 0.10
+    alpha3: 0.08
+    alpha4: 0.05
+    alpha5: 0.0
+    # 레이저 (likelihood field)
+    laser_model_type: likelihood_field
+    laser_min_range: 0.12            # LDS-03 최소 (차체 안은 scan_merger self_box 가 이미 뺌)
+    laser_max_range: 8.0             # 경기장 대각선 7.8 m
+    max_beams: 120
+    sigma_hit: 0.03                  # [m] 지도 = 문서 좌표 (설치 오차 + LDS 잡음)
+    z_hit: 0.85
+    z_rand: 0.15
+    z_max: 0.0
+    z_short: 0.0
+    laser_likelihood_max_dist: 1.0
+    do_beamskip: false
+    # 시작 자세 (출발 구역): base_link = 로봇 중심 + 0.04035 m (뒤 카메라 기둥 때문에 외곽 가운데가 base_link 뒤)
+    set_initial_pose: true
+    always_reset_initial_pose: false
+    initial_pose: {x: 0.69365, y: 0.95, z: 0.0, yaw: 3.14159265}
+    save_pose_rate: 0.5
+    first_map_only: false
+
+map_server:
+  ros__parameters:
+    use_sim_time: false
+    topic_name: map
+    frame_id: map
+    yaml_filename: ""                # launch 가 maps/map_nav.yaml 로 채움
+
+map_server_amcl:
+  ros__parameters:
+    use_sim_time: false
+    topic_name: map_amcl
+    frame_id: map
+    yaml_filename: ""                # launch 가 maps/map_amcl.yaml 로 채움
