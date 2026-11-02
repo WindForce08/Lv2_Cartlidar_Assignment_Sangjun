@@ -6,6 +6,8 @@
 #   ros2 launch bringup bringup.launch.py skill_enabled:=true    # ONNX Runtime 빌드에서만 (정책 실행)
 #   ros2 launch bringup bringup.launch.py drive:=direct          # 직결 구동 (기본 belt = 증속벨트)
 #   ros2 launch bringup bringup.launch.py sim:=true use_sim_time:=true use_teleop:=false use_tfmini:=false   # Isaac Sim (workspace/tools/isaac_sim 브리지)
+#   ros2 launch bringup bringup.launch.py front_serial:=<시리얼> rear_serial:=<시리얼>   # D435 두 대 구분 (rs-enumerate-devices -s)
+#   use_sensors:=false — 카메라 · 라이다 드라이버를 띄우지 않는다 (sim:=true 면 기본 false: Isaac 브리지가 같은 토픽을 냄)
 #   use_tfmini:=false — TFmini(박스 거리) · obstacle_stop 을 띄우지 않고 twist_mux obstacle lock 도 뺀다 (TFmini 가 없는데 lock 이 있으면 늘 잠김)
 #
 # ① ros2_control_node · ② base_container : opencr_hardware/base_bringup.launch.py
@@ -15,12 +17,13 @@
 #    카메라 인식(⑦)을 끄더라도 안전 정지가 남도록 TFmini 와 같은 프로세스에 둔다
 #    같은 프로세스 · intra-process 통신 · 노드마다 MutuallyExclusive 콜백 그룹 → 바퀴 · 팔 · 판단 콜백이 병렬
 # ⑥ ekf (use_ekf) — 바퀴 vx + IMU yaw rate
+# 센서 드라이버 (use_sensors) : bringup/sensors.launch.py — D435 두 대 · 팔 Arducam · LDS-03 두 대 (TFmini 는 위 ⑧)
 # nav2 · slam_toolbox 는 기존 패키지 launch 로 따로 (nav2 체인 마지막 출력만 /cmd_vel_nav)
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch_ros.actions import ComposableNodeContainer, Node
 from launch_ros.descriptions import ComposableNode
 from launch_ros.parameter_descriptions import ParameterValue
@@ -68,6 +71,11 @@ def generate_launch_description():
         DeclareLaunchArgument('use_tfmini', default_value='true',
                               description='1층 TFmini(박스 거리) · obstacle_stop · twist_mux obstacle lock. 시뮬레이션 · TFmini 없음은 false'),
         DeclareLaunchArgument('use_ekf', default_value='true', description='⑥ robot_localization ekf'),
+        DeclareLaunchArgument('use_sensors',
+                              default_value=PythonExpression(["'false' if '", LaunchConfiguration('sim'), "'.lower() == 'true' else 'true'"]),
+                              description='카메라 · 라이다 드라이버 (sensors.launch.py). 기본: 실물 true · sim:=true 면 false'),
+        DeclareLaunchArgument('front_serial', default_value='', description='★ 앞 D435 시리얼'),
+        DeclareLaunchArgument('rear_serial', default_value='', description='★ 뒤 D435 시리얼'),
         DeclareLaunchArgument('ports', default_value='/dev/ttyACM0,/dev/ttyACM1',
                               description='두 OpenCR 후보 포트 (역할은 프로토콜 응답으로 판별)'),
         DeclareLaunchArgument('drive', default_value='belt', description='구동: belt (증속벨트) | direct (직결)'),
@@ -87,6 +95,12 @@ def generate_launch_description():
             launch_arguments={'use_sim_time': LaunchConfiguration('use_sim_time'),
                               'use_obstacle_stop': 'false'}.items(),   # obstacle_stop 은 위 control_container
             condition=IfCondition(LaunchConfiguration('use_perception'))),
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(PathJoinSubstitution([me, 'launch', 'sensors.launch.py'])),
+            launch_arguments={'use_sim_time': LaunchConfiguration('use_sim_time'),
+                              'front_serial': LaunchConfiguration('front_serial'),
+                              'rear_serial': LaunchConfiguration('rear_serial')}.items(),
+            condition=IfCondition(LaunchConfiguration('use_sensors'))),
         control_container,
         Node(package='robot_localization', executable='ekf_node', name='ekf_filter_node', output='screen',
              parameters=[PathJoinSubstitution([me, 'config', 'ekf.yaml']), sim],
