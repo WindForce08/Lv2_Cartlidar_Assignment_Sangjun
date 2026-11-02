@@ -1,7 +1,7 @@
 // 바코드 라벨 찾기 — 앞 D435 컬러 + 깊이 (ROS 의존 없음 → 단위 시험 · Python 비교 도구)
 //   R3: 바코드 라벨(Code128, 35 × 20 mm, 흰 테두리 · 막대 띠 · 아래 글자 줄)은 벽판 또는 선반 윗면에 붙는다.
 //   D435 로 라벨 자리를 찾고, 팔 카메라로 가까이 가서 읽는다(barcode_reader.hpp).
-//   기준 Python 시제품(sim_render/proto_r3/locate_v2.py, sha256 앞 16자 21f7ddbd7ec1fdd5, R3 설계 45차)을 같은 순서로 옮겼다.
+//   기준 Python 시제품(sim_render/proto_r3/locate_v2.py, sha256 앞 16자 26bd7a554d716a67, R3 설계 46차 · 판정 7차 통과)을 같은 순서로 옮겼다.
 //   설계 근거 · 결과는 sim_render/README.md 'R3' 절, 문턱 기본값은 그 CFG2 값이다.
 //
 //   1) surfaces: 깊이 → 3D 점 → 상자 평균 뒤 화소마다 법선(base_footprint 기준)
@@ -76,7 +76,7 @@ struct BarcodeLocatorConfig
   // 모양 거르기 (적힌 순서대로 검사)
   double lift_max = 9.0;         // 라벨 창이 평면에서 떠 있는 높이 중앙값 상한 [m] (9 = 사실상 끔)
   double sat_max = 40.0;         // 라벨 창 평균 채도 상한
-  double sat_hi_max = 999.0;     // 라벨 안쪽 채도 90 % 상한 (999 = 끔)
+  double sat_hi_max = 38.0;      // 라벨 안쪽 채도 90 % 상한 (창에 든 파란 기둥 빼기: 헛 53.4, 진짜 최대 25.0. 999 = 끔)
   double bw_min = 0.4;           // 막대 띠 평균 ≥ bw_min × 흰 테두리 평균
   double white_ring_min = 0.98;  // 흰 테두리 평균 ≥ 이 값 × 둘레 평균
   double bw_max = 9.0;           // 막대 띠 평균 ≤ bw_max × 흰 테두리 평균 (9 = 끔)
@@ -89,7 +89,7 @@ struct BarcodeLocatorConfig
   double ring_max = 0.35;        // 둘레 퍼짐 / (흰 테두리 − 막대 띠) 상한
   double ring_rel_max = 0.06;    // 둘레 퍼짐 / 흰 테두리 상한
   double resw_min = -99.0;       // 흰 테두리 잔차 2 % 하한 (−99 = 끔)
-  double sharp_min = -0.05;      // 선명도(흐린 템플릿 상관 − 두 배 흐린 템플릿 상관) 하한
+  double sharp_min = -0.10;      // 선명도(흐린 템플릿 상관 − 두 배 흐린 템플릿 상관) 하한 (46차: −0.05 는 진짜 −0.055 를 놓침)
   double side_min = -0.45;       // 흰 테두리 가장 어두운 변의 평균 잔차 하한
   int img_margin = 4;            // 라벨 네 모서리가 영상 끝에서 이만큼 안 [화소]
   double ring_min_valid = 0.0;   // 둘레 띠 중 평면 위 비율 하한

@@ -158,7 +158,7 @@ perception_node:
       region_margin_m: 0.04     # 칸 범위 밖 이만큼까지의 퍽을 판정에 넣음 (그 밖은 다른 선반 · 바닥)
       max_age_s: 1.0            # 이보다 오래된 퍽 목록으로는 판정하지 않음
     barcode:                    # 바코드 라벨 (READ_BARCODE, /perception/barcode). include/perception/barcode_locator.hpp · barcode_reader.hpp
-      # 찾기 문턱은 barcode.<이름> 으로 덮어쓴다(이름 · 기본값은 BarcodeLocatorConfig = R3 설계 45차 locate_v2.py CFG2, sha256 앞 16자 21f7ddbd7ec1fdd5).
+      # 찾기 문턱은 barcode.<이름> 으로 덮어쓴다(이름 · 기본값은 BarcodeLocatorConfig = R3 설계 46차 locate_v2.py CFG2, sha256 앞 16자 26bd7a554d716a67).
       # 근거 · 판정 결과: Cartlidar/sim_render/README.md R3 절 (모의). 예: thr: 0.65, white_ring_min: 0.98, max_blur: 20.0
       template_path: ""         # 라벨 그림. 비우면 share/perception/data/barcode_P2-01.png (설계 · 판정 렌더에 쓴 그림과 같음)
       camera: front             # 라벨을 찾는 D435 (front | rear)
