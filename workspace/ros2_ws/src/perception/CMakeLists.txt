@@ -96,6 +96,9 @@ if(BUILD_TESTING)
   # 후방 장애물 계산부 (rear_obstacle.hpp, 헤더만) — 아래 목록과 따로 둬서 다른 시험 추가와 겹치지 않게
   ament_add_gtest(test_rear_obstacle test/test_rear_obstacle.cpp)
   target_link_libraries(test_rear_obstacle perception_detector)
+  # 팔 카메라 평면 교차 (arm_plane.hpp, 헤더만)
+  ament_add_gtest(test_arm_plane test/test_arm_plane.cpp)
+  target_link_libraries(test_arm_plane perception_detector)
   ament_add_gtest(test_perception_logic test/test_tfmini.cpp test/test_vision.cpp test/test_tracker_tag.cpp
     test/test_inputs.cpp test/test_lidar.cpp test/test_puck.cpp test/test_signal.cpp test/test_dice.cpp
     test/test_signal_light.cpp test/test_depth_split.cpp
