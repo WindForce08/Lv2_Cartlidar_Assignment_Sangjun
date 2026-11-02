@@ -4,10 +4,10 @@ drive_node:
     spin_action: spin
     stale_s: 0.3                   # result · /tfmini/range · /scan · odom 300 ms 규칙
     navigate:
-      xy_goal_tolerance: 0.25      # 이 안의 목표는 nav2 spin 으로 (nav2 와 같게)
+      xy_goal_tolerance: 0.025     # 이 안의 목표는 nav2 spin 으로. nav2 goal checker xy_goal_tolerance 와 같게 (인지 Nav2 설정 0.025, 이슈 #31)
       spin_time_allowance: 15.0
     base:
-      front_offset: 0.20           # base_link → 범퍼 앞면 x ★
+      front_offset: 0.263          # base_link → 범퍼 앞면 x ★ URDF 261028 외곽 (Nav2 footprint 앞 0.263). 실측값이 있으면 그 값 (이슈 #31)
     align:
       rate_hz: 20.0
       kp_yaw: 1.2                  # 정밀: rad/s per 정규화 가로 오차

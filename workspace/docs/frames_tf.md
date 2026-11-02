@@ -98,9 +98,12 @@ USD 위치는 저장소 URDF 와 기준이 달라 값을 바로 쓰지 않는다
 | `/top_camera_front/color/image_raw` · `/color/camera_info` | Isaac → 호스트 | Image · CameraInfo | `top_camera_front_color_optical_frame` |
 | `/top_camera_front/aligned_depth_to_color/image_raw` | Isaac → 호스트 | Image 32FC1 m (컬러와 같은 크기, 맞은 곳 없으면 0) | `top_camera_front_color_optical_frame` |
 | `/top_camera_rear/...` | Isaac → 호스트 | 위와 같음 | `top_camera_rear_color_optical_frame` |
-| `/arm_camera/image_raw` · `/arm_camera/camera_info` | Isaac → 호스트 | Image · CameraInfo | `arm_camera_optical_frame` |
+| `/arm_camera/image_raw` · `/arm_camera/camera_info` | Isaac → 호스트 | Image · CameraInfo | `arm_camera_optical_frame` (640×480) |
+| `/tf_static` | Isaac → 호스트 | TFMessage | `top_camera_*_link` → `top_camera_*_color_optical_frame` (실물은 realsense2_camera 가 냄, USD 261027 외부보정 값) |
+| `/scan_front` · `/scan_rear` | Isaac → 호스트 | sensor_msgs/LaserScan, 10 Hz · 360 점 | `laser_front` · `laser_rear` (roll π). PhysX 레이캐스트, 로봇 자신은 맞지 않음, 못 잼 = inf |
 
-카메라 · 깊이 줄은 아직 브리지에 없다 (규약만).
+카메라 30 Hz (`--cams`, 기본 front,rear,arm) · 라이다 10 Hz (`--lidars`, 기본 front,rear). 카메라 · 라이다 prim 은 USD 의 광학 · 스캔 프레임 prim (`top_camera_*_color_optical_frame` · `camera_optical_frame` · `lidar_*_scan`) 을 찾아 쓴다. 고정 관절을 합친 USD (urdf_and_usd B안 등) 처럼 prim 이 없으면 경고하고 그 센서만 건너뛴다.
+깊이는 32FC1 m (실물 realsense 는 16UC1 mm, perception 이 둘 다 받음). 시험 (2026-11-02, 벽 2개 장면, headless): 스캔 거리 기하 계산과 1 mm 안, 자기 맞음 0, 카메라 3대 30 Hz, publish 평균 5.3 ms · 최대 48 ms (라이다 프레임), 실시간비 0.91.
 
 - 토픽 · frame_id 는 실물 드라이버와 같은 이름 (perception.yaml 을 바꾸지 않고 쓰기 위해).
 - Isaac 카메라 prim 은 link 가 아니라 **컬러 광학 프레임 위치** (USD `top_camera_*_color_optical_frame`, link 에서 약 40 mm) 에 둔다. 그래야 영상과 TF 가 맞는다.

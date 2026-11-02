@@ -17,10 +17,14 @@
 |---|---|---|---|---|
 | /scan_front · /scan_rear | sensor_msgs/LaserScan | SensorData (intra) | LiDAR 드라이버 | scan_merger |
 | /scan | sensor_msgs/LaserScan | SensorData | scan_merger | slam_toolbox, nav2, drive_node |
+| /top_camera_front · /top_camera_rear `/color/image_raw` · `/color/camera_info` · `/aligned_depth_to_color/image_raw` | sensor_msgs/Image · CameraInfo | SensorData | realsense2_camera (bringup `sensors.launch.py`) · Isaac 브리지 — frame_id `top_camera_*_color_optical_frame` | perception_node |
+| /arm_camera/image_raw · /arm_camera/camera_info | sensor_msgs/Image · CameraInfo | SensorData | usb_cam (bringup `sensors.launch.py`) · Isaac 브리지 — frame_id `arm_camera_optical_frame`, 640×480 | perception_node |
 | /perception/result | robot_interfaces/PerceptionResult | Reliable, depth 1 | perception_node | mission, drive, manipulator |
 | /arm_range | sensor_msgs/Range | SensorData | perception_node (ARM_ALIGN, 팔 영상마다) — 팔 끝(`tool_link`) → 정렬 중인 퍽 **표면** 거리. ① Arducam 태그 퍽 중심(READ_TAG) ② D435 목표를 odom 에 붙잡아 둔 점(3 s 안). 못 구하면 +inf. **TFmini 아님** | manipulator (미세 보정 · 최종 전진 · pick ①) |
 | /perception/arm_range | sensor_msgs/Range | SensorData | perception_node (ARM_ALIGN, `arm.plane`) — 팔 끝(`tool_link`) → 잠근 퍽 **중심** 거리 (팔 카메라 평면 교차). 함께 /perception/arm_target (PointStamped). ★ 위 `/arm_range`(퍽 **표면**)와 다른 토픽 — 이름이 비슷하니 헷갈리지 말 것, 두 값 차이 ≈ 퍽 반지름 | (없음 — 예비 · 검증용) |
 | /tfmini/range | sensor_msgs/Range | SensorData, 50 Hz | tfmini_node (실물) · scan_to_range (Gazebo) — 1층 렌즈(`tfmini_link`) → **퍽이 놓인 박스 앞면** 거리, mm 출력 + 실측 보정 | drive (FINE 정렬 전후), obstacle_stop |
+| /perception/pucks | robot_interfaces/PuckArray | Reliable, depth 1 (`qos::result()`, /perception/result 와 같음) | perception_node | perception_survey (mission 은 필요하면) |
+| /perception/puck_survey | std_msgs/String (JSON) | Reliable + TransientLocal, depth 1 | perception_survey — B0 박스 6 · 칸 12. 필드 `slots[]`(box, side, x_mm, y_mm, color, shape, pose, id, status …) · `complete` · `errors` · `revisit` · `unconfirmed` · `frame`(발제 원점, mm). `complete` false 면 할당에 쓰지 않음. 자세한 것은 perception_survey/README.md | mission |
 | /perception/obstacle_stop | std_msgs/Bool | Reliable + TransientLocal, 10 Hz | obstacle_stop (`/tfmini/range` 판정) | twist_mux (lock priority 60, 0.5 s: drive · nav 막음, 조이스틱 통과) |
 | /map | nav_msgs/OccupancyGrid | Reliable + TransientLocal | slam_toolbox | nav2 |
 | /odom | nav_msgs/Odometry | 기본 | diff_drive_controller | ekf |
@@ -54,6 +58,7 @@
 | /arm_controller/follow_joint_trajectory | Action | control_msgs/FollowJointTrajectory | manipulator | arm_controller |
 | /gripper_controller/gripper_cmd | Action | control_msgs/ParallelGripperCommand | manipulator | gripper_controller |
 | /perception/set_mode | Service | robot_interfaces/SetPerceptionMode | mission | perception |
+| /perception/survey/start · /reset · /finish · /revisit | Service | std_srvs/Trigger | mission | perception_survey — 순서: start → `complete` 토픽 → finish 성공. finish 실패면 revisit 로 문제 칸만 다시 |
 | /mission/start · /mission/stop | Service | std_srvs/Trigger | joy_teleop · CLI | mission |
 
 ## 메시지
@@ -70,6 +75,7 @@
 | ExecuteSkill | |
 | MissionStatus | |
 | SkillState · SafetyState | 모니터링 전용 |
+| Puck · PuckArray | /perception/pucks. Puck = tag_id · color · shape · pose (base_link) · standing · confidence · camera |
 
 ## USB 패킷 (opencr_protocol.hpp = opencr_firmware/opencr_protocol.h)
 
