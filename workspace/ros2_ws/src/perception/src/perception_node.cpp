@@ -17,6 +17,8 @@
 //              목표 퍽 하나를 잠가 유지한다(arm_target_lock.hpp): 처음에는 D435 추적 목표를 팔 영상에 투영한 점에 가까운 것,
 //              그 뒤에는 같은 색 · 직전 자리(또는 한 장 앞 예측) 근처, 박스 폭에 비례한 문턱 안만.
 //              놓치면 offset_valid = false (다른 퍽으로 넘어가지 않음)
+//              잠근 동안 평면 교차(arm_plane.hpp)로 퍽 중심 /perception/arm_target(PointStamped, base_footprint) 과
+//              거리 /perception/arm_range(Range, tool_link 원점에서 +x 로 퍽 중심까지)도 낸다. D435 추적 위치의 예비 · 검증용
 //   READ_TAG : 왜곡 보정 원본에서 AprilTag → tag_id · tag_pose (Arducam 광학 프레임 기준, x 오른쪽 · y 아래 · z 앞)
 //              퍽 태그(tag.*)와 장소 태그(marker.*)를 각자 크기로 찾아 가장 크게 보이는 것 하나 (read_tag.hpp)
 //   /perception/pucks (토픽, PuckArray): SEARCH_* 또는 READ_TAG 가 켜져 있으면 result 와 같은 주기로 발행한다
@@ -65,6 +67,9 @@
 #include "robot_interfaces/srv/set_perception_mode.hpp"
 #include "sensor_msgs/msg/camera_info.hpp"
 #include "sensor_msgs/msg/image.hpp"
+#include "sensor_msgs/msg/range.hpp"
+#include "geometry_msgs/msg/point_stamped.hpp"
+#include "perception/arm_plane.hpp"
 #include "perception/arm_target_lock.hpp"
 #include "perception/barcode_locator.hpp"
 #include "perception/barcode_reader.hpp"
@@ -213,6 +218,17 @@ public:
     alc.follow_k = declare_parameter("arm.lock_follow_k", alc.follow_k);
     alc.reacquire_size_ratio = declare_parameter("arm.lock_reacquire_size_ratio", alc.reacquire_size_ratio);
     arm_lock_ = ArmTargetLock(alc);
+    // 팔 카메라 평면 교차 (arm_plane.hpp): 잠근 목표의 박스 중심 시선 ∩ 퍽 중심 높이 수평면 → 퍽 중심 · 거리.
+    //   D435 추적 위치의 예비(D435 가 못 볼 때 · 놓쳤을 때)로 쓰고, 둘을 비교해 검증에도 쓴다
+    plane_.enabled = declare_parameter("arm.plane.enabled", true);
+    plane_.frame = declare_parameter("arm.plane.frame", std::string("base_footprint"));
+    plane_.levels = declare_parameter("arm.plane.support_levels", std::vector<double>{0.0, 0.07});
+    plane_.halves = declare_parameter("arm.plane.half_heights", std::vector<double>{0.015, 0.03});
+    plane_.max_gap = declare_parameter("arm.plane.max_height_gap", 0.02);
+    plane_.default_height = declare_parameter("arm.plane.default_height", -1.0);
+    plane_.range_frame = declare_parameter("arm.plane.range_frame", std::string("tool_link"));
+    plane_.max_range = declare_parameter("arm.plane.max_range", 1.0);
+    plane_.edge_margin_px = static_cast<int>(declare_parameter("arm.plane.edge_margin_px", 2));
 
     DetectorConfig dc;
     dc.type = declare_parameter("detector.type", dc.type);
@@ -433,6 +449,12 @@ public:
     marker_pub_ = create_publisher<TaskMarker>(names::PERCEPTION_TASK_MARKER, qos::result());
     signal_pub_ = create_publisher<SignalMsg>(names::PERCEPTION_SIGNAL, qos::result());
     barcode_pub_ = create_publisher<BarcodeMsg>(names::PERCEPTION_BARCODE, qos::result());
+    if (plane_.enabled) {
+      plane_target_pub_ = create_publisher<geometry_msgs::msg::PointStamped>(
+        declare_parameter("arm.plane.target_topic", std::string("/perception/arm_target")), qos::result());
+      plane_range_pub_ = create_publisher<sensor_msgs::msg::Range>(
+        declare_parameter("arm.plane.range_topic", std::string("/perception/arm_range")), rclcpp::SensorDataQoS());
+    }
     dice_srv_ = create_service<CheckDice>(names::PERCEPTION_CHECK_DICE,
         [this](CheckDice::Request::SharedPtr req, CheckDice::Response::SharedPtr res) {on_check_dice(*req, *res);},
         rclcpp::ServicesQoS(), ctl_cbg_);
@@ -469,7 +491,7 @@ private:
 
     const uint8_t old = mode_;
     mode_ = req.mode;
-    if ((old ^ req.mode) & SetMode::Request::ARM_ALIGN) {arm_lock_.reset();}   // 켜거나 끌 때 목표를 다시 고른다
+    if ((old ^ req.mode) & SetMode::Request::ARM_ALIGN) {reset_arm_target();}   // 켜거나 끌 때 목표를 다시 고른다
     if ((old ^ req.mode) & SIGNAL_BIT) {   // 켜거나 끌 때 센 것을 지운다
       locator_.reset();
       sequence_.reset();
@@ -966,7 +988,7 @@ private:
           const int64_t ns = stamp_ns(img->header.stamp);
           fresh = ns != arm_.used_ns;
           arm_.used_ns = ns;
-          if (arm_.restarted) {arm_lock_.reset();}
+          if (arm_.restarted) {reset_arm_target();}
           arm_.restarted = false;
         }
       }
@@ -1470,7 +1492,7 @@ private:
       const std::optional<ArmPoint> seed = arm_seed(frame, stamp, u.size());   // 처음 잠글 때 · 놓친 뒤 다시 잡을 때 씀
       int b = -1;
       if ((mode & SEARCH_BITS) && !seed) {
-        arm_lock_.reset();  // D435에서 넘긴 목표 없이 점수만으로 다른 물체를 고르지 않음
+        reset_arm_target();  // D435에서 넘긴 목표 없이 점수만으로 다른 물체를 고르지 않음
       } else {
         b = arm_lock_.update(boxes, seed, static_cast<double>(small.rows) / small.cols);
       }
@@ -1480,6 +1502,13 @@ private:
         r.arm_offset.y = boxes[b].y;
         r.arm_offset.z = boxes[b].w;
         if (!r.object_found) {r.confidence = dets[idx[b]].score;}
+        // 화면 가장자리에 잘린 박스는 중심이 퍽 중심에서 밀려(A1 모의 잘린 장 중앙 12 · 최대 18 mm) 평면 교차를 내지 않는다
+        const cv::Rect & bx = dets[idx[b]].box;
+        const int m = plane_.edge_margin_px;
+        const bool cut = bx.x <= m || bx.y <= m || bx.x + bx.width >= small.cols - m || bx.y + bx.height >= small.rows - m;
+        if (plane_.enabled && !newK_.empty() && !cut) {
+          publish_plane(frame, stamp, img->header.stamp, (1.0 + boxes[b].x) * u.cols / 2.0, (1.0 + boxes[b].y) * u.rows / 2.0);
+        }
       }
     }
     std::optional<tf2::Transform> T;   // 팔은 움직이므로 촬영 시각 변환. 자세가 없으면(camera_info 없음) 찾지 않는다
@@ -1517,6 +1546,58 @@ private:
     if (want_marker && T) {
       arm_.marker = best_marker(places, *T, img->header.stamp, Puck::CAMERA_ARM);
     }
+  }
+
+  void reset_arm_target()
+  {
+    arm_lock_.reset();
+    plane_.height.reset();   // 다른 퍽을 잠그면 높이를 다시 고른다
+  }
+
+  // 잠근 박스 중심 (u, v: 왜곡 보정한 원본 화소) → 평면 교차 퍽 중심 · 거리 발행.
+  //   평면 높이는 D435 추적 목표가 살아 있으면 그 높이로 고르고(받침 · 반높이 목록), 잠근 동안 유지한다.
+  //   그래서 D435 가 목표를 놓친 뒤(가까이 다가가 화면 밖)에도 팔 카메라만으로 낸다
+  void publish_plane(const std::string & frame, const rclcpp::Time & stamp, const builtin_interfaces::msg::Time & st,
+    double u, double v)
+  {
+    if (seed_odom_ && std::abs(stamp.seconds() - seed_t_) <= seed_max_age_) {
+      if (const auto T_po = lookup_at(plane_.frame, odom_frame_, stamp, false)) {
+        const tf2::Vector3 s = *T_po * tf2::Vector3(seed_odom_->x, seed_odom_->y, seed_odom_->z);
+        if (const auto h = pick_plane_height(s.z(), plane_.levels, plane_.halves, plane_.max_gap)) {plane_.height = *h;}
+      }
+    }
+    if (!plane_.height && plane_.default_height >= 0.0) {plane_.height = plane_.default_height;}
+    if (!plane_.height) {return;}
+    const auto T_pc = lookup_at(plane_.frame, frame, stamp, false);
+    if (!T_pc) {return;}
+    const tf2::Matrix3x3 & b = T_pc->getBasis();
+    const tf2::Vector3 & o = T_pc->getOrigin();
+    const cv::Matx33d R(b[0][0], b[0][1], b[0][2], b[1][0], b[1][1], b[1][2], b[2][0], b[2][1], b[2][2]);
+    cv::Matx33d K;
+    for (int i = 0; i < 9; ++i) {K(i / 3, i % 3) = newK_.at<double>(i / 3, i % 3);}
+    const auto p = ray_plane(K, u, v, R, cv::Vec3d(o.x(), o.y(), o.z()), *plane_.height);
+    if (!p) {return;}
+    geometry_msgs::msg::PointStamped pt;
+    pt.header.stamp = st;
+    pt.header.frame_id = plane_.frame;
+    pt.point.x = (*p)[0];
+    pt.point.y = (*p)[1];
+    pt.point.z = (*p)[2];
+    plane_target_pub_->publish(pt);
+    // 거리: range_frame(기본 tool_link = 파지점) 원점에서 그 +x 방향으로 퍽 중심까지 (표면이 아니라 중심)
+    const auto T_rp = lookup_at(plane_.range_frame, plane_.frame, stamp, false);
+    if (!T_rp) {return;}
+    const double x = (*T_rp * tf2::Vector3((*p)[0], (*p)[1], (*p)[2])).x();
+    if (!(x > 0.0) || x > plane_.max_range) {return;}
+    sensor_msgs::msg::Range rg;
+    rg.header = pt.header;
+    rg.header.frame_id = plane_.range_frame;
+    rg.radiation_type = sensor_msgs::msg::Range::INFRARED;
+    rg.field_of_view = 0.0f;
+    rg.min_range = 0.0f;
+    rg.max_range = static_cast<float>(plane_.max_range);
+    rg.range = static_cast<float>(x);
+    plane_range_pub_->publish(rg);
   }
 
   // D435 추적 목표(odom)를 팔 영상(왜곡 보정 뒤)에 투영한 정규화 점(화면 밖이면 −1~1 밖). 목표가 seed_max_age_ 보다
@@ -1595,6 +1676,15 @@ private:
   double tf_fallback_max_s_ = 0.1;   // [s] 촬영 시각 TF 가 없을 때 최근 TF 를 써도 되는 시각 차 (lookup_near)
   TargetTracker tracker_;
   ArmTargetLock arm_lock_;             // ctl_cbg_ 에서만 쓴다 (on_set_mode · 처리 주기)
+  struct PlaneConfig
+  {
+    bool enabled = true;
+    std::string frame, range_frame;
+    std::vector<double> levels, halves;
+    double max_gap = 0.02, default_height = -1.0, max_range = 1.0;
+    int edge_margin_px = 2;
+    std::optional<double> height;      // 잠근 목표의 퍽 중심 높이 (frame 기준). ctl_cbg_ 에서만 쓴다
+  } plane_;
   std::optional<Vec3> seed_odom_;      // 가장 최근 D435 추적 목표 (odom)
   double seed_t_ = 0, seed_max_age_ = 1.0;
   uint8_t mode_ = SetMode::Request::OFF;   // ctl_cbg_ 에서만 읽고 쓴다
@@ -1641,6 +1731,8 @@ private:
   std::unique_ptr<BarcodeLocator> bc_locator_;
   std::unique_ptr<BarcodeReader> bc_reader_;   // bc_read_job_ 일꾼에서만 쓴다
   rclcpp::Publisher<BarcodeMsg>::SharedPtr barcode_pub_;
+  rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr plane_target_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::Range>::SharedPtr plane_range_pub_;
   MonoCamera bc_arm_;                          // 바코드 읽기용 팔 카메라 구독 (영상 · 처리 기록이 arm_ 과 따로)
   DepthCamera * bc_cam_ = nullptr;
   int bc_frames_ = 5, bc_min_valid_ = 0;
