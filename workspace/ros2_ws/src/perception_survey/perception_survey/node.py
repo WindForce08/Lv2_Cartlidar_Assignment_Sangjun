@@ -30,7 +30,8 @@ class SurveyNode(Node):
     def __init__(self):
         super().__init__('puck_survey')
         frame=self.declare_parameter('world_frame','map').value
-        self.core=Survey(frame,self.declare_parameter('merge_gate_m',.035).value,self.declare_parameter('min_observations',2).value,self.declare_parameter('tagged_min_confidence',.6).value)
+        self.core=Survey(frame,self.declare_parameter('merge_gate_m',.035).value,self.declare_parameter('min_observations',2).value,self.declare_parameter('tagged_min_confidence',.6).value,
+                         self.declare_parameter('max_revisits',2).value)
         self.age=self.declare_parameter('max_age_s',.5).value
         self.output=self.declare_parameter('output_path','').value
         self.enabled=False
@@ -45,6 +46,7 @@ class SurveyNode(Node):
         self.create_service(Trigger,'/perception/survey/start',self.start)
         self.create_service(Trigger,'/perception/survey/reset',self.reset)
         self.create_service(Trigger,'/perception/survey/finish',self.finish)
+        self.create_service(Trigger,'/perception/survey/revisit',self.revisit)
         self.create_timer(1.,self.publish)
         self.publish()
 
@@ -64,6 +66,18 @@ class SurveyNode(Node):
             if not self.output:raise ValueError('output_path를 지정해야 완료 파일을 저장할 수 있음')
             self.core.finish(self.output);self.enabled=False;self.publish();res.success=True;res.message=self.output
         except (ValueError,OSError) as e:res.success=False;res.message=str(e)
+        return res
+
+    def revisit(self,req,res):
+        # finish 가 실패하면 조사 전체를 다시 시작하지 않고 문제 칸만 비운다. message = 다시 볼 칸 목록 JSON
+        if not self.enabled:
+            res.success=False;res.message='조사 중이 아님 (start 먼저)';return res
+        try:todo,unconfirmed=self.core.revisit()
+        except ValueError as e:
+            res.success=False;res.message=str(e);return res
+        self.publish()
+        res.success=bool(todo)
+        res.message=json.dumps({'revisit':todo,'unconfirmed':unconfirmed},ensure_ascii=False,allow_nan=False)
         return res
 
     def on_localization(self,msg):
