@@ -7,6 +7,7 @@ puck_survey:
                                 #   (map 은 지도를 만들 때마다 원점이 달라 칸 좌표와 안 맞음). 모의 odom 시험은 launch 사본 설정으로 바꿈
     merge_gate_m: 0.035         # 슬롯 결합 문턱 (퍽 중심 ±40 mm 배치, 0~40 mm)
     min_observations: 2
+    max_revisits: 2             # ★ /perception/survey/revisit 로 한 칸을 다시 보는 횟수 한도. 넘으면 그 칸은 미확인(unconfirmed). 실물 조사 경로 시간에 맞춰 정할 값
     max_age_s: 0.5              # [s] 이보다 오래된 /perception/pucks 는 넣지 않음
     tagged_min_confidence: 0.4  # ★ 태그 퍽(팔 카메라)의 색 · 모양 점수 문턱. 점수 = 정사각 색띠 점유율이라 올바른 원기둥도
                                 #   0.425~0.578(모의 통합 42관측) → 0.6 이면 원기둥 칸이 완료되지 않음. 0.4 는 모의 통합(12/12)에서 쓴 값이며 실물 최적값 아님.
