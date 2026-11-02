@@ -2,7 +2,7 @@ drive_node:
   ros__parameters:
     nav2_action: navigate_to_pose
     spin_action: spin
-    stale_s: 0.3                   # result · /arm_range · /scan · odom 300 ms 규칙
+    stale_s: 0.3                   # result · /tfmini/range · /scan · odom 300 ms 규칙
     navigate:
       xy_goal_tolerance: 0.25      # 이 안의 목표는 nav2 spin 으로 (nav2 와 같게)
       spin_time_allowance: 15.0
@@ -25,8 +25,15 @@ drive_node:
       mode_wait_s: 0.5             # goal 뒤 첫 새 result 를 기다리는 시간 (모드 결정)
       lost_timeout_s: 0.5
       timeout_s: 30.0
-      min_target_distance: 0.10
-      default_tolerance: 0.01
+      min_target_distance: 0.13    # 정밀 목표 = TFmini 렌즈 → 박스 앞면 [m]. 최소 측정 0.10 + box.stop_margin
+      default_tolerance: 0.01      # ★ TFmini 실측 보정 뒤 반복 정밀도에 맞출 것 (사양 ±5 cm, 보정 없이는 1 cm 를 못 맞춤)
+      box:                         # 정밀 전후 거리 = /tfmini/range (1층 TFmini → 퍽이 놓인 박스 앞면, 205 × 205 × 70 mm)
+        window: 5                  # 최근 측정 수 (TFmini 50 Hz → 0.1 s)
+        min_samples: 3             # 이 수 이상 유효해야 씀
+        spread_m: 0.03             # 창 안 최대 − 최소가 이보다 크면 무효 (빔이 박스 모서리에 걸림)
+        stop_margin: 0.03          # 정밀 동안 obstacle_stop 정지 거리 = 목표 − 이 값 (TFmini 최소 0.10 이상)
+        stop_min: 0.10
+        obstacle_stop_node: /obstacle_stop
     scan:
       required: true               # 먼 거리 접근은 /scan 없으면 중지
       half_angle: 0.349            # ±20°

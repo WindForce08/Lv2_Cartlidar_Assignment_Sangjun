@@ -7,6 +7,8 @@
 - 인식 · 거리 값은 header.stamp (촬영 시각, ROS 시계) 300 ms 지나면 쓰지 않음
 - 200 ms (펌웨어 명령 무수신 정지) 와 300 ms (값의 최대 나이) 는 다른 규칙
 - 이름 · QoS 는 코드에 직접 쓰지 않고 `robot_interfaces/names.hpp` 의 `names::` · `qos::` 상수를 쓴다 (이 표와 같이 고침)
+- 300 ms 예외 하나: `/arm_range` 의 D435 보유 점은 "odom 에 고정된 정지 퍽 위치"를 현재 팔 자세로 다시 계산한 값이라 D435 가 마지막으로 본 뒤 `arm.range.hold_s`(3 s)까지 쓴다. 메시지 stamp 는 팔 영상 촬영 시각이라 받는 쪽 300 ms 규칙은 그대로
+- 박스 접근: drive_node 가 FINE 정렬 동안 obstacle_stop 파라미터 `approach_stop_m` 을 "목표 − 0.03 m" 로 넣고 끝나면 0 으로 되돌린다 (되돌리지 못하면 60 s 뒤 스스로 복귀)
 - perception 은 쓸 수 있는 프레임이 없으면 `/perception/result` 를 **발행하지 않는다** (카메라 정지). 받는 쪽은 300 ms 규칙으로 "모름" 처리
 
 ## 토픽
@@ -16,7 +18,9 @@
 | /scan_front · /scan_rear | sensor_msgs/LaserScan | SensorData (intra) | LiDAR 드라이버 | scan_merger |
 | /scan | sensor_msgs/LaserScan | SensorData | scan_merger | slam_toolbox, nav2, drive_node |
 | /perception/result | robot_interfaces/PerceptionResult | Reliable, depth 1 | perception_node | mission, drive, manipulator |
-| /arm_range | sensor_msgs/Range | SensorData | tfmini_node | drive, manipulator |
+| /arm_range | sensor_msgs/Range | SensorData | perception_node (ARM_ALIGN, 팔 영상마다) — 팔 끝(`tool_link`) → 정렬 중인 퍽 **표면** 거리. ① Arducam 태그 퍽 중심(READ_TAG) ② D435 목표를 odom 에 붙잡아 둔 점(3 s 안). 못 구하면 +inf. **TFmini 아님** | manipulator (미세 보정 · 최종 전진 · pick ①) |
+| /tfmini/range | sensor_msgs/Range | SensorData, 50 Hz | tfmini_node (실물) · scan_to_range (Gazebo) — 1층 렌즈(`tfmini_link`) → **퍽이 놓인 박스 앞면** 거리, mm 출력 + 실측 보정 | drive (FINE 정렬 전후), obstacle_stop |
+| /perception/obstacle_stop | std_msgs/Bool | Reliable + TransientLocal, 10 Hz | obstacle_stop (`/tfmini/range` 판정) | twist_mux (lock priority 60, 0.5 s: drive · nav 막음, 조이스틱 통과) |
 | /map | nav_msgs/OccupancyGrid | Reliable + TransientLocal | slam_toolbox | nav2 |
 | /odom | nav_msgs/Odometry | 기본 | diff_drive_controller | ekf |
 | /imu/data | sensor_msgs/Imu | 기본 | imu_sensor_broadcaster | ekf |

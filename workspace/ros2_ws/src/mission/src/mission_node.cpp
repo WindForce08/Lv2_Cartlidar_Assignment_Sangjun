@@ -15,8 +15,10 @@
 //   navigate <location>          locations.<name> = [x, y, yaw]로 주행 + 팔 STOW (병렬)
 //   search                        STOW → set_mode(OFF) → set_mode(SEARCH_FRONT | SEARCH_REAR),
 //                                 object_found 연속 확인, 없으면 제자리 회전
-//   approach <distance>           STOW → SEARCH_FRONT → align COARSE → READY → SEARCH_FRONT | ARM_ALIGN → align FINE
-//   pick                          SEARCH_FRONT | ARM_ALIGN 유지, /manipulator/pick (grasped 확인)
+//   approach <distance>           STOW → SEARCH_FRONT → align COARSE → READY → SEARCH_FRONT | ARM_ALIGN | READ_TAG → align FINE
+//                                 <distance> = 1층 TFmini 렌즈 → 퍽이 놓인 박스 앞면 [m] (>= 0.13: 최소 측정 0.10 + 정지 여유)
+//   pick                          SEARCH_FRONT | ARM_ALIGN | READ_TAG 유지, /manipulator/pick (grasped 확인)
+//                                 READ_TAG: perception 이 Arducam 태그로 /arm_range (팔 끝 → 퍽) 를 정밀하게 낸다
 //   pose <name>                   /manipulator/pose
 //   skill <drive|manipulator> <policy> [timeout] [mode=이름+이름] [fallback=<단계>]
 //                                 예: mode=SEARCH_FRONT+ARM_ALIGN, fallback=navigate:home (':' = 공백)
@@ -143,6 +145,8 @@ public:
 private:
   enum class Run { IDLE, RUNNING, PAUSED, DONE, FAILED };
   enum class AlignStage { COARSE, FINE };   // 로그 · 순서용 (AlignBase 필드 아님)
+  // 정밀 정렬 · pick 모드. READ_TAG 는 perception /arm_range(팔 끝 → 퍽)를 태그로 정밀하게 하려고 켠다
+  static constexpr uint8_t kFineMode = Mode::SEARCH_FRONT | Mode::ARM_ALIGN | Mode::READ_TAG;
 
   struct Step
   {
@@ -360,9 +364,9 @@ private:
     } else if (s.type == "pose") {
       if (s.args.size() != 1) {bad("needs a pose name");}
     } else if (s.type == "approach") {
-      // FINE 정렬 거리는 미션표에서 준다 (TFmini 기준, 최소 측정 거리 0.10m)
-      if (s.args.size() != 1 || !isNumber(s.args[0], v) || v < 0.10) {
-        bad("needs <distance> >= 0.10 (FINE align, TFmini based)");
+      // FINE 정렬 거리는 미션표에서 준다 (TFmini 렌즈 → 박스 앞면). drive align.min_target_distance 와 같게
+      if (s.args.size() != 1 || !isNumber(s.args[0], v) || v < 0.13) {
+        bad("needs <distance> >= 0.13 (FINE align, TFmini lens to box front)");
       }
     } else if (s.type == "skill") {
       if (s.args.size() < 2 || s.args.size() > 3 || (s.args[0] != "drive" && s.args[0] != "manipulator")) {
@@ -605,9 +609,9 @@ private:
       // ① STOW 완료 → ② SEARCH_FRONT → ③ align COARSE → ④ READY → ⑤ SEARCH_FRONT | ARM_ALIGN → ⑥ align FINE
       sendArmPose("STOW");
     } else if (s.type == "pick") {
-      // 바퀴는 정지 유지. approach와 같은 모드 (추적 위치 + arm_offset)
+      // 바퀴는 정지 유지. approach FINE 과 같은 모드 (추적 위치 + arm_offset + 태그 → /arm_range)
       drive_done_ = true;
-      setModeThen(Mode::SEARCH_FRONT | Mode::ARM_ALIGN, [this]() {sendPick();});
+      setModeThen(kFineMode, [this]() {sendPick();});
     } else if (s.type == "skill") {
       const bool on_drive = s.args[0] == "drive";
       (on_drive ? arm_done_ : drive_done_) = true;
@@ -638,8 +642,8 @@ private:
         case 2:  // COARSE 완료 → 팔 READY
           sendArmPose("READY");
           break;
-        case 3:  // READY 완료 → 정밀 정렬 (ARM_ALIGN 비트 → drive 정밀 모드, 팔 끝 TFmini · Arducam)
-          setModeThen(Mode::SEARCH_FRONT | Mode::ARM_ALIGN, [this]() {
+        case 3:  // READY 완료 → 정밀 정렬 (ARM_ALIGN 비트 → drive 정밀 모드: Arducam 좌우 + 1층 TFmini 박스 거리)
+          setModeThen(kFineMode, [this]() {
               sendAlign(AlignStage::FINE, std::stod(steps_[step_idx_].args[0]));
             });
           break;

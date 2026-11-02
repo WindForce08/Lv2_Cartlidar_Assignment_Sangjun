@@ -27,7 +27,8 @@ URDF 는 `opencr_hardware/urdf/robot.urdf.xacro`. 시뮬레이션 참고본 (`~/
 | `top_camera_front_link` → `top_camera_front_color_optical_frame` (뒤도 같음) | (URDF 에 없음) | realsense2_camera (`<camera_name>_link` 아래만) | perception D435 | ★ C: base_link 와 끊김 |
 | `arm_base_link` → `link1` ~ `gripper_roll_link` | base_link | URDF + /joint_states | manipulator (`arm_base_frame`) | |
 | `arm_camera_link` → `arm_camera_optical_frame` | gripper_roll_link | URDF | Arducam UVC 드라이버 frame_id · perception 태그 | 그리퍼 장착 확인 (2026-10-28) |
-| `tfmini_link` | gripper_roll_link | URDF | manipulator (`tfmini_frame`) | ★ 차체 1층 플레이트로 옮길 것 (위치 실측) |
+| `tfmini_link` | base_link (0.130, 0, -0.025) | URDF | tfmini_node · scan_to_range (`frame_id`) — 박스 앞면 거리 | 렌즈면 원점. 받침대 설계 · Isaac 값, ★ 실측 |
+| `tool_link` | gripper_roll_link | URDF | perception `arm.range.frame` · manipulator `range_frame` (/arm_range 기준) | |
 | `tool_link` | gripper_roll_link | URDF | manipulator | |
 
 ## 저장소 ↔ USD (261027) 대응
@@ -66,7 +67,7 @@ USD 위치는 저장소 URDF 와 기준이 달라 값을 바로 쓰지 않는다
 |---|---|---|
 | C | realsense 의 TF 뿌리는 `<camera_name>_link` (`top_camera_front_link` · `top_camera_rear_link`, infra1 = 깊이 원점). URDF 는 `camera_front_link` · `camera_rear_link` 라 `base_link → top_camera_*_color_optical_frame` 이 끊겨 perception `tf_->fixed()` 가 실패한다. 위치는 위 D435 원점대로 | robot.urdf.xacro, test_robot_description.cpp |
 | LiDAR roll π | LDS-03 은 3층 아래에 뒤집어 매달림 (261027 `simulation_metadata.json`: "LDS hangs upside down under floor 3 in CAD and hardware", USD `lidar_*_scan` roll 180°). 미적용이면 스캔 좌우가 뒤집힌다. 이름 · 위치와 함께 추후 확정 | robot.urdf.xacro |
-| TFmini | 차체 1층 플레이트 장착 (2026-10-28 확인). 261027 · USD 에 프레임이 없어 위치는 실측. 옮기면 manipulator pick ① `range_offset` 가정을 다시 본다 | robot.urdf.xacro, manipulator.yaml, test_robot_description.cpp |
+| TFmini | **적용 (2026-11-02)**: `tfmini_link` 를 base_link (0.130, 0, -0.025) 로 옮김. /arm_range 는 이제 perception 계산값(기준 tool_link)이라 manipulator `range_offset` = 퍽 반지름 0.015 | robot.urdf.xacro, manipulator.yaml, test_robot_description.cpp |
 | A | manipulator STOW joint3 -2.3 이 펌웨어 범위 밖 → STOW 명령 거부 | manipulator.yaml |
 | B | manipulator `lower/upper_limits` 가 URDF · config.h 보다 넓음 | manipulator.yaml |
 

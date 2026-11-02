@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 # waffle_4wd 매니퓰레이터 강화 학습 실행기 (팀 공유본 isaac/ 의 로봇 설정을 씀). Docker 컨테이너 isaac-lab-base 안에서, 또는 Isaac Lab 이 있는 PC 에서.
 # 창이 필요한 것 (*_play) 만 창으로, 나머지는 창 없이. 학습 중에는 창을 띄우지 말 것 (GPU 8 GB 부족).
+# B안 팔레트 (2026-11-02): 위에서 집기 + 고정 궤적 놓기
+#   ./run_rl.sh toppick [환경 수] [반복]       위에서 집기 학습 -> logs/rsl_rl/waffle_toppick/
+#   ./run_rl.sh toppick_play [환경 수]         위에서 집기 최근 체크포인트를 창으로
+#   ./run_rl.sh toppick_eval [환경 수]         위에서 집기 실제 과제 평가 (policies/toppick_latest.pt, 기울임 · 수직 모드별)
+#   ./run_rl.sh pallet_check                   팔레트 놓기 고정 궤적 확인 (칸 12 x 원기둥 · 상자, pallet_place_check.json). 궤적은 python3 pallet_traj.py
+#   ./run_rl.sh pallet_check_play [대 수]      위 것을 창으로
+#   ./run_rl.sh pallet_drop                    팔 없이 퍽만 칸에 떨어뜨려 팔레트 충돌 형상 확인
+# 아래는 옛 퍽 보관통 (C · P · N 통) 기준 - B안 팔레트에서는 쓰지 않음
 #   ./run_rl.sh sidepick [환경 수] [반복]      1 정렬·집기 학습 -> logs/rsl_rl/waffle_sidepick/
 #   ./run_rl.sh sidepick_play [환경 수]        1 정렬·집기 (policies/sidepick_latest.pt) 창으로
 #   ./run_rl.sh sidepick_diag [환경 수]        1 실제 과제 평가 (창 없이)
@@ -38,6 +46,12 @@ export_latest() {   # $1 = 과제, $2 = 실험 이름: 가장 최근 학습의 e
 
 pol() { [ -f "$HERE/policies/$1" ] && echo "--checkpoint $HERE/policies/$1" || echo "--checkpoint latest"; }
 case "${1:-}" in
+  toppick) "${PY[@]}" "$HERE/train.py" --task Waffle-TopPick-Direct --num_envs "${2:-256}" --max_iterations "${3:-300}" --viz none ;;
+  toppick_play) env -u HEADLESS "${PY[@]}" "$HERE/play.py" --task Waffle-TopPick-Direct --num_envs "${2:-16}" --checkpoint latest --viz kit ;;
+  toppick_eval) "${PY[@]}" "$HERE/toppick_eval.py" --num_envs "${2:-256}" ;;
+  pallet_check) "${PY[@]}" "$HERE/pallet_place_check.py" ;;
+  pallet_check_play) env -u HEADLESS "${PY[@]}" "$HERE/pallet_place_check.py" --gui --num_envs "${2:-4}" ;;
+  pallet_drop) "${PY[@]}" "$HERE/pallet_place_check.py" --drop ;;
   sidepick) "${PY[@]}" "$HERE/train.py" --task Waffle-SidePick-Direct --num_envs "${2:-256}" --max_iterations "${3:-300}" --viz none ;;
   sidepick_play) env -u HEADLESS "${PY[@]}" "$HERE/play.py" --task Waffle-SidePick-Direct --num_envs "${2:-16}" --checkpoint latest --viz kit ;;
   sidepick_diag) "${PY[@]}" "$HERE/sidepick_diag.py" --num_envs "${2:-64}" --policy "$HERE/policies/sidepick_latest.pt" ;;
@@ -54,5 +68,5 @@ case "${1:-}" in
   chain_play_rl) env -u HEADLESS "${PY[@]}" "$HERE/chain_play.py" --num_envs "${2:-4}" --gui --viz kit ;;
   chain_eval_rl) "${PY[@]}" "$HERE/chain_play.py" --num_envs "${2:-64}" ;;
   store_check) "${PY[@]}" "$HERE/store_check.py" ;;
-  *) sed -n 2,20p "$0"; exit 2 ;;
+  *) sed -n 2,27p "$0"; exit 2 ;;
 esac

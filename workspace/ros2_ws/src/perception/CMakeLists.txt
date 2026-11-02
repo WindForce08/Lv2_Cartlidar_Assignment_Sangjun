@@ -64,11 +64,12 @@ target_link_libraries(barcode_compare perception_barcode)
 add_library(perception_node SHARED src/perception_node.cpp)
 target_link_libraries(perception_node PUBLIC perception_detector perception_barcode ament_index_cpp::ament_index_cpp
   rclcpp::rclcpp rclcpp_components::component ${robot_interfaces_TARGETS} ${sensor_msgs_TARGETS} ${geometry_msgs_TARGETS}
-  cv_bridge::cv_bridge tf2::tf2 tf2_ros::tf2_ros tf2_geometry_msgs::tf2_geometry_msgs)
+  ${std_msgs_TARGETS} cv_bridge::cv_bridge tf2::tf2 tf2_ros::tf2_ros tf2_geometry_msgs::tf2_geometry_msgs)
 rclcpp_components_register_node(perception_node PLUGIN "perception::PerceptionNode" EXECUTABLE perception)
 
 # 라이다 노드들 (ROS 의존 없는 계산부는 include/perception/*.hpp, 단위 시험 대상)
-add_library(perception_lidar SHARED src/scan_merger_node.cpp src/obstacle_stop_node.cpp src/tfmini_node.cpp)
+add_library(perception_lidar SHARED src/scan_merger_node.cpp src/obstacle_stop_node.cpp src/tfmini_node.cpp
+  src/scan_to_range_node.cpp)
 target_include_directories(perception_lidar PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include/${PROJECT_NAME}>)
 target_link_libraries(perception_lidar PUBLIC rclcpp::rclcpp rclcpp_components::component
@@ -76,6 +77,8 @@ target_link_libraries(perception_lidar PUBLIC rclcpp::rclcpp rclcpp_components::
 rclcpp_components_register_node(perception_lidar PLUGIN "perception::ScanMergerNode" EXECUTABLE scan_merger)
 rclcpp_components_register_node(perception_lidar PLUGIN "perception::ObstacleStopNode" EXECUTABLE obstacle_stop)
 rclcpp_components_register_node(perception_lidar PLUGIN "perception::TFminiNode" EXECUTABLE tfmini)
+# Gazebo 모의: TFmini 광선(LaserScan /tfmini/scan) → Range /tfmini/range (실물 tfmini_node 와 같은 토픽)
+rclcpp_components_register_node(perception_lidar PLUGIN "perception::ScanToRangeNode" EXECUTABLE scan_to_range)
 
 # 후방 장애물: 뒤 D435 깊이 → /perception/rear_obstacle (계산부 include/perception/rear_obstacle.hpp, 단위 시험 대상)
 add_library(perception_rear SHARED src/rear_obstacle_node.cpp)
@@ -100,7 +103,7 @@ if(BUILD_TESTING)
     test/test_inputs.cpp test/test_lidar.cpp test/test_puck.cpp test/test_signal.cpp test/test_dice.cpp
     test/test_signal_light.cpp test/test_depth_split.cpp
     test/test_tag_upright.cpp test/test_barcode.cpp test/test_puck_merge.cpp test/test_read_tag.cpp test/test_arm_lock.cpp test/test_arm_detect.cpp
-    test/test_puck_class.cpp test/test_yolo_postprocess.cpp)
+    test/test_puck_class.cpp test/test_yolo_postprocess.cpp test/test_arm_range.cpp)
   target_link_libraries(test_perception_logic perception_detector perception_barcode)
   # 촬영 시각 TF 조회 (tf_lookup.hpp) — tf2::BufferCore 로 시험
   target_sources(test_perception_logic PRIVATE test/test_tf_lookup.cpp)

@@ -7,6 +7,9 @@
 //     같은 무효로 낸다. 그래서 직전 유효 거리가 near_m 보다 가까웠으면 너무 가까운 것으로 보고 정지를 유지하고,
 //     멀었으면 앞이 비어 있는 것으로 본다
 //   입력 끊김: stale_s 동안 값이 없으면 정지 (센서·케이블 고장 때 멈추는 쪽)
+//   박스 접근 (set_approach): TFmini 는 퍽이 놓인 박스 앞면을 잰다. drive FINE 정렬이 박스 앞 목표 거리까지 다가가는 동안
+//     정지 거리를 그 목표보다 조금 짧은 값(approach_stop_m)으로 바꾼다 — "목표보다 더 가까워지면 정지"는 그대로 남는다.
+//     해제 · 너무 가까움 판정 거리는 approach_stop_m + approach_hysteresis 로 함께 바꾼다
 #pragma once
 
 #include <cmath>
@@ -23,6 +26,7 @@ struct StopConfig
   int release_count = 3;     // 해제에 필요한 연속 유효 횟수
   double near_m = 0.30;      // 무효 값을 "너무 가까움"으로 볼 직전 거리 상한 [m]
   double stale_s = 0.2;      // 입력이 이만큼 없으면 정지 [s]
+  double approach_hysteresis = 0.02;   // 박스 접근 중 해제 · 너무 가까움 거리 = approach_stop_m + 이 값 [m]
 };
 
 class ObstacleStop
@@ -38,10 +42,10 @@ public:
     if (range && std::isfinite(*range)) {
       const double r = *range;
       last_valid_ = r;
-      if (r < c_.stop_m) {
+      if (r < stop_m()) {
         set(true, "obstacle");
         ok_count_ = 0;
-      } else if (r >= c_.release_m) {
+      } else if (r >= release_m()) {
         clear_evidence("clear");
       } else if (stopped_) {
         ok_count_ = 0;   // stop_m ~ release_m 사이: 정지 중이면 그대로 유지
@@ -50,7 +54,7 @@ public:
       }
       return stopped_;
     }
-    if (last_valid_ && *last_valid_ < c_.near_m) {
+    if (last_valid_ && *last_valid_ < near_m()) {
       set(true, "too_close");   // 최소 측정 거리 안으로 들어온 것으로 본다
       ok_count_ = 0;
     } else {
@@ -66,6 +70,14 @@ public:
     return stopped_;
   }
 
+  // 박스 접근: stop_m 을 approach_stop_m 으로 (nullopt = 평소 값으로 되돌림). 지금 상태는 다음 측정부터 새 거리로 판정
+  void set_approach(std::optional<double> approach_stop_m) {approach_ = approach_stop_m;}
+  std::optional<double> approach() const {return approach_;}
+
+  double stop_m() const {return approach_ ? *approach_ : c_.stop_m;}
+  double release_m() const {return approach_ ? *approach_ + c_.approach_hysteresis : c_.release_m;}
+  double near_m() const {return approach_ ? *approach_ + c_.approach_hysteresis : c_.near_m;}
+
   bool stopped() const {return stopped_;}
   const std::string & reason() const {return reason_;}
 
@@ -80,6 +92,7 @@ private:
   }
 
   StopConfig c_;
+  std::optional<double> approach_;
   bool stopped_ = true;            // 첫 값이 오기 전에는 정지 (켜자마자 움직이지 않게)
   std::string reason_ = "stale";
   int ok_count_ = 0;

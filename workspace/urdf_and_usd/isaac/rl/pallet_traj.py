@@ -14,6 +14,9 @@ IK 는 팀 URDF (`../../waffle_4wd_description/urdf/waffle_4wd.urdf`) 를 그대
           -> 퍽 바닥 = 칸 바닥 + PLACE_GAP (place)
           -> 집게 벌림 (release) -> hover 높이로 (retract) -> 거꾸로 (return · lower · rotate_back).
     rise · reach · retract · return 은 높이가 높아 집게가 기울 수 있음 (기울기를 가장 작게 푼 값, 출력의 max_tilt_deg). hover · place 는 2° 안을 목표.
+  - **기둥 옆 4칸 (2열 · 3열 0 · 3, J1 ±147.1° · ±155.6°) 은 집게를 45° 기울여 놓음** (TILT_SLOTS, 2026-11-02): 수직이면 집게 몸이 뒤 프로파일 기둥
+    (static_433/434) 에 닿음. 퍽은 세운 채, 집게 윗부분을 J1 쪽으로 기울임 (손끝이 칸 반경 바깥, 닫는 축 = 접선 그대로, joint5 0).
+    -> 퍽을 **집을 때부터 45° 로 쥐어야** 함 (쥔 뒤 손목만 기울이면 퍽도 기욺). 앞 운반 자세도 기울인 판 (transit.q_front_tilt, 칸마다 q_front).
 
     python3 pallet_traj.py            # -> pallet_place_traj.json, 칸마다 자세 오차 · 기울기 · 관절 한계 여유를 출력
 """
@@ -52,6 +55,8 @@ PUCK_R = 0.015
 PLACE_GAP = 0.001  # 퍽 바닥 = 칸 바닥 + 1 mm 에서 놓음
 LIMIT_MARGIN = 0.02  # [rad] 관절 한계 안쪽 여유
 MAX_TILT = math.radians(2.0)
+TILT_DEG = 45.0  # [°] 기둥 옆 4칸: 퍽은 세운 채 집게 윗부분을 J1 쪽으로 기울여 쥠 (손끝이 바깥, 닫는 축 = 접선 그대로)
+TILT_SLOTS = "2:0,2:3,3:0,3:3"  # 열:칸 (J1 ±147.1° · ±155.6°: 수직이면 집게 몸이 뒤 프로파일 기둥 static_433/434 에 닿음)
 STEP = 0.005  # [m] 직교 경로 경유점 간격 (rotate 는 J1 0.05 rad)
 
 
@@ -123,18 +128,22 @@ class Arm:
         M = self.fk(q)
         return (M @ (TCP if off is None else np.array([off, 0.0, 0.0, 1.0])))[:3], M[:3, :3]
 
-    def ik_down(self, p, q1, q0, wide=False, off=None):
+    def ik_down(self, p, q1, q0, wide=False, off=None, tilt=0.0):
         """J1 = q1 고정, joint5 = 0, TCP = p, 집게 방향 = 아래 (안 되면 가장 덜 기울게). q0 = 이어 붙일 시작값 (J2 ~ J4),
         None 또는 wide 면 여러 시작값으로 전체 탐색. off = 맞출 점 (gripper_roll_link x, 기본 TCP 0.14). -> (q, 위치 오차 m, 기울기 rad)."""
 
+        # tilt [rad] > 0: 집게 축을 칸 반경 바깥으로 기울임 (윗부분이 J1 쪽). 퍽은 세운 채라 맞출 점 = TCP, 목표 = 퍽 바닥 + (GRASP_DZ + PUCK_H / 2) 위
+        a_dir = np.array([math.sin(tilt) * math.cos(q1), math.sin(tilt) * math.sin(q1), -math.cos(tilt)])
+        lift = np.array([0.0, 0.0, GRASP_DZ + PUCK_H / 2]) if (tilt and off is not None) else np.zeros(3)
+
         def res(x):
             q = [q1, x[0], x[1], x[2], 0.0]
-            t, R = self.tcp(q, off)
-            return np.r_[(t - p) * 1000.0, (R[:, 0] - (0.0, 0.0, -1.0))]
+            t, R = self.tcp(q, None if tilt else off)
+            return np.r_[(t - p - lift) * 1000.0, (R[:, 0] - a_dir)]
 
         best = None
         starts = [q0] if q0 is not None else []
-        starts += [[a, b, c] for a in (-0.8, -0.4, 0.0, 0.4) for b in (-1.2, -0.8, 0.0, 0.8) for c in (1.2, 1.6, 1.95)] if (q0 is None or wide) else []
+        starts += [[a, b, c] for a in ((-1.2, -0.8, -0.4, 0.0, 0.4) if tilt else (-0.8, -0.4, 0.0, 0.4)) for b in (-1.2, -0.8, 0.0, 0.8) for c in ((0.7, 1.2, 1.6, 1.95) if tilt else (1.2, 1.6, 1.95))] if (q0 is None or wide) else []
         for x0 in starts:
             x0 = np.clip(x0, self.lo[1:4] + 1e-4, self.hi[1:4] - 1e-4)
             s = least_squares(res, x0, bounds=(self.lo[1:4], self.hi[1:4]), xtol=1e-12, ftol=1e-12)
@@ -153,7 +162,10 @@ def lin(a, b, step):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=OUT)
+    ap.add_argument("--tilt_deg", type=float, default=TILT_DEG)
+    ap.add_argument("--tilt_slots", default=TILT_SLOTS, help="집게를 기울여 놓을 칸 '열:칸,...' ('' = 모두 수직)")
     a = ap.parse_args()
+    tilt_set = {tuple(int(v) for v in x.split(":")) for x in a.tilt_slots.split(",") if x}
     arm = Arm(URDF)
     S = yaml.safe_load(open(SLOTS, encoding="utf-8"))
     j1 = arm.j1
@@ -165,11 +177,17 @@ def main():
     # 앞 운반 자세
     q_front, e, tl = arm.ik_down(at(PIVOT_R, 0.0, PIVOT_Z), 0.0, None, off=BOTTOM)
     assert e < 1e-3 and tl < MAX_TILT, (e, tl)
+    q_front_t, e, tl = arm.ik_down(at(PIVOT_R, 0.0, PIVOT_Z), 0.0, None, off=BOTTOM, tilt=math.radians(a.tilt_deg))
+    assert e < 1e-3 and tl < MAX_TILT, ("기울인 앞 운반 자세", e, tl)
+    q_front_v = q_front
     worst = dict(err=0.0, tilt=0.0)
     out_slots = []
     for s in sorted(S["slots"], key=lambda s: (-s["row"], -abs(math.atan2(s["y"] - j1[1], s["x"] - j1[0])), -s["y"])):  # 채우는 순서: 바깥 열, J1 각이 큰 칸부터
         yaw = math.atan2(s["y"] - j1[1], s["x"] - j1[0])
         r = math.hypot(s["x"] - j1[0], s["y"] - j1[1])
+        tdeg = a.tilt_deg if (s["row"], s["index"]) in tilt_set else 0.0
+        tilt = math.radians(tdeg)
+        q_front = q_front_t if tdeg else q_front_v
         segs = []
 
         def track(name, pts, q_start, grip):
@@ -206,11 +224,11 @@ def main():
         z_p = s["floor_z"] + PLACE_GAP
 
         # 놓는 자세를 전체 탐색으로 먼저 풀고, 거기서 거꾸로 이어 풀어 같은 해 가지를 따라감
-        q_pl, e, tl = arm.ik_down(at(r, yaw, z_p), yaw, None, off=BOTTOM)
+        q_pl, e, tl = arm.ik_down(at(r, yaw, z_p), yaw, None, off=BOTTOM, tilt=tilt)
         def back(points, q_end):
             q, out = q_end, []
             for p_ in reversed(points):
-                q, e_, t_ = arm.ik_down(p_, yaw, q[1:4], off=BOTTOM)
+                q, e_, t_ = arm.ik_down(p_, yaw, q[1:4], off=BOTTOM, tilt=tilt)
                 out.append((q, e_, t_))
             return out[::-1]
         down = back([at(r, yaw, zz) for zz in lin(z_h, z_p, 0.002)][:-1], q_pl) + [(q_pl, e, tl)]
@@ -238,9 +256,10 @@ def main():
         pl = next(sg for sg in segs if sg["name"] == "place")
         print(f"{s['row']}열 {s['index']} ({s['puck']}, {s['shape']:8s}) 반경 {r * 1000:5.1f} mm J1 {math.degrees(yaw):+7.1f}° | hover 간격 {hg * 1000:.0f} mm"
               f" | 오차 최대 {em:.2f} mm 기울기 최대 {tm:.2f}° ({', '.join(f"{sg['name']} {sg['max_tilt_deg']:.1f}" for sg in segs if sg['max_tilt_deg'] > 0)}) 운반 높이 퍽 바닥 {z_h:.3f} ({len(path)} 꺾임) | 관절 한계 여유 {margin:+.3f} rad"
-              f" | 놓는 자세 {[round(v, 2) for v in pl['q'][-1]]}")
+              f" | 집게 기울기 {tdeg:.0f}° | 놓는 자세 {[round(v, 2) for v in pl['q'][-1]]}")
         out_slots.append(dict(row=s["row"], index=s["index"], puck=s["puck"], shape=s["shape"], x=s["x"], y=s["y"], theta_deg=s["theta_deg"],
                               floor_z=s["floor_z"], wall_top_z=s["wall_top_z"], j1_yaw=round(yaw, 5), radius=round(r, 5),
+                              tilt_deg=tdeg, q_front=[round(v, 5) for v in q_front],
                               joint_margin_rad=round(margin, 4), segments=segs))
     doc = dict(
         note=("B안 팔레트 놓기 고정 궤적 (pallet_traj.py 가 만듦, 직접 고치지 말 것). base_link 좌표 [m] · 관절 [rad]. "
@@ -248,12 +267,12 @@ def main():
               "gripper hold = 쥔 채, open = 벌림. 경유점 사이는 관절 공간 직선 (경유점 간격 5 mm · 놓기 2 mm · J1 0.05 rad)."),
         urdf="waffle_4wd_description/urdf/waffle_4wd.urdf", slots_file="waffle_4wd_description/config/pallet_slots.yaml",
         arm_joints=ARM, tcp_offset_ee=[0.14, 0.0, 0.0], grasp_dz=GRASP_DZ, puck_h=PUCK_H,
-        transit=dict(r=PIVOT_R, puck_bottom_z=PIVOT_Z, q_front=[round(v, 5) for v in q_front]), hover_gap=HOVER_GAP, path_point_ee=[BOTTOM, 0.0, 0.0],
+        transit=dict(r=PIVOT_R, puck_bottom_z=PIVOT_Z, q_front=[round(v, 5) for v in q_front_v], q_front_tilt=[round(v, 5) for v in q_front_t], tilt_deg=a.tilt_deg), hover_gap=HOVER_GAP, path_point_ee=[BOTTOM, 0.0, 0.0],
         place_gap=PLACE_GAP, limit_margin=LIMIT_MARGIN, max_err_mm=round(worst["err"], 3), max_tilt_deg=round(worst["tilt"], 3),
         slots=out_slots,
     )
     json.dump(doc, open(a.out, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
-    print(f"앞 운반 자세 q_front {[round(v, 3) for v in q_front]} (퍽 바닥 반경 {PIVOT_R} m, 높이 {PIVOT_Z:.3f} m)")
+    print(f"앞 운반 자세 q_front {[round(v, 3) for v in q_front_v]} 기울임 {[round(v, 3) for v in q_front_t]} (퍽 바닥 반경 {PIVOT_R} m, 높이 {PIVOT_Z:.3f} m)")
     print(f"-> {a.out} (칸 {len(out_slots)}, 전체 오차 최대 {worst['err']:.2f} mm, 기울기 최대 {worst['tilt']:.2f}°)")
 
 

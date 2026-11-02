@@ -4,7 +4,7 @@
         string creator = "URDF USD Converter v0.3.2"
     }
     defaultPrim = "waffle_4wd"
-    doc = """Generated from Composed Stage of root layer /tmp/claude-1000/-home-pa8-Downloads-Claude-outputs-puck-storage-design/a06885e3-d893-4df3-b4b5-ea6096e44d86/scratchpad/out/시뮬레이션_모델_B안/isaac/usd/loaded/waffle_4wd_loaded/payloads/base.usd
+    doc = """Generated from Composed Stage of root layer /home/pa8/Downloads/Claude outputs/puck_storage_design/시뮬레이션_모델_B안/isaac/usd/loaded/waffle_4wd_loaded/payloads/base.usd
 """
     endTimeCode = 1000000
     kilogramsPerUnit = 1

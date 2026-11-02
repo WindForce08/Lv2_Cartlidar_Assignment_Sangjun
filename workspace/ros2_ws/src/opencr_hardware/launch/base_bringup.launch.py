@@ -18,6 +18,7 @@ def _setup(context):
     if drive not in ('direct', 'belt'):
         raise RuntimeError(f'drive 는 direct 또는 belt: {drive}')
     sim = LaunchConfiguration('sim').perform(context).lower() == 'true'
+    obstacle_lock = LaunchConfiguration('obstacle_lock').perform(context).lower() == 'true'
     clock = {'use_sim_time': sim}   # 시뮬레이션이면 /clock (Isaac 브리지 발행)
 
     robot_description = ParameterValue(Command([
@@ -50,7 +51,8 @@ def _setup(context):
         Node(package='robot_state_publisher', executable='robot_state_publisher', output='screen',
              parameters=[{'robot_description': robot_description}, clock]),
         Node(package='twist_mux', executable='twist_mux', output='screen',
-             parameters=[PathJoinSubstitution([pkg, 'config', 'twist_mux.yaml']), clock],
+             parameters=[PathJoinSubstitution([pkg, 'config', 'twist_mux.yaml' if obstacle_lock else 'twist_mux_no_obstacle.yaml']),
+                         clock],
              remappings=[('cmd_vel_out', '/cmd_vel')]),
     ]
     if use_gripper:
@@ -78,6 +80,8 @@ def generate_launch_description():
                               description='역할 자동 판별을 위한 두 OpenCR 후보 포트, 쉼표로 구분'),
         DeclareLaunchArgument('drive', default_value='belt',
                               description='구동: belt (증속벨트 1:1.5) | direct (직결) — URDF · 기어비 · diff_drive 가 같이 바뀜'),
+        DeclareLaunchArgument('obstacle_lock', default_value='true',
+                              description='twist_mux 에 TFmini 비상 정지 lock (/perception/obstacle_stop). TFmini 가 없으면 false — 안 그러면 drive · nav 가 늘 잠김'),
         DeclareLaunchArgument('sim', default_value='false',
                               description='Isaac Sim: TopicBasedSystem (/isaac_joint_states · /isaac_joint_commands) + /clock'),
         OpaqueFunction(function=_setup),

@@ -9,7 +9,9 @@
 // - 인식 값은 header.stamp(ROS 시계 촬영 시각) 기준 stale_timeout(300ms)보다 오래되면 버린다 (예외 없음)
 // - 물체 위치는 perception 결과(object_found · object_pose)만 쓴다. 이 노드는 따로 기억하지 않는다
 // - robot_interfaces는 팀 공용 정의를 그대로 쓴다 (이 노드 때문에 바꾸지 않는다)
-// - pick 목표 우선순위: ① 정밀 정렬 결과 (arm_offset · /arm_range → TFmini 축 위 지점) ② 추적 위치
+// - pick 목표 우선순위: ① 정밀 정렬 결과 (arm_offset · /arm_range → 팔 끝 축 위 지점) ② 추적 위치
+// - /arm_range: perception_node 가 D435 · Arducam 측위로 낸 "팔 끝(range_frame = tool_link) → 정렬 중인 퍽 표면" 거리.
+//   미세 보정의 전후 성분 · 최종 전진 거리에 쓴다. TFmini(1층, 박스 앞면 거리)는 drive 정렬 전용이라 여기서 쓰지 않는다
 // - align 진행 중에는 팔을 움직이지 않는다 — 순서는 mission이 보장
 // - 결과를 콜백 안에서 기다리지 않는다. 각 단계는 이전 단계의 result 콜백에서 이어진다
 //
@@ -226,19 +228,17 @@ private:
     // 측정 시각 이후 차체 · 팔이 움직였을 수 있으므로 측정 시각 기준으로 fixed_frame을 거쳐
     // 현재 arm_base_link로 변환한다 (300ms 안이라 차이는 작다)
     fixed_frame_ = declare_parameter<std::string>("fixed_frame", "odom");
-    // TODO(Perception · Controller): tfmini_link TF 실측 필수 (pick ① 정확도가 여기에 달림)
-    tfmini_frame_ = declare_parameter<std::string>("tfmini_frame", "tfmini_link");
+    // /arm_range 기준 프레임 (perception arm.range.frame 과 같게). x = 팔 접근 방향
+    range_frame_ = declare_parameter<std::string>("range_frame", "tool_link");
     declare_parameter<double>("tf_cache_time", 120.0);
 
     // 접근 위치 = 파지점(물체 중심) 앞 approach_distance
     approach_distance_ = declare_parameter<double>("pick.approach_distance", 0.15);
-    // TFmini 측정값 → 파지점까지 거리 환산: 파지점 거리 = range + range_offset
-    //   range_offset = 물체 반지름 + 센서가 파지점(끝단)보다 뒤에 있는 거리
-    // TODO(Perception 협의): TFmini 장착 위치 · 측정 방향 (팔 끝, 끝단 축 방향으로 가정)
-    // TODO(Controller): 대상 물체 크기 확정 후 range_offset 조정
-    range_offset_ = declare_parameter<double>("pick.range_offset", 0.02);
+    // /arm_range → 파지점까지 거리 환산: 파지점 거리 = range + range_offset
+    //   /arm_range 는 끝단(tool_link)에서 퍽 표면까지라 range_offset = 퍽 반지름 (perception puck.half_width 와 같게)
+    range_offset_ = declare_parameter<double>("pick.range_offset", 0.015);
     // 측정 기반 파지점 거리와 계획(SEARCH object_pose) 거리 차이 허용값.
-    // 넘으면 레이저가 물체를 비껴 배경을 잰 것으로 보고 TFmini 값을 쓰지 않는다
+    // 넘으면 다른 퍽(이웃)을 잰 것으로 보고 /arm_range 값을 쓰지 않는다
     range_mismatch_tol_ = declare_parameter<double>("pick.range_mismatch_tolerance", 0.04);
     max_final_approach_ = declare_parameter<double>("pick.max_final_approach", 0.25);
     lift_height_ = declare_parameter<double>("pick.lift_height", 0.05);
@@ -253,11 +253,11 @@ private:
     stale_timeout_ = declare_parameter<double>("stale_timeout", 0.3);
 
     // pick 목표 ① 정밀 정렬 결과: |arm_offset| <= offset_tolerance이고 /arm_range가 유효하면
-    //   TFmini 축 위 (range + object_radius) 지점을 파지점으로 쓴다
+    //   팔 끝 축 위 (range + object_radius) 지점을 파지점으로 쓴다
     // TODO(Perception 협의): arm_offset 단위 확정 후 offset_tolerance 조정
     // TODO(Controller): 대상 물체 크기 확정 후 object_radius 조정
     offset_tolerance_ = declare_parameter<double>("pick.offset_tolerance", 0.01);
-    object_radius_ = declare_parameter<double>("pick.object_radius", 0.02);
+    object_radius_ = declare_parameter<double>("pick.object_radius", 0.015);
     // pick 목표 ② 물체 위치: 300ms 안의 result에서 object_found = true인 object_pose
     //   (READY 팔이 D435를 가리면 ②는 없을 수 있다 → ① 정밀 정렬 결과가 기본)
 
@@ -269,11 +269,10 @@ private:
     offset_gain_ = declare_parameter<double>("correction.offset_gain", 1.0);
     lateral_tol_ = declare_parameter<double>("correction.lateral_tolerance", 0.005);
     range_tol_ = declare_parameter<double>("correction.range_tolerance", 0.01);
-    // 보정 중 TFmini 목표값 = 접근 위치에서 나와야 할 측정값 (별도 파라미터로 두면 어긋나므로 계산)
+    // 보정 중 /arm_range 목표값 = 접근 위치에서 나와야 할 측정값 (별도 파라미터로 두면 어긋나므로 계산)
     target_range_ = approach_distance_ - range_offset_;
-    if (target_range_ < 0.10) {
-      throw std::invalid_argument(
-              "pick.approach_distance - pick.range_offset must be >= 0.10 (TFmini minimum range)");
+    if (target_range_ <= 0.0) {
+      throw std::invalid_argument("pick.approach_distance - pick.range_offset must be > 0");
     }
     max_step_ = declare_parameter<double>("correction.max_step", 0.02);
     correction_min_duration_ = declare_parameter<double>("correction.min_duration", 0.3);
@@ -868,9 +867,9 @@ private:
         std::hypot(result->arm_offset.x, result->arm_offset.y, result->arm_offset.z) <= offset_tolerance_;
       const bool range_ok = range && rangeValid(*range);
       if (offset_ok && range_ok) {
-        // ① TFmini 축(x) 위 측정 지점 + 물체 반지름 = 파지점 (tfmini_link 기준)
+        // ① 팔 끝 축(x) 위 퍽 표면 + 물체 반지름 = 파지점 (range_frame 기준, /arm_range stamp 의 팔 자세)
         src.header = range->header;
-        src.header.frame_id = tfmini_frame_;
+        src.header.frame_id = range_frame_;
         src.pose = geometry_msgs::msg::Pose();
         src.pose.position.x = range->range + object_radius_;
         RCLCPP_INFO(get_logger(), "pick target: ① precision alignment (range %.3f m)", range->range);
@@ -889,7 +888,7 @@ private:
     // TODO(Perception 협의): object_pose.orientation을 채울지 (물체 방향 추정). 안 채우면 use_object_yaw는 무의미
     auto & o = src.pose.orientation;
     const double qn = std::sqrt(o.x * o.x + o.y * o.y + o.z * o.z + o.w * o.w);
-    object_yaw_valid_ = std::isfinite(qn) && qn > 1e-6 && src.header.frame_id != tfmini_frame_;
+    object_yaw_valid_ = std::isfinite(qn) && qn > 1e-6 && src.header.frame_id != range_frame_;
     if (object_yaw_valid_) {
       // 단위 quaternion이 아니면 getYaw 결과가 틀어지므로 정규화
       o.x /= qn; o.y /= qn; o.z /= qn; o.w /= qn;
@@ -960,7 +959,7 @@ private:
     const Eigen::Vector3d dir =
       ArmIK::approachDirection(std::atan2(tool_pos_.y(), tool_pos_.x()), pitch_);
 
-    // TFmini → 파지점 거리. 계획 거리와 크게 다르면(레이저가 물체를 비낌) 쓰지 않는다.
+    // /arm_range → 파지점 거리. 계획 거리와 크게 다르면(이웃 퍽을 잼) 쓰지 않는다.
     // 차이(= SEARCH 깊이 오차)는 보정으로 끝단이 움직여도 그대로 유지되므로 매번 같은 기준으로 판단
     bool range_ok = range && rangeValid(*range);
     if (range_ok) {
@@ -1072,7 +1071,7 @@ private:
 
   // 최종 전진 거리: 보정 종료 시점의 측정 기반 파지점 거리 (range + range_offset).
   // 측정값이 없거나 계획과 어긋나 버렸으면 계획한 파지점(object_pose)까지의 거리.
-  // TFmini는 10cm 미만을 못 재므로 전진 중에는 측정하지 않고 IK 직선 경로로 정해진 거리만 간다.
+  // 전진 중에는 집게가 퍽을 가려 측위가 흔들리므로 다시 재지 않고 IK 직선 경로로 정해진 거리만 간다.
   // 접촉 · 파지는 그리퍼 결과(stalled)로 확인한다 (closeGripper)
   void finalApproach()
   {
@@ -1326,13 +1325,13 @@ private:
   std::string gripper_joint_;
   double gripper_open_{0.0}, gripper_close_{0.0}, gripper_effort_{0.0};
   bool gripper_fail_on_empty_{true};
-  std::string base_frame_, fixed_frame_, tfmini_frame_;
-  double approach_distance_{0.15}, range_offset_{0.02}, max_final_approach_{0.25};
+  std::string base_frame_, fixed_frame_, range_frame_;
+  double approach_distance_{0.15}, range_offset_{0.015}, max_final_approach_{0.25};
   double range_mismatch_tol_{0.04};
   double lift_height_{0.05};
   double cartesian_step_{0.01}, cartesian_speed_{0.05}, max_waypoint_joint_step_{0.2};
   double stale_timeout_{0.3};
-  double offset_tolerance_{0.01}, object_radius_{0.02};
+  double offset_tolerance_{0.01}, object_radius_{0.015};
   bool skill_enabled_{false};
   std::vector<std::string> skill_names_;
   std::string skill_file_;

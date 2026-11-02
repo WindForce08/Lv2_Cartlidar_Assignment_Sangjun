@@ -140,7 +140,7 @@ cam = S.d435_cfg("{ENV_REGEX_NS}/Robot", "front", "color")                 # rgb
 
 - **퍽 보관 = B안 상판 팔레트 v3 (2026-11-02).** 칸 12곳 자리 · 방향 · 칸 바닥 높이는 `../waffle_4wd_description/config/pallet_slots.yaml` (base_link 기준, 칸마다 loaded 판 퍽 이름).
   팔레트는 base_link 에 합쳐져 따로 몸체가 없다. 10-30 판의 퍽 플레이트 (`puck_plate_link`, `puck_plate_check.py`) 는 없어졌다.
-  `rl/` 의 옮기기 · 넣기 과제 (store · insert) 는 아직 옛 통 축 (`store_starts.json` 의 C · P · N) 기준이라 팔레트 칸 기준으로 바꿔야 한다.
+  `rl/` 는 위에서 집기 (`Waffle-TopPick-Direct`) + 놓기 고정 궤적 (`rl/pallet_traj.py`, `./run_rl.sh pallet_check`) 으로 바꿈 (`rl/정책_학습기록.md` 4.15 절). 옛 통 (C · P · N) 기준 store · insert 는 쓰지 않음.
   Isaac Lab 3.0 쿼터니언 순서는 (x, y, z, w) - 퍽을 돌려 놓을 때 주의.
 - **stow 자세 (B안).** zero → stow 를 모든 관절 같이 움직이면 J1 약 81° 에서 위팔이 팔레트 칸에 걸린다. J1 을 먼저 다 돌린 뒤 접을 것.
 
