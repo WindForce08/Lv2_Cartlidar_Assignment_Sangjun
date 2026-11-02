@@ -200,27 +200,37 @@ TEST(RobotDescription, RobotUrdfProvidesFramesUsedByOtherNodes)
   std::string urdf;
   ASSERT_TRUE(expand_xacro(read_file(PKG_DIR "/urdf/robot.urdf.xacro"), urdf)) << urdf;
   // ekf · mission · lidar (base_link), Perception 찾기 (base_footprint), IMU broadcaster (imu_link), Controller (arm_base_link · tfmini_link),
-  // LiDAR 드라이버 frame_id (laser_front · laser_rear), Arducam UVC 드라이버 frame_id (arm_camera_optical_frame)
+  // LiDAR 드라이버 frame_id (laser_front · laser_rear), Arducam UVC 드라이버 frame_id (arm_camera_optical_frame),
+  // realsense2_camera TF 뿌리 (top_camera_front_link · top_camera_rear_link)
   for (const char * link : {"base_link", "base_footprint", "imu_link", "arm_base_link", "tfmini_link",
-      "laser_front", "laser_rear", "arm_camera_optical_frame"})
+      "laser_front", "laser_rear", "arm_camera_optical_frame", "top_camera_front_link", "top_camera_rear_link"})
   {
     EXPECT_NE(urdf.find(std::string("<link name=\"") + link + "\""), std::string::npos) << link;
   }
   const auto joints = urdf_joints(urdf);
-  // Arducam 은 그리퍼에 장착 (2026-10-28 확인). 광학 프레임: +z 앞 · +x 오른쪽 · +y 아래 → 몸체 프레임 기준 rpy (-π/2, 0, -π/2)
+  // Arducam 은 그리퍼 몸체에 장착 (2026-10-28 확인). 그리퍼 개폐 모터(gripper_roll) 아래에 두면 여닫을 때 카메라 좌표가 돈다 → 손목 롤 뒤 link5
+  // 광학 프레임: +z 앞 · +x 오른쪽 · +y 아래 → 몸체 프레임 기준 rpy (-π/2, 0, -π/2)
   ASSERT_EQ(joints.count("arm_camera_link_joint"), 1u);
-  EXPECT_EQ(joints.at("arm_camera_link_joint").parent, "gripper_roll_link");
+  EXPECT_EQ(joints.at("arm_camera_link_joint").parent, "link5");
   ASSERT_EQ(joints.count("arm_camera_optical_frame_joint"), 1u);
   const auto & optical = joints.at("arm_camera_optical_frame_joint");
   EXPECT_EQ(optical.parent, "arm_camera_link");
   EXPECT_NEAR(optical.rpy[0], -M_PI / 2, 1e-5);
   EXPECT_NEAR(optical.rpy[1], 0.0, 1e-5);
   EXPECT_NEAR(optical.rpy[2], -M_PI / 2, 1e-5);
+  // OpenCR 보드는 바로 놓여 있다 (2026-11-02 확인). roll 이 π 면 ekf 의 회전 속도 부호가 뒤집혀 odom 이 반대로 돈다
+  ASSERT_EQ(joints.count("imu_link_joint"), 1u);
+  EXPECT_EQ(joints.at("imu_link_joint").parent, "base_link");
+  EXPECT_NEAR(joints.at("imu_link_joint").rpy[0], 0.0, 1e-5);
+  EXPECT_NEAR(joints.at("imu_link_joint").rpy[1], 0.0, 1e-5);
+  // LDS-03 은 뒤집어 장착 (roll π). 0 이면 스캔 좌우가 뒤집힌다
+  for (const char * laser : {"laser_front_joint", "laser_rear_joint"}) {
+    ASSERT_EQ(joints.count(laser), 1u) << laser;
+    EXPECT_NEAR(std::abs(joints.at(laser).rpy[0]), M_PI, 1e-5) << laser;
+  }
   // TFmini 는 차체 1층 플레이트에 장착 (2026-10-28 확인) — 팔이 움직여도 거리 기준이 바뀌지 않아야 한다
   ASSERT_EQ(joints.count("tfmini_link_joint"), 1u);
   EXPECT_EQ(joints.at("tfmini_link_joint").parent, "base_link");
-  // ★ C: realsense2_camera 의 TF 뿌리 <camera_name>_link 가 URDF 에 없다 (camera_front_link · camera_rear_link 로 되어 있음).
-  //   이름을 바꾸면 {"top_camera_front_link", "top_camera_rear_link"} 를 위 링크 목록에 넣는다.
   // realsense 드라이버가 발행하는 좌표를 URDF 가 또 만들면 TF 부모가 둘이 됨
   EXPECT_EQ(urdf.find("_color_optical_frame\""), std::string::npos);
 }
