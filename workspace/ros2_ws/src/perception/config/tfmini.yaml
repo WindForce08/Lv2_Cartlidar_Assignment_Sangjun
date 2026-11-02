@@ -4,7 +4,7 @@ tfmini_node:
     port: /dev/tfmini           # udev/99-sensors.rules 로 고정한 이름 ★
     baud: 115200
     range_topic: /tfmini/range
-    frame_id: tfmini_link       # URDF 에는 없다 (사용자 결정: 세 번째 거리 센서는 URDF 에 넣지 않음)
+    frame_id: tfmini_link       # URDF(opencr_hardware robot.urdf.xacro · waffle_4wd_description) 의 base_link 아래 고정 링크
     min_strength: 100           # 신호세기가 이보다 약하면 무효 ★
     min_range: 0.1              # [m] 측정 가능 범위 ★ 제조사 사양 확인
     max_range: 12.0
