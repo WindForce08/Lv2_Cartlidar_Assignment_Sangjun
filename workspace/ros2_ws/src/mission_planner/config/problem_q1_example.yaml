@@ -1,0 +1,18 @@
+# 설명용 예제 (발제 05 쪽 공개 연습 문제 Q1 신호 · 바코드). 퍽 색 · 모양 · 자리는 placement.csv 가 나오면 그 값으로 바꿀 것.
+# 발제 예제는 빨강 6 · 초록 6 (경기 고정 조건 아님). 모양은 임의로 정함.
+# box = 시작 박스 1 ~ 6 (발제 07 쪽 중심 좌표), side = 박스 중심 X 기준 -1 (X − 40 mm) / +1 (X + 40 mm)
+signal: RGRRGRGGYGYG        # R 4 · Y 2 · G 6
+barcode: P2-01              # 오름차순 -> L1 = Y (2), L2 = R (4), L3 = G (6)
+pucks:
+  - {id: 0,  color: red,   shape: cylinder, box: 1, side: -1}
+  - {id: 1,  color: green, shape: box,      box: 1, side: 1}
+  - {id: 2,  color: red,   shape: box,      box: 2, side: -1}
+  - {id: 3,  color: green, shape: cylinder, box: 2, side: 1}
+  - {id: 4,  color: red,   shape: cylinder, box: 3, side: -1}
+  - {id: 5,  color: green, shape: cylinder, box: 3, side: 1}
+  - {id: 6,  color: red,   shape: box,      box: 4, side: -1}
+  - {id: 7,  color: green, shape: box,      box: 4, side: 1}
+  - {id: 8,  color: red,   shape: cylinder, box: 5, side: -1}
+  - {id: 9,  color: green, shape: cylinder, box: 5, side: 1}
+  - {id: 10, color: red,   shape: box,      box: 6, side: -1}
+  - {id: 11, color: green, shape: box,      box: 6, side: 1}

@@ -1,0 +1,645 @@
+# 접근 자세표 (mission_make_maps 가 만듦, 직접 고치지 말 것). 지도 = 발제 좌표 [m], yaw [rad] = 로봇 앞 방향.
+# final = 집기 · 놓기 자세 (앞 끝 - 면 = gap), stage = nav2 목표 (앞 끝 - 면 = standoff), ok = 외곽이 장애물과 안 겹침.
+# 시작 박스: S = 남쪽 (yaw +90°) · N = 북쪽 (yaw -90°) 에서 두 퍽 잇는 선에 수직으로. ±Y 둘 다 안 되는 박스만 W · E (inline).
+# pucks: 박스 퍽 (side -1 = X − 40, +1 = X + 40) 의 J1 축 거리 [m]. cells: 장소 3 x 3 칸 (dx,dy 칸 단위, +Y 위) 의 J1 거리 · 집게 방식.
+B1:S:
+  kind: box
+  ok: true
+  note: ''
+  final:
+  - 1.468
+  - 0.6947
+  - 1.5708
+  stage:
+  - 1.468
+  - 0.3647
+  - 1.5708
+  standoff: 0.35
+  gap: 0.02
+  final_clearance: 0.015
+  stage_clearance: 0.12
+  box: 1
+  side: S
+  inline: false
+  pucks:
+    -1:
+      dist: 0.1642
+      fwd: 0.1593
+      lat: 0.04
+    1:
+      dist: 0.1642
+      fwd: 0.1593
+      lat: -0.04
+B1:N:
+  kind: box
+  ok: false
+  note: final 외곽이 막힘
+  final:
+  - 1.468
+  - 1.2053
+  - -1.5708
+  stage:
+  - 1.468
+  - 1.6353
+  - -1.5708
+  standoff: 0.45
+  gap: 0.02
+  final_clearance: 0.0
+  stage_clearance: 0.165
+  box: 1
+  side: N
+  inline: false
+  pucks:
+    -1:
+      dist: 0.1642
+      fwd: 0.1593
+      lat: -0.04
+    1:
+      dist: 0.1642
+      fwd: 0.1593
+      lat: 0.04
+B2:S:
+  kind: box
+  ok: true
+  note: ''
+  final:
+  - 3.67
+  - 2.8967
+  - 1.5708
+  stage:
+  - 3.67
+  - 2.4667
+  - 1.5708
+  standoff: 0.45
+  gap: 0.02
+  final_clearance: 0.015
+  stage_clearance: 0.165
+  box: 2
+  side: S
+  inline: false
+  pucks:
+    -1:
+      dist: 0.1642
+      fwd: 0.1593
+      lat: 0.04
+    1:
+      dist: 0.1642
+      fwd: 0.1593
+      lat: -0.04
+B2:N:
+  kind: box
+  ok: false
+  note: stage 외곽이 막힘 (standoff 를 줄여도)
+  final:
+  - 3.67
+  - 3.4073
+  - -1.5708
+  stage:
+  - 3.67
+  - 3.6873
+  - -1.5708
+  standoff: 0.3
+  box: 2
+  side: N
+  inline: false
+  pucks:
+    -1:
+      dist: 0.1642
+      fwd: 0.1593
+      lat: -0.04
+    1:
+      dist: 0.1642
+      fwd: 0.1593
+      lat: 0.04
+B3:S:
+  kind: box
+  ok: true
+  note: ''
+  final:
+  - 2.936
+  - 5.0987
+  - 1.5708
+  stage:
+  - 2.936
+  - 4.6687
+  - 1.5708
+  standoff: 0.45
+  gap: 0.02
+  final_clearance: 0.015
+  stage_clearance: 0.165
+  box: 3
+  side: S
+  inline: false
+  pucks:
+    -1:
+      dist: 0.1642
+      fwd: 0.1593
+      lat: 0.04
+    1:
+      dist: 0.1642
+      fwd: 0.1593
+      lat: -0.04
+B3:N:
+  kind: box
+  ok: true
+  note: ''
+  final:
+  - 2.936
+  - 5.6093
+  - -1.5708
+  stage:
+  - 2.936
+  - 5.9393
+  - -1.5708
+  standoff: 0.35
+  gap: 0.02
+  final_clearance: 0.015
+  stage_clearance: 0.12
+  box: 3
+  side: N
+  inline: false
+  pucks:
+    -1:
+      dist: 0.1642
+      fwd: 0.1593
+      lat: -0.04
+    1:
+      dist: 0.1642
+      fwd: 0.1593
+      lat: 0.04
+B4:S:
+  kind: box
+  ok: true
+  note: ''
+  final:
+  - 0.734
+  - 5.0987
+  - 1.5708
+  stage:
+  - 0.734
+  - 4.6687
+  - 1.5708
+  standoff: 0.45
+  gap: 0.02
+  final_clearance: 0.015
+  stage_clearance: 0.165
+  box: 4
+  side: S
+  inline: false
+  pucks:
+    -1:
+      dist: 0.1642
+      fwd: 0.1593
+      lat: 0.04
+    1:
+      dist: 0.1642
+      fwd: 0.1593
+      lat: -0.04
+B4:N:
+  kind: box
+  ok: true
+  note: ''
+  final:
+  - 0.734
+  - 5.6093
+  - -1.5708
+  stage:
+  - 0.734
+  - 5.9393
+  - -1.5708
+  standoff: 0.35
+  gap: 0.02
+  final_clearance: 0.015
+  stage_clearance: 0.12
+  box: 4
+  side: N
+  inline: false
+  pucks:
+    -1:
+      dist: 0.1642
+      fwd: 0.1593
+      lat: -0.04
+    1:
+      dist: 0.1642
+      fwd: 0.1593
+      lat: 0.04
+B5:S:
+  kind: box
+  ok: false
+  note: final 외곽이 막힘
+  final:
+  - 2.202
+  - 5.0987
+  - 1.5708
+  stage:
+  - 2.202
+  - 4.6687
+  - 1.5708
+  standoff: 0.45
+  gap: 0.02
+  final_clearance: 0.0
+  stage_clearance: 0.165
+  box: 5
+  side: S
+  inline: false
+  pucks:
+    -1:
+      dist: 0.1642
+      fwd: 0.1593
+      lat: 0.04
+    1:
+      dist: 0.1642
+      fwd: 0.1593
+      lat: -0.04
+B5:N:
+  kind: box
+  ok: true
+  note: ''
+  final:
+  - 2.202
+  - 5.6093
+  - -1.5708
+  stage:
+  - 2.202
+  - 5.9393
+  - -1.5708
+  standoff: 0.35
+  gap: 0.02
+  final_clearance: 0.015
+  stage_clearance: 0.12
+  box: 5
+  side: N
+  inline: false
+  pucks:
+    -1:
+      dist: 0.1642
+      fwd: 0.1593
+      lat: -0.04
+    1:
+      dist: 0.1642
+      fwd: 0.1593
+      lat: 0.04
+B6:S:
+  kind: box
+  ok: false
+  note: stage 외곽이 막힘 (standoff 를 줄여도)
+  final:
+  - 3.67
+  - 3.6307
+  - 1.5708
+  stage:
+  - 3.67
+  - 3.3507
+  - 1.5708
+  standoff: 0.3
+  box: 6
+  side: S
+  inline: false
+  pucks:
+    -1:
+      dist: 0.1642
+      fwd: 0.1593
+      lat: 0.04
+    1:
+      dist: 0.1642
+      fwd: 0.1593
+      lat: -0.04
+B6:N:
+  kind: box
+  ok: false
+  note: final 외곽이 막힘
+  final:
+  - 3.67
+  - 4.1413
+  - -1.5708
+  stage:
+  - 3.67
+  - 4.5713
+  - -1.5708
+  standoff: 0.45
+  gap: 0.02
+  final_clearance: 0.0
+  stage_clearance: 0.165
+  box: 6
+  side: N
+  inline: false
+  pucks:
+    -1:
+      dist: 0.1642
+      fwd: 0.1593
+      lat: -0.04
+    1:
+      dist: 0.1642
+      fwd: 0.1593
+      lat: 0.04
+B6:W:
+  kind: box
+  ok: true
+  note: ''
+  final:
+  - 3.3947
+  - 3.886
+  - -0.0
+  stage:
+  - 2.9847
+  - 3.886
+  - -0.0
+  standoff: 0.45
+  gap: 0.04
+  final_clearance: 0.035
+  stage_clearance: 0.155
+  box: 6
+  side: W
+  inline: true
+  pucks:
+    -1:
+      dist: 0.1393
+      fwd: 0.1393
+      lat: 0.0
+    1:
+      dist: 0.2193
+      fwd: 0.2193
+      lat: 0.0
+B6:E:
+  kind: box
+  ok: false
+  note: stage 외곽이 막힘 (standoff 를 줄여도)
+  final:
+  - 3.9453
+  - 3.886
+  - -3.1416
+  stage:
+  - 4.2053
+  - 3.886
+  - -3.1416
+  standoff: 0.3
+  box: 6
+  side: E
+  inline: true
+  pucks:
+    -1:
+      dist: 0.2193
+      fwd: 0.2193
+      lat: -0.0
+    1:
+      dist: 0.1393
+      fwd: 0.1393
+      lat: -0.0
+L1:
+  kind: place
+  ok: true
+  note: ''
+  final:
+  - 3.4147
+  - 0.95
+  - -0.0
+  stage:
+  - 2.9847
+  - 0.95
+  - -0.0
+  standoff: 0.45
+  gap: 0.02
+  final_clearance: 0.015
+  stage_clearance: 0.165
+  tag: 12
+  cells:
+    -1,-1:
+      x: 3.61
+      y: 0.89
+      dist: 0.116
+      fwd: 0.0993
+      lat: -0.06
+      mode: vertical
+    -1,0:
+      x: 3.61
+      y: 0.95
+      dist: 0.0993
+      fwd: 0.0993
+      lat: 0.0
+      mode: vertical
+    -1,1:
+      x: 3.61
+      y: 1.01
+      dist: 0.116
+      fwd: 0.0993
+      lat: 0.06
+      mode: vertical
+    0,-1:
+      x: 3.67
+      y: 0.89
+      dist: 0.1702
+      fwd: 0.1593
+      lat: -0.06
+      mode: vertical
+    0,0:
+      x: 3.67
+      y: 0.95
+      dist: 0.1593
+      fwd: 0.1593
+      lat: 0.0
+      mode: vertical
+    0,1:
+      x: 3.67
+      y: 1.01
+      dist: 0.1702
+      fwd: 0.1593
+      lat: 0.06
+      mode: vertical
+    1,-1:
+      x: 3.73
+      y: 0.89
+      dist: 0.2274
+      fwd: 0.2193
+      lat: -0.06
+      mode: vertical
+    1,0:
+      x: 3.73
+      y: 0.95
+      dist: 0.2193
+      fwd: 0.2193
+      lat: 0.0
+      mode: vertical
+    1,1:
+      x: 3.73
+      y: 1.01
+      dist: 0.2274
+      fwd: 0.2193
+      lat: 0.06
+      mode: vertical
+L2:
+  kind: place
+  ok: true
+  note: ''
+  final:
+  - 2.202
+  - 4.0628
+  - -1.5708
+  stage:
+  - 2.202
+  - 4.4928
+  - -1.5708
+  standoff: 0.45
+  gap: 0.02
+  final_clearance: 0.015
+  stage_clearance: 0.2
+  tag: 13
+  cells:
+    -1,-1:
+      x: 2.142
+      y: 3.64
+      dist: 0.3323
+      fwd: 0.3268
+      lat: -0.06
+      mode: tilt
+    -1,0:
+      x: 2.142
+      y: 3.7
+      dist: 0.2735
+      fwd: 0.2668
+      lat: -0.06
+      mode: tilt
+    -1,1:
+      x: 2.142
+      y: 3.76
+      dist: 0.2153
+      fwd: 0.2068
+      lat: -0.06
+      mode: vertical
+    0,-1:
+      x: 2.202
+      y: 3.64
+      dist: 0.3268
+      fwd: 0.3268
+      lat: -0.0
+      mode: tilt
+    0,0:
+      x: 2.202
+      y: 3.7
+      dist: 0.2668
+      fwd: 0.2668
+      lat: -0.0
+      mode: tilt
+    0,1:
+      x: 2.202
+      y: 3.76
+      dist: 0.2068
+      fwd: 0.2068
+      lat: -0.0
+      mode: vertical
+    1,-1:
+      x: 2.262
+      y: 3.64
+      dist: 0.3323
+      fwd: 0.3268
+      lat: 0.06
+      mode: tilt
+    1,0:
+      x: 2.262
+      y: 3.7
+      dist: 0.2735
+      fwd: 0.2668
+      lat: 0.06
+      mode: tilt
+    1,1:
+      x: 2.262
+      y: 3.76
+      dist: 0.2153
+      fwd: 0.2068
+      lat: 0.06
+      mode: vertical
+L3:
+  kind: place
+  ok: true
+  note: ''
+  final:
+  - 3.67
+  - 5.0987
+  - 1.5708
+  stage:
+  - 3.67
+  - 4.6687
+  - 1.5708
+  standoff: 0.45
+  gap: 0.02
+  final_clearance: 0.015
+  stage_clearance: 0.165
+  tag: 14
+  cells:
+    -1,-1:
+      x: 3.61
+      y: 5.294
+      dist: 0.116
+      fwd: 0.0993
+      lat: 0.06
+      mode: vertical
+    -1,0:
+      x: 3.61
+      y: 5.354
+      dist: 0.1702
+      fwd: 0.1593
+      lat: 0.06
+      mode: vertical
+    -1,1:
+      x: 3.61
+      y: 5.414
+      dist: 0.2274
+      fwd: 0.2193
+      lat: 0.06
+      mode: vertical
+    0,-1:
+      x: 3.67
+      y: 5.294
+      dist: 0.0993
+      fwd: 0.0993
+      lat: 0.0
+      mode: vertical
+    0,0:
+      x: 3.67
+      y: 5.354
+      dist: 0.1593
+      fwd: 0.1593
+      lat: 0.0
+      mode: vertical
+    0,1:
+      x: 3.67
+      y: 5.414
+      dist: 0.2193
+      fwd: 0.2193
+      lat: 0.0
+      mode: vertical
+    1,-1:
+      x: 3.73
+      y: 5.294
+      dist: 0.116
+      fwd: 0.0993
+      lat: -0.06
+      mode: vertical
+    1,0:
+      x: 3.73
+      y: 5.354
+      dist: 0.1702
+      fwd: 0.1593
+      lat: -0.06
+      mode: vertical
+    1,1:
+      x: 3.73
+      y: 5.414
+      dist: 0.2274
+      fwd: 0.2193
+      lat: -0.06
+      mode: vertical
+HOME:
+  kind: home
+  ok: true
+  note: ''
+  final:
+  - 0.6936
+  - 0.95
+  - 3.1416
+  stage:
+  - 0.6936
+  - 0.95
+  - 3.1416
+  standoff: 0.0
+  zone_margin_x: 0.1268
+  zone_margin_y: 0.1324

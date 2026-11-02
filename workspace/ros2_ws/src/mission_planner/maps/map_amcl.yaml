@@ -1,0 +1,8 @@
+# AMCL 용 (LiDAR 스캔면 바닥 위 0.0823 m 를 지나는 것만), mission_make_maps 가 만듦
+image: map_amcl.pgm
+mode: trinary
+resolution: 0.025
+origin: [-0.1500, -0.1500, 0.0]
+negate: 0
+occupied_thresh: 0.65
+free_thresh: 0.25
