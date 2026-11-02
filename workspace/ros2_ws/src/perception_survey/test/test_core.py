@@ -84,3 +84,20 @@ def test_invalid_tag_score_threshold_refused():
     import pytest
     for value in [-.1,1.1,float('nan'),float('inf')]:
         with pytest.raises(ValueError):Survey(tagged_min_confidence=value)
+
+def test_arm_tag_shape_wins_over_one_wrong_d435_vote():
+    # 앞 D435 YOLO 가 한 장에서 원기둥을 직육면체로 본 경우(F1 · 후보 C, seed 103): 팔 태그 관측이 있으면 그 표로 정한다
+    s=filled();t=s.snapshot()['slots'][0]
+    assert s.observe({'x':t['x_mm']/1000,'y':t['y_mm']/1000,'id':-1,'color':'green','shape':'cuboid','camera':'front_d435','confidence':.79},20.)
+    r=s.snapshot();slot=r['slots'][0]
+    assert slot['shape']=='cylinder' and r['complete']
+
+def test_d435_votes_used_when_no_arm_tag_vote():
+    x,y=BOX_CENTERS[0];s=Survey(tagged_min_confidence=.4)
+    for stamp in (10.,11.):
+        assert s.observe({'x':x-.04,'y':y,'id':0,'color':'red','shape':'cylinder','pose':'standing','camera':'arm','confidence':.2},stamp)
+    for stamp,shape in [(12.,'cuboid'),(13.,'cuboid')]:
+        assert s.observe({'x':x-.04,'y':y,'id':-1,'color':'red','shape':shape,'camera':'front_d435','confidence':.9},stamp)
+    assert s.snapshot()['slots'][0]['shape']=='cuboid'
+    assert s.observe({'x':x-.04,'y':y,'id':-1,'color':'red','shape':'cylinder','camera':'front_d435','confidence':.9},14.)
+    assert s.snapshot()['slots'][0]['shape'] is None
