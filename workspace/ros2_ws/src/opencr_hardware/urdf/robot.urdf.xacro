@@ -18,19 +18,22 @@
     ${xacro.fatal("drive 는 direct 또는 belt: " + drive)}
   </xacro:if>
   <xacro:property name="belt" value="${drive == 'belt'}"/>
-  <!-- 바퀴 · 차체 높이 · IMU 는 기준 URDF urdfv2/urdf/teamrobot.urdf (teamrobot_4wd, 직결) 값 (2026-10-26).
-       base_link 원점 = urdfv2 와 같음 (하판 윗면 중심, 바닥 위 56.25 mm). 관절 이름은 ros2_control · 컨트롤러 설정 때문에 기존 이름 유지:
+  <!-- 좌표 기준 = 팀 기준 모델 workspace/urdf_and_usd/waffle_4wd_description (B안, PR #50).
+       base_link 원점 = 그 모델과 같음 (TurtleBot3 Waffle 1층 하판 가운데, 바닥 위 6.75 mm. 하판은 바닥 위 9.75~18.85 mm).
+       센서 · 바퀴 x · 축 높이는 그 모델 값. 바퀴 |y| 는 drive_<belt|direct>.yaml wheel_separation 과 묶여 있어 그대로 둔다.
+       관절 이름은 ros2_control · 컨트롤러 설정 때문에 기존 이름 유지:
        wheel_left_front = wheel_fl · wheel_left_rear = wheel_rl · wheel_right_front = wheel_fr · wheel_right_rear = wheel_rr -->
   <!-- belt: 증속벨트 설계 (구동_증속벨트 drive_belt.scad · ref/wheels_shifted15.stl) — 바퀴를 바깥으로 15 mm, x · 축 높이는 직결과 같음.
-       y 0.1585 는 설계 차체 기준 절대값 (설계 직결 |y| 143.5 ≠ urdfv2 직결 137.2) ★ 장착 후 바퀴 간격 실측 -->
+       y 0.1585 는 설계 차체 기준 절대값 (설계 직결 |y| 143.5 ≠ urdfv2 직결 137.2, 기준 모델 0.1546) ★ 장착 후 바퀴 간격 실측 -->
   <xacro:property name="wheel_y" value="${0.1585 if belt else 0.1372}"/>   <!-- 바퀴 중심 |y| (간격 belt 0.317 · direct 0.2744) -->
-  <xacro:property name="wheel_x" value="0.100"/>      <!-- 앞바퀴 x, 뒤바퀴 x = -0.100 (앞뒤 대칭, belt · direct 같음) -->
+  <xacro:property name="wheel_x_front" value="0.0925"/>   <!-- 앞바퀴 x (기준 모델) -->
+  <xacro:property name="wheel_x_rear" value="-0.0675"/>   <!-- 뒤바퀴 x (기준 모델) -->
   <xacro:property name="wheel_gear" value="${1.5 if belt else 1.0}"/>      <!-- 바퀴 각속도 / 모터 각속도 (모터 36T → 바퀴 24T) -->
-  <xacro:property name="wheel_z" value="-0.02325"/>   <!-- 바퀴 중심 z (base_link 아래) -->
+  <xacro:property name="wheel_z" value="0.02625"/>    <!-- 바퀴 중심 z (base_link 위, 기준 모델) -->
   <xacro:property name="wheel_radius" value="0.033"/> <!-- Ø66. controllers_4wd.yaml wheel_radius 와 같게 -->
 
   <link name="base_link"/>
-  <!-- 바닥 투영 (urdfv2 와 같음): base_link 아래 = 바퀴 중심 아래 반지름만큼 -->
+  <!-- 바닥 투영: 바퀴 중심 아래 반지름만큼 = base_link 아래 6.75 mm (기준 모델과 같음) -->
   <link name="base_footprint"/>
   <joint name="base_footprint_joint" type="fixed">
     <parent link="base_link"/>
@@ -50,16 +53,16 @@
       <limit effort="${3.0 / wheel_gear}" velocity="${8.063421 * wheel_gear}"/>
     </joint>
   </xacro:macro>
-  <xacro:wheel name="wheel_left_front"  x="${wheel_x}"  y="${wheel_y}"/>
-  <xacro:wheel name="wheel_left_rear"   x="${-wheel_x}" y="${wheel_y}"/>
-  <xacro:wheel name="wheel_right_front" x="${wheel_x}"  y="${-wheel_y}"/>
-  <xacro:wheel name="wheel_right_rear"  x="${-wheel_x}" y="${-wheel_y}"/>
+  <xacro:wheel name="wheel_left_front"  x="${wheel_x_front}" y="${wheel_y}"/>
+  <xacro:wheel name="wheel_left_rear"   x="${wheel_x_rear}"  y="${wheel_y}"/>
+  <xacro:wheel name="wheel_right_front" x="${wheel_x_front}" y="${-wheel_y}"/>
+  <xacro:wheel name="wheel_right_rear"  x="${wheel_x_rear}"  y="${-wheel_y}"/>
   <xacro:if value="${wheel_count == 6}">
     <xacro:wheel name="wheel_left_mid"  x="0" y="${wheel_y}"/>
     <xacro:wheel name="wheel_right_mid" x="0" y="${-wheel_y}"/>
   </xacro:if>
 
-  <!-- 센서 (정적) ★ 장착 위치 -->
+  <!-- 센서 (정적): 위치 · 방향은 기준 모델 waffle_4wd_description 값 ★ 실물 나오면 확인 -->
   <xacro:macro name="fixed_link" params="name parent xyz rpy">
     <link name="${name}"/>
     <joint name="${name}_joint" type="fixed">
@@ -68,19 +71,20 @@
       <origin xyz="${xyz}" rpy="${rpy}"/>
     </joint>
   </xacro:macro>
-  <!-- OpenCR 내장 IMU (주행 보드): urdfv2 imu_link — 하판 아래에 뒤집어 단 보드 축 (z 아래). ekf 가 이 TF 로 yaw rate 를 base_link 로 돌린다.
-       뒤집어 장착 실물 확인 (2026-10-26). 위에서 봐서 반시계로 돌리면 /imu/data angular_velocity.z 는 음수 (보드 z 가 아래) -->
-  <xacro:fixed_link name="imu_link"          parent="base_link" xyz="0 0 -0.0192" rpy="3.141593 0 1.570796"/>
-  <!-- ★ 적용 필요: LDS-03 은 뒤집어 장착 → roll π (front rpy "3.141593 0 0" · rear "3.141593 0 3.141593").
-       근거: USD waffle_4wd_usd_261027_1711 lidar_*_scan roll 180°, urdfv2 lds03_* 같음. 미적용이면 스캔 좌우가 뒤집힌다 (docs/frames_tf.md) -->
-  <xacro:fixed_link name="laser_front"       parent="base_link" xyz="0.15 0 0.08" rpy="0 0 0"/>
-  <xacro:fixed_link name="laser_rear"        parent="base_link" xyz="-0.15 0 0.08" rpy="0 0 3.14159"/>
-  <!-- ★ C: realsense2_camera (camera_name top_camera_front · top_camera_rear) 의 TF 뿌리는 <camera_name>_link (왼쪽 IR = 깊이 원점).
-       지금 이름 camera_front_link · camera_rear_link 로는 base_link → top_camera_*_color_optical_frame 이 끊겨 perception TF 조회가 실패한다.
-       USD waffle_4wd_usd_261027_1711 은 top_camera_front_link · top_camera_rear_link (docs/frames_tf.md) -->
-  <xacro:fixed_link name="camera_front_link" parent="base_link" xyz="0.16 0 0.13" rpy="0 0.35 0"/>
-  <xacro:fixed_link name="camera_rear_link"  parent="base_link" xyz="-0.16 0 0.13" rpy="0 0.35 3.14159"/>
-  <xacro:fixed_link name="arm_base_link"     parent="base_link" xyz="0.087 0 0.111" rpy="0 0 0"/>
+  <!-- OpenCR 내장 IMU (주행 보드, 2층으로 쌓은 OpenCR 중 아래 보드 하나만 쓴다). ekf 가 이 TF 로 yaw rate 를 base_link 로 돌린다.
+       보드는 바로 놓여 있다 (보드 z 위, 2026-11-02 확인) → rpy 0. 위에서 봐서 반시계로 돌리면 /imu/data angular_velocity.z 는 양수 -->
+  <xacro:fixed_link name="imu_link"          parent="base_link" xyz="0.0095 0 0.0202" rpy="0 0 0"/>
+  <!-- LDS-03 은 뒤집어 장착 → roll π. 기준 모델 lds_front · lds_rear (laser_* 는 그 자리와 같음). 안 뒤집으면 스캔 좌우가 뒤집힌다 (docs/frames_tf.md) -->
+  <xacro:fixed_link name="laser_front"       parent="base_link" xyz="0.1089 0 0.0755" rpy="3.141593 0 0"/>
+  <xacro:fixed_link name="laser_rear"        parent="base_link" xyz="-0.1089 0 0.0755" rpy="3.141593 0 3.141593"/>
+  <!-- D435: realsense2_camera (camera_name top_camera_front · top_camera_rear) 의 TF 뿌리는 <camera_name>_link = 왼쪽 IR (깊이 원점).
+       그 아래 광학 프레임은 드라이버가 공장 외부 보정값으로 낸다 (여기서 또 만들면 TF 부모가 둘이 된다).
+       기준 모델 top_camera_*_link 는 두 IR 의 가운데라, 왼쪽 IR (광학 x −0.02502 = 카메라 기준 왼쪽) 로 옮겼다: 앞 y +0.02502 · 뒤 y −0.02502 -->
+  <xacro:fixed_link name="top_camera_front_link" parent="base_link" xyz="-0.0480903 0.0250244 0.4836226" rpy="0 0.6144098 0"/>
+  <xacro:fixed_link name="top_camera_rear_link"  parent="base_link" xyz="-0.2079097 -0.0250168 0.4836226" rpy="0 0.6144098 3.141593"/>
+  <!-- 팔 받침: joint2 축이 기준 모델과 같은 자리 (base_link 기준 0.096 0 0.1905) 에 오게 둔다.
+       기준 모델은 arm_base_link → joint2 0.0595 이지만 이 파일 · manipulator.yaml 링크 길이는 그대로 둔다 (0.077) -->
+  <xacro:fixed_link name="arm_base_link"     parent="base_link" xyz="0.096 0 0.1135" rpy="0 0 0"/>
 
   <!-- 팔 (joint1 요 · joint2~4 피치 · joint5 손목 롤 · gripper_roll) — 길이는 manipulator.yaml 과 같게 ★ -->
   <xacro:macro name="arm_joint" params="name parent child xyz axis lower upper">
@@ -101,12 +105,16 @@
   <xacro:arm_joint name="joint4" parent="link3" child="link4" xyz="0.124 0 0" axis="0 1 0" lower="-1.92" upper="2.0"/>
   <xacro:arm_joint name="joint5" parent="link4" child="link5" xyz="0.04 0 0" axis="1 0 0" lower="-2.8" upper="2.8"/>
   <xacro:arm_joint name="gripper_roll" parent="link5" child="gripper_roll_link" xyz="0.041 0 0" axis="1 0 0" lower="-0.7946" upper="0.9541"/>
-  <!-- Arducam: 그리퍼에 장착 (2026-10-28 확인). UVC 드라이버 frame_id = arm_camera_optical_frame (광학 축: +z 앞 · +x 오른쪽 · +y 아래) -->
-  <xacro:fixed_link name="arm_camera_link" parent="gripper_roll_link" xyz="0.02 0 0.035" rpy="0 0 0"/>
+  <!-- Arducam: 그리퍼 몸체에 장착 (2026-10-28 확인). UVC 드라이버 frame_id = arm_camera_optical_frame (광학 축: +z 앞 · +x 오른쪽 · +y 아래)
+       부모는 손목 롤 뒤 link5 (gripper_roll_link 는 그리퍼 개폐 모터라 그 아래 두면 집게를 여닫을 때 카메라 좌표가 돈다).
+       위치 · 방향은 기준 모델 arm_camera_joint (joint4 축에서 0.128256 0 0.077446, 아래로 15°) — link5 는 joint4 축에서 x 0.04 -->
+  <xacro:fixed_link name="arm_camera_link" parent="link5" xyz="0.088256 0 0.077446" rpy="0 0.261788 0"/>
   <xacro:fixed_link name="arm_camera_optical_frame" parent="arm_camera_link" xyz="0 0 0" rpy="-1.570796 0 -1.570796"/>
   <!-- TFmini Plus: 차체 1층 플레이트 앞 가운데 받침대 (2026-10-28 확인, 받침대 설계 2026-10-31). 퍽이 놓인 박스 앞면 거리 → drive FINE · obstacle_stop.
-       원점 = 렌즈면, +x 앞. 받침대 설계 · Isaac sensors.json: 렌즈면 x 0.130, 바닥 위 31 mm → base_link(바닥 위 56.25 mm) 기준 z -0.025 ★ 실측 -->
-  <xacro:fixed_link name="tfmini_link"     parent="base_link" xyz="0.130 0 -0.025" rpy="0 0 0"/>
+       원점 = 렌즈면, +x 앞. 기준 모델 tfmini_link: 바닥 위 31.05 mm = base_link(바닥 위 6.75 mm) 기준 z +0.0243 ★ 실측
+       팔 끝 → 퍽 거리(/arm_range)는 TFmini 가 아니라 perception 계산값 (manipulator range_frame = tool_link) -->
+  <xacro:fixed_link name="tfmini_link"     parent="base_link" xyz="0.130 0 0.0243" rpy="0 0 0"/>
+
   <xacro:fixed_link name="tool_link"       parent="gripper_roll_link" xyz="0.086 0 0" rpy="0 0 0"/>
 
   <xacro:opencr_ros2_control ports="$(arg ports)" wheel_count="${wheel_count}" use_gripper="$(arg use_gripper)"

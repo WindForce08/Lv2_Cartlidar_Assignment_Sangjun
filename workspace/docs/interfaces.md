@@ -19,6 +19,7 @@
 | /scan | sensor_msgs/LaserScan | SensorData | scan_merger | slam_toolbox, nav2, drive_node |
 | /perception/result | robot_interfaces/PerceptionResult | Reliable, depth 1 | perception_node | mission, drive, manipulator |
 | /arm_range | sensor_msgs/Range | SensorData | perception_node (ARM_ALIGN, 팔 영상마다) — 팔 끝(`tool_link`) → 정렬 중인 퍽 **표면** 거리. ① Arducam 태그 퍽 중심(READ_TAG) ② D435 목표를 odom 에 붙잡아 둔 점(3 s 안). 못 구하면 +inf. **TFmini 아님** | manipulator (미세 보정 · 최종 전진 · pick ①) |
+| /perception/arm_range | sensor_msgs/Range | SensorData | perception_node (ARM_ALIGN, `arm.plane`) — 팔 끝(`tool_link`) → 잠근 퍽 **중심** 거리 (팔 카메라 평면 교차). 함께 /perception/arm_target (PointStamped). ★ 위 `/arm_range`(퍽 **표면**)와 다른 토픽 — 이름이 비슷하니 헷갈리지 말 것, 두 값 차이 ≈ 퍽 반지름 | (없음 — 예비 · 검증용) |
 | /tfmini/range | sensor_msgs/Range | SensorData, 50 Hz | tfmini_node (실물) · scan_to_range (Gazebo) — 1층 렌즈(`tfmini_link`) → **퍽이 놓인 박스 앞면** 거리, mm 출력 + 실측 보정 | drive (FINE 정렬 전후), obstacle_stop |
 | /perception/obstacle_stop | std_msgs/Bool | Reliable + TransientLocal, 10 Hz | obstacle_stop (`/tfmini/range` 판정) | twist_mux (lock priority 60, 0.5 s: drive · nav 막음, 조이스틱 통과) |
 | /map | nav_msgs/OccupancyGrid | Reliable + TransientLocal | slam_toolbox | nav2 |

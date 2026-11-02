@@ -69,7 +69,7 @@ colcon test && colcon test-result --verbose
 |---|---|
 | 접근 · 차체 | `approach.ready_reach`, `base.front_offset`, `target.exclude_min/max` |
 | 인식 | HSV 범위 (현장 조명), `d435.white_balance` · `exposure`, `target.size_min_m/max_m` |
-| TF · 카메라 | tfmini_link (URDF base_link (0.130, 0, -0.025) = 설계값) · arm_camera_link TF, Arducam 보정, 태그 크기 |
+| TF · 카메라 | tfmini_link (URDF base_link (0.130, 0, 0.0243) = 설계값, 바닥 위 31 mm) · arm_camera_link TF, Arducam 보정, 태그 크기 |
 | TFmini (박스 거리) | 실제 박스 재질 앞 0.10~0.40 m 줄자 실측 → `tfmini.yaml` `calib_raw_m` · `calib_true_m` (사양 ±5 cm), `min_strength`, mm 출력 확인. 미션표 `approach <거리>` = 렌즈 → 박스 앞면 (팔이 닿는 거리, ≥ 0.13). 빔이 박스 앞면(높이 70 mm)에 맞는지 (렌즈 바닥 위 약 31 mm) |
 | /arm_range | `perception.yaml` `arm.range.*` (tag_gate · seed_gate · hold_s), D435 보유 점 오차 (정밀 거리에서 D435 시야 밖) |
 | 팔 | STOW · READY · PLACE · TAG_VIEW 관절각, 링크 길이 · 관절 한계 (manipulator.yaml · URDF · config.h 세 곳 같게) |

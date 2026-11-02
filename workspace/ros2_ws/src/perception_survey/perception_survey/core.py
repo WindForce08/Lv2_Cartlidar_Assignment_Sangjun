@@ -11,9 +11,12 @@ BOX_CENTERS = ((1.468,.950),(3.670,3.152),(2.936,5.354),(.734,5.354),(2.202,5.35
 CAMERAS = {0:'front_d435',1:'rear_d435',2:'arm'}
 
 class Survey:
-    def __init__(self, frame='map', gate_m=.035, min_observations=2, tagged_min_confidence=.6):
+    def __init__(self, frame='map', gate_m=.035, min_observations=2, tagged_min_confidence=.6, max_revisits=2):
         if not 0 < gate_m < .04 or min_observations < 1:
             raise ValueError('결합 문턱은 0~40mm 사이, 최소 관측은 1 이상')
+        if isinstance(max_revisits,bool) or not isinstance(max_revisits,int) or max_revisits < 0:
+            raise ValueError('칸별 다시 보기 횟수 한도는 0 이상 정수')
+        self.max_revisits = max_revisits
         if not math.isfinite(tagged_min_confidence) or not 0 <= tagged_min_confidence <= 1:
             raise ValueError('태그 관측 색띠 점수 문턱은 0~1의 유한값이어야 함')
         self.tagged_min_confidence = tagged_min_confidence
@@ -26,13 +29,15 @@ class Survey:
         self.frozen = False
         self.rejected = {}
         self.boxes = [{'box':i+1,'center_mm':[x*1000,y*1000], 'yaw_deg':0.,'yaw_measured':False} for i,(x,y) in enumerate(BOX_CENTERS)]
-        self.tracks = []
-        for b,(x,y) in enumerate(BOX_CENTERS,1):
-            for side in (-1,1):
-                self.tracks.append({'box':b,'side':side,'x_mm':(x+side*.04)*1000,'y_mm':y*1000,
-                  'measured':False,'present':None,'color':None,'shape':None,'pose':None,'yaw_deg':None,'id':None,
-                  'conf':{'color':0.,'shape':0.,'id':0.},'seen_by':[],'n_obs':0,'last_seen_stamp':None,
-                  '_points':[],'_values':{k:{} for k in ('color','shape','pose','id')},'_arm_values':{'color':{},'shape':{}},'_seen':set(),'_yaw':[]})
+        self.tracks = [self._new_track(b,side) for b in range(1,len(BOX_CENTERS)+1) for side in (-1,1)]
+
+    @staticmethod
+    def _new_track(b, side, revisits=0):
+        x,y=BOX_CENTERS[b-1]
+        return {'box':b,'side':side,'x_mm':(x+side*.04)*1000,'y_mm':y*1000,
+          'measured':False,'present':None,'color':None,'shape':None,'pose':None,'yaw_deg':None,'id':None,
+          'conf':{'color':0.,'shape':0.,'id':0.},'seen_by':[],'n_obs':0,'last_seen_stamp':None,'revisits':revisits,
+          '_points':[],'_values':{k:{} for k in ('color','shape','pose','id')},'_arm_values':{'color':{},'shape':{}},'_seen':set(),'_yaw':[]}
 
     @staticmethod
     def _votes(t,field):
@@ -100,21 +105,44 @@ class Survey:
 
     def snapshot(self):
         slots=[{k:copy.deepcopy(v) for k,v in t.items() if not k.startswith('_')} for t in self.tracks]
-        errors=[];ids={}
-        for t in self.tracks:
+        errors=[];ids={};problems=[[] for _ in self.tracks]
+        for i,t in enumerate(self.tracks):
             name=f"{t['box']}:{t['side']}"
-            if t['n_obs']<self.minimum:errors.append(f'{name}:insufficient_observations')
+            if t['n_obs']<self.minimum:problems[i].append('insufficient_observations')
             for field in ('color','shape','pose','id'):
                 votes=self._votes(t,field)
-                if len(votes)!=1 or sum(votes.values())<self.minimum:errors.append(f'{name}:{field}_unknown_or_conflict')
-            if t['shape']=='cylinder' and t['pose']=='lying':errors.append(f'{name}:lying_cylinder')
-            if t['id'] is not None:ids.setdefault(t['id'],[]).append(name)
-        for tid,names in ids.items():
-            if len(names)>1:errors.append(f'duplicate_id:{tid}')
+                if len(votes)!=1 or sum(votes.values())<self.minimum:problems[i].append(f'{field}_unknown_or_conflict')
+            if t['shape']=='cylinder' and t['pose']=='lying':problems[i].append('lying_cylinder')
+            errors+=[f'{name}:{p}' for p in problems[i]]
+            if t['id'] is not None:ids.setdefault(t['id'],[]).append(i)
+        for tid,owners in ids.items():
+            if len(owners)>1:
+                errors.append(f'duplicate_id:{tid}')
+                for i in owners:problems[i].append(f'duplicate_id:{tid}')
         if len(ids)!=12:errors.append('id_set_incomplete')
+        # 칸 상태: 문제 없으면 confirmed, 있으면 revisit(그 칸만 다시 보기), 한도만큼 다시 봐도 남으면 unconfirmed(미확인)
+        for slot,p in zip(slots,problems):
+            slot['problems']=p
+            slot['status']='confirmed' if not p else 'unconfirmed' if slot['revisits']>=self.max_revisits else 'revisit'
         return {'survey_id':self.survey_id,'stamp':f'{max(self.stamp,0):.9f}','frame':f'{self.frame}(mm, 발제 원점)',
                 'boxes':copy.deepcopy(self.boxes),'slots':slots,'complete':not errors,
+                'revisit':[f"{s['box']}:{s['side']}" for s in slots if s['status']=='revisit'],
+                'unconfirmed':[f"{s['box']}:{s['side']}" for s in slots if s['status']=='unconfirmed'],
+                'max_revisits':self.max_revisits,
                 'errors':errors,'rejected':dict(self.rejected),'frozen':self.frozen}
+
+    def revisit(self):
+        """문제가 남은 칸(status=revisit)만 비우고 다시 보기 횟수를 1 늘린다. 다른 칸의 관측은 그대로 둔다.
+        비운 칸은 시작 위치로 돌아가므로 거리 · 각도를 바꿔 새로 관측해야 다시 채워진다. 낮은 점수 관측은 지금처럼 버린다."""
+        if self.frozen:raise ValueError('완료된 조사는 다시 볼 수 없음')
+        report=self.snapshot();todo=[]
+        for i,slot in enumerate(report['slots']):
+            if slot['status']!='revisit':continue
+            t=self.tracks[i]
+            self.tracks[i]=self._new_track(t['box'],t['side'],t['revisits']+1)
+            todo.append({'slot':f"{t['box']}:{t['side']}",'x_mm':self.tracks[i]['x_mm'],'y_mm':self.tracks[i]['y_mm'],
+                         'problems':slot['problems'],'revisits':t['revisits']+1})
+        return todo,report['unconfirmed']
 
     def finish(self,path):
         report=self.snapshot()

@@ -101,3 +101,48 @@ def test_d435_votes_used_when_no_arm_tag_vote():
     assert s.snapshot()['slots'][0]['shape']=='cuboid'
     assert s.observe({'x':x-.04,'y':y,'id':-1,'color':'red','shape':'cylinder','camera':'front_d435','confidence':.9},14.)
     assert s.snapshot()['slots'][0]['shape'] is None
+
+def test_revisit_clears_only_problem_slot_then_completes():
+    # 한 칸이 엇갈리면 조사 전체를 다시 시작하지 않고 그 칸만 비운다. 다른 칸의 관측은 그대로 남는다
+    s=filled();t=s.snapshot()['slots'][0]
+    assert s.observe({'x':t['x_mm']/1000,'y':t['y_mm']/1000,'id':t['id'],'color':'red','shape':'cylinder','pose':'standing','camera':'arm','confidence':1.},20.)
+    r=s.snapshot()
+    assert r['revisit']==['1:-1'] and [x['status'] for x in r['slots']].count('confirmed')==11
+    before=[x['n_obs'] for x in r['slots'][1:]]
+    todo,unconfirmed=s.revisit()
+    assert [x['slot'] for x in todo]==['1:-1'] and todo[0]['revisits']==1 and unconfirmed==[]
+    assert 'color_unknown_or_conflict' in todo[0]['problems']
+    r=s.snapshot()
+    assert r['slots'][0]['n_obs']==0 and [x['n_obs'] for x in r['slots'][1:]]==before
+    for stamp in (21.,22.):
+        assert s.observe({'x':t['x_mm']/1000,'y':t['y_mm']/1000,'id':t['id'],'color':t['color'],'shape':'cylinder','pose':'standing','camera':'arm','confidence':1.},stamp)
+    r=s.snapshot()
+    assert r['complete'] and r['slots'][0]['status']=='confirmed' and r['slots'][0]['revisits']==1
+
+def test_revisit_limit_marks_unconfirmed():
+    # 한도만큼 다시 봐도 못 채운 칸은 미확인(unconfirmed)으로 남고 더 비우지 않는다. 낮은 점수 D435 관측은 여전히 버린다
+    s=Survey(max_revisits=1);x,y=BOX_CENTERS[0]
+    low={'x':x-.04,'y':y,'id':-1,'color':'red','shape':'cylinder','camera':'front_d435','confidence':.55}
+    assert s.observe(low,10.) and s.snapshot()['slots'][0]['color'] is None
+    todo,_=s.revisit()
+    assert len(todo)==12
+    assert s.observe(dict(low),11.)
+    r=s.snapshot()
+    assert r['slots'][0]['status']=='unconfirmed' and len(r['unconfirmed'])==12 and r['revisit']==[] and not r['complete']
+    assert s.revisit()==([],r['unconfirmed']) and s.snapshot()['slots'][0]['n_obs']==1
+
+def test_duplicate_id_sends_both_slots_to_revisit():
+    s=Survey();x,y=BOX_CENTERS[0]
+    for stamp in (10.,11.):
+        for side in (-1,1):
+            assert s.observe({'x':x+side*.04,'y':y,'id':0,'camera':'arm','confidence':1.},stamp)
+    r=s.snapshot()
+    assert {'1:-1','1:1'}<=set(r['revisit'])
+    assert all('duplicate_id:0' in r['slots'][i]['problems'] for i in (0,1))
+
+def test_revisit_refused_after_finish(tmp_path):
+    import pytest
+    s=filled();s.finish(tmp_path/'puck_survey.json')
+    with pytest.raises(ValueError):s.revisit()
+    for value in [-1,1.5,True]:
+        with pytest.raises(ValueError):Survey(max_revisits=value)
