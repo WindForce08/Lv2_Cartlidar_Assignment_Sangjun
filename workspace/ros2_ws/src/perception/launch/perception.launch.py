@@ -1,6 +1,7 @@
 """인지 노드를 한 컨테이너(perception_container)에 띄운다.
 
 ros2 launch perception perception.launch.py use_sim_time:=true          # 시뮬레이션 (Isaac Sim 이 영상·라이다 발행)
+ros2 launch perception perception.launch.py use_rear_obstacle:=false   # 후방 장애물 판독(뒤 D435 깊이) 끔
 ros2 launch perception perception.launch.py use_tfmini:=true           # 실물: TFmini 시리얼 읽기도 실행
 선택 인자: config_dir:=<폴더>(그 폴더의 perception.yaml · lidar.yaml · tfmini.yaml · puck_survey.yaml 사용 — 실험용 설정 사본)
           use_survey:=false(B0 퍽 등록부 끔), survey_output:=<파일>(조사 완료 JSON, 기본 ~/.ros/puck_survey/puck_survey.json)
@@ -51,6 +52,8 @@ def _setup(context):
         node('perception::ScanMergerNode', 'scan_merger', 'lidar.yaml'),
         node('perception::ObstacleStopNode', 'obstacle_stop', 'lidar.yaml'),
     ]
+    if as_bool(context.launch_configurations['use_rear_obstacle']):
+        nodes.append(node('perception::RearObstacleNode', 'rear_obstacle', 'perception.yaml'))
     if as_bool(context.launch_configurations['use_tfmini']):
         nodes.append(node('perception::TFminiNode', 'tfmini_node', 'tfmini.yaml'))
     actions = [ComposableNodeContainer(
@@ -69,6 +72,7 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('use_sim_time', default_value='false', description='시뮬레이션 시계 사용'),
         DeclareLaunchArgument('use_tfmini', default_value='false', description='TFmini 시리얼 읽기 실행 (실물)'),
+        DeclareLaunchArgument('use_rear_obstacle', default_value='true', description='뒤 D435 깊이로 후방 장애물 판독'),
         DeclareLaunchArgument('config_dir', default_value=DEFAULT_CONFIG, description='설정 폴더'),
         DeclareLaunchArgument('use_survey', default_value='true', description='B0 퍽 등록부 (/perception/puck_survey)'),
         DeclareLaunchArgument('survey_output', default_value='~/.ros/puck_survey/puck_survey.json',
