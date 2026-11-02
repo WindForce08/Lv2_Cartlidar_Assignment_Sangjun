@@ -65,6 +65,13 @@ class WaffleSidePickPPORunnerCfg(WafflePickPPORunnerCfg):
 
 
 @configclass
+class WaffleTopPickPPORunnerCfg(WaffleSidePickPPORunnerCfg):
+    """위에서 집기 (관측 36 = 35 + 기울임 모드, 행동 4 = 잡는 점 변위 + 집게). 옆에서 집기 N8 과 같은 탐색 설정 (직교 행동)."""
+
+    experiment_name = "waffle_toppick"
+
+
+@configclass
 class WaffleStorePPORunnerCfg(WafflePickPPORunnerCfg):
     """스토리지 넣기 (관측 41, 행동 6). 에피소드 10 s (300 스텝) 로 길어 gamma 0.99. ST3 부터 entropy 0.006 -> 0.003 (ST2 행동 표준편차 0.93 이 커서 mm 맞춤 방해)."""
 

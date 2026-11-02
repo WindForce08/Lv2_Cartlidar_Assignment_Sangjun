@@ -60,20 +60,19 @@ manipulator_node:
 
     arm_base_frame: arm_base_link
     fixed_frame: odom            # 측정 시각 → 현재 변환 기준
-    tfmini_frame: tfmini_link    # TODO TF 실측 필수 (pick ① 정확도)
+    range_frame: tool_link       # /arm_range 기준 (perception arm.range.frame 과 같게, x = 팔 접근 방향)
     tf_cache_time: 10.0          # s (측정값은 300ms 안의 것만 쓴다)
 
     pick:
       # 목표 우선순위: ① 정밀 정렬 결과 → ② perception object_pose (300ms 안, object_found)
       offset_tolerance: 0.01     # ① 조건 |arm_offset| <= 이 값. TODO arm_offset 단위 확정 후 (Perception 협의)
-      object_radius: 0.02        # ① TFmini 측정 지점(표면) → 파지점(중심). TODO 물체 크기 확정 후
-      approach_distance: 0.15    # 파지점 앞 접근 위치 거리 (m). TFmini 최소 0.1m 이상 떨어지게
-      # 파지점 거리 = TFmini 측정값 + range_offset (물체 반지름 + 센서가 끝단보다 뒤에 있는 거리)
-      # 보정 목표 측정값 = approach_distance - range_offset (>= 0.10, TFmini 최소 거리)
-      # ★ 적용 필요: TFmini 는 팔이 아니라 차체 1층 플레이트에 장착 (2026-10-28 확인). URDF tfmini_link 를 base_link 로 옮기면
-      #   '센서가 끝단보다 뒤에 있는 거리' 가정과 pick ① 계산을 다시 볼 것
-      range_offset: 0.02         # TODO TFmini 장착 위치(Perception 협의) · 물체 크기
-      range_mismatch_tolerance: 0.04  # 측정 기반 거리와 계획 거리 차이가 이보다 크면 TFmini 무시 (m)
+      object_radius: 0.015       # ① /arm_range 측정 지점(퍽 표면) → 파지점(중심). 퍽 30 mm 의 반 (perception puck.half_width)
+      approach_distance: 0.15    # 파지점 앞 접근 위치 거리 (m)
+      # /arm_range = perception 이 D435 · Arducam 측위로 낸 "끝단(tool_link) → 정렬 중인 퍽 표면" 거리 (TFmini 아님 — TFmini 는 박스 거리, drive 전용)
+      # 파지점 거리 = /arm_range + range_offset (끝단 기준이라 = 퍽 반지름)
+      # 보정 목표 측정값 = approach_distance - range_offset = 0.135
+      range_offset: 0.015
+      range_mismatch_tolerance: 0.04  # 측정 기반 거리와 계획 거리 차이가 이보다 크면 /arm_range 무시 (이웃 퍽 간격 40 mm) (m)
       max_final_approach: 0.25   # 최종 전진 거리 상한 (m), 넘으면 abort
       lift_height: 0.05
       cartesian_step: 0.01       # 최종 접근 · 들어올리기 직선 경로 경유점 간격 (m)

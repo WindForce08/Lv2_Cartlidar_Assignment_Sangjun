@@ -7,3 +7,7 @@ twist_mux:
       nav:    {topic: cmd_vel_nav,    timeout: 0.5,  priority: 10}    # nav2 체인의 마지막 출력만 (collision_monitor)
     locks:
       e_stop: {topic: e_stop, timeout: 0.5, priority: 255}            # OpenCRHardware 가 10 Hz 로 발행 — 끊겨도 잠김
+      # TFmini 비상 정지 (obstacle_stop, 10 Hz): drive(50) · nav(10) 를 막고 조이스틱(100)은 통과. 끊겨도 잠김.
+      #   drive FINE 정렬 동안은 obstacle_stop 정지 거리가 "목표 − 여유"로 내려가 박스 앞까지 다가갈 수 있다
+      #   TFmini 가 없는 실행(시뮬레이션 · use_tfmini:=false)은 twist_mux_no_obstacle.yaml (base_bringup obstacle_lock:=false)
+      obstacle: {topic: /perception/obstacle_stop, timeout: 0.5, priority: 60}

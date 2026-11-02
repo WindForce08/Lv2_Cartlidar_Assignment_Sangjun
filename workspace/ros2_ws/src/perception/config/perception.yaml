@@ -40,7 +40,17 @@ perception_node:
                                 # 근거(2026-10-27, A1 렌더 모의): 고정 0.25 로는 첫 장에 0.2 옆 퍽을 잠그고, 목표가 화면 밖으로 나간 동안 그 자리로 들어온 5 cm 옆 이웃을 잡음
       lock_size_ratio: 1.3      # ★ 따라가는 동안 박스 폭이 직전 장의 1/배 ~ 배 안이어야 같은 퍽 (라벨이 잘려 이웃과 합쳐진 상자는 약 1.5 배)
       lock_reacquire_size_ratio: 2.0   # ★ 놓친 뒤 다시 잡을 때 직전 폭 대비 배율
-      plane:                    # 팔 카메라 평면 교차 (arm_plane.hpp): 잠근 박스 중심 시선 ∩ 퍽 중심 높이 수평면 → /perception/arm_target · arm_range
+      # ★ 팔 끝(tool_link) → 퍽 거리 토픽이 둘이다. 이름이 비슷하니 헷갈리지 말 것 (하나로 합칠지 팀 결정 필요)
+      #   /arm_range            (아래 range)  : 퍽 **표면**까지. 태그 · D435 보유 점. manipulator 가 쓰는 것은 이것
+      #   /perception/arm_range (아래 plane)  : 퍽 **중심**까지. 팔 카메라 평면 교차. 예비 · 검증용, 받는 노드 없음
+      #   두 값은 퍽 반지름(약 15 mm)만큼 차이가 나는 것이 정상. TFmini(/tfmini/range)는 박스 앞면 거리라 둘 다와 다름
+      range:                    # /arm_range (arm_range.hpp): 팔 끝 → 정렬 중인 퍽 표면 거리. manipulator 미세 보정 · 최종 접근이 씀
+        frame: tool_link        # 거리 기준 (x = 팔 접근 방향). manipulator.yaml range_frame 과 같게
+        tag_gate: 0.03          # ★ [m] 태그 퍽 중심이 팔 축 옆으로 이 안이어야 씀 (이웃 퍽 간격 40 mm 보다 작게)
+        seed_gate: 0.05         # ★ [m] D435 보유 점의 팔 축 옆 거리 상한 (D435 깊이 · odom 오차)
+        hold_s: 3.0             # ★ [s] D435 가 목표를 마지막으로 본 뒤 보유 점을 쓰는 시간 (정밀 거리에서 D435 시야 밖)
+        max_range: 1.0          # [m] 이보다 먼 값은 무효(+inf)
+      plane:                   # 팔 카메라 평면 교차 (arm_plane.hpp): 잠근 박스 중심 시선 ∩ 퍽 중심 높이 수평면 → /perception/arm_target · arm_range
                                 #   D435 추적 위치의 예비(D435 가 못 볼 때 · 놓쳤을 때). 둘을 비교해 검증에도 쓴다
                                 #   A1 렌더 모의 재생(2026-11-02, 카메라 0.39~0.55 m): 퍽 중심 수평 오차 중앙 3.6 · p95 8.0 mm,
                                 #   D435 를 끈 뒤 팔만 3.7 · 13.1 mm (같은 모의 D435 추적 2.5 · 3.0 mm, 모의 깊이는 잡음 없음)

@@ -1,10 +1,12 @@
 // DriveNode (Controller 팀) — 바퀴 명령 주체는 이 노드 하나 (/cmd_vel_drive → twist_mux priority 50)
 //   /drive/navigate      목표가 현재 위치와 xy_goal_tolerance 이내면 yaw 차이만큼 nav2 spin, 아니면 navigate_to_pose
 //   /drive/align         goal 수신 뒤 첫 새 result 의 ARM_ALIGN 비트로 모드를 정하고 끝까지 유지
-//                        정밀: arm_offset → 회전, /arm_range(TFmini) → 전후 (20 Hz)
+//                        정밀: arm_offset → 회전, /tfmini/range (1층 TFmini → 박스 앞면, BoxRangeFilter) → 전후 (20 Hz)
+//                        정밀 동안 obstacle_stop 정지 거리를 "목표 − align.box_stop_margin" 으로 낮추고 (파라미터 approach_stop_m)
+//                        끝나면(성공 · 실패 · 취소 · 선점) 0 으로 되돌린다
 //                        먼 거리: object_pose(D435, base_link) → 회전 + 전진/후진, 범퍼 기준 거리, /scan 장애물 감시
 //   /drive/execute_skill 강화학습 정책 (robot_policy, CPU) → 속도
-//   result · /arm_range · /scan · odom 은 header.stamp 300 ms 지나면 버림. 바퀴 goal 은 한 번에 하나.
+//   result · /tfmini/range · /scan · odom 은 header.stamp 300 ms 지나면 버림. 바퀴 goal 은 한 번에 하나.
 #include <chrono>
 #include <cmath>
 #include <memory>
@@ -73,7 +75,15 @@ public:
     lost_s_ = declare_parameter("align.lost_timeout_s", 0.5);
     mode_wait_s_ = declare_parameter("align.mode_wait_s", 0.5);
     align_timeout_s_ = declare_parameter("align.timeout_s", 30.0);
-    min_fine_target_ = declare_parameter("align.min_target_distance", 0.10);
+    min_fine_target_ = declare_parameter("align.min_target_distance", 0.13);   // 박스 거리: 최소 측정 0.10 + 정지 여유
+    BoxRangeConfig bc;
+    bc.window = static_cast<int>(declare_parameter("align.box.window", bc.window));
+    bc.min_samples = static_cast<int>(declare_parameter("align.box.min_samples", bc.min_samples));
+    bc.spread_m = declare_parameter("align.box.spread_m", bc.spread_m);
+    box_ = BoxRangeFilter(bc);
+    box_stop_margin_ = declare_parameter("align.box.stop_margin", 0.03);
+    box_stop_min_ = declare_parameter("align.box.stop_min", 0.10);
+    obstacle_stop_node_ = declare_parameter("align.box.obstacle_stop_node", std::string("/obstacle_stop"));
     coarse_min_ = declare_parameter("align.coarse_min", 0.3);
     default_tol_ = declare_parameter("align.default_tolerance", 0.01);
     front_offset_ = declare_parameter("base.front_offset", 0.20);   // base_link → 범퍼 앞면 ★
@@ -111,8 +121,12 @@ public:
     cmd_pub_ = create_publisher<geometry_msgs::msg::TwistStamped>(names::CMD_VEL_DRIVE, 10);
     perc_sub_ = create_subscription<PerceptionResult>(names::PERCEPTION_RESULT, qos::result(),
         [this](PerceptionResult::ConstSharedPtr m) {result_ = m; result_rx_ = now();}, so);
-    range_sub_ = create_subscription<sensor_msgs::msg::Range>(names::ARM_RANGE, rclcpp::SensorDataQoS(),
-        [this](sensor_msgs::msg::Range::ConstSharedPtr m) {range_ = m;}, so);
+    box_sub_ = create_subscription<sensor_msgs::msg::Range>(names::TFMINI_RANGE, qos::sensor(),
+        [this](sensor_msgs::msg::Range::ConstSharedPtr m) {
+          const bool ok = std::isfinite(m->range) && m->range >= m->min_range && m->range <= m->max_range;
+          box_.push(rclcpp::Time(m->header.stamp, RCL_ROS_TIME).seconds(), ok ? std::optional<double>(m->range) : std::nullopt);
+        }, so);
+    obstacle_params_ = std::make_shared<rclcpp::AsyncParametersClient>(this, obstacle_stop_node_);
     scan_sub_ = create_subscription<sensor_msgs::msg::LaserScan>(names::SCAN, rclcpp::SensorDataQoS(),
         [this](sensor_msgs::msg::LaserScan::ConstSharedPtr m) {scan_ = m;}, so);
     odom_sub_ = create_subscription<nav_msgs::msg::Odometry>(names::ODOM_FILTERED, 10,
@@ -192,6 +206,7 @@ private:
   void preempt_all(const std::string & why)
   {
     if (align_gh_) {
+      set_box_approach(0.0);
       publish_cmd(0, 0);
       auto r = std::make_shared<Align::Result>();
       r->message = why;
@@ -306,11 +321,31 @@ private:
     align_start_ = now();
     last_valid_ = align_start_;
     align_target_ = gh->get_goal()->target_distance;
+    box_.reset();
     align_tol_ = gh->get_goal()->tolerance > 0.0 ? gh->get_goal()->tolerance : default_tol_;
+  }
+
+  // obstacle_stop 정지 거리 (0 = 평소로). 응답을 기다리지 않는다 — 실패하면 경고만 (정지 거리가 평소 값이면 박스 앞에서 서서 정렬이 시간 초과)
+  void set_box_approach(double stop_m)
+  {
+    if (stop_m == 0.0 && !box_approach_set_) {return;}
+    box_approach_set_ = stop_m != 0.0;
+    if (!obstacle_params_->service_is_ready()) {
+      RCLCPP_WARN(get_logger(), "%s 파라미터 서비스 없음 — 박스 접근 정지 거리 %.3f 를 넣지 못함", obstacle_stop_node_.c_str(), stop_m);
+      return;
+    }
+    obstacle_params_->set_parameters({rclcpp::Parameter("approach_stop_m", stop_m)},
+      [this, stop_m](std::shared_future<std::vector<rcl_interfaces::msg::SetParametersResult>> f) {
+        const auto r = f.get();
+        if (r.empty() || !r[0].successful) {
+          RCLCPP_WARN(get_logger(), "obstacle_stop approach_stop_m=%.3f 거부: %s", stop_m, r.empty() ? "" : r[0].reason.c_str());
+        }
+      });
   }
 
   void finish_align(bool ok, const std::string & msg)
   {
+    set_box_approach(0.0);
     publish_cmd(0, 0);
     auto r = std::make_shared<Align::Result>();
     r->success = ok;
@@ -323,6 +358,7 @@ private:
   void tick_align()
   {
     if (align_gh_->is_canceling()) {
+      set_box_approach(0.0);
       publish_cmd(0, 0);
       auto r = std::make_shared<Align::Result>();
       r->message = "취소됨";
@@ -341,7 +377,8 @@ private:
           return;
         }
         last_valid_ = t;
-        RCLCPP_INFO(get_logger(), "align 모드: %s, 목표 %.3f m", align_mode_ == AlignMode::FINE ? "정밀(TFmini)" : "먼 거리(범퍼)",
+        if (align_mode_ == AlignMode::FINE) {set_box_approach(box_approach_stop(align_target_, box_stop_margin_, box_stop_min_));}
+        RCLCPP_INFO(get_logger(), "align 모드: %s, 목표 %.3f m", align_mode_ == AlignMode::FINE ? "정밀(TFmini 박스 거리)" : "먼 거리(범퍼)",
           align_target_);
       } else if ((t - align_start_).seconds() > mode_wait_s_) {
         finish_align(false, "0.5 s 안에 새 perception result 없음");
@@ -353,17 +390,18 @@ private:
     AlignCmd c;
     if (align_mode_ == AlignMode::FINE) {
       const bool off_ok = result_ && fresh(result_->header.stamp) && (result_->mode & PerceptionMode::ARM_ALIGN) && result_->offset_valid;
-      const bool rng_ok = range_ && fresh(range_->header.stamp) && std::isfinite(range_->range) &&
-        range_->range >= range_->min_range && range_->range <= range_->max_range;
-      if (!off_ok || !rng_ok) {
+      const auto box = box_.value(t.seconds());
+      if (!off_ok || !box) {
         publish_cmd(0, 0);   // 정밀 중 값이 끊겨도 먼 거리로 바꾸지 않음 (팔을 편 채 범퍼 기준 접근 = 충돌)
-        if ((t - last_valid_).seconds() > lost_s_) {finish_align(false, !off_ok ? "물체 놓침 (arm_offset)" : "거리 무효 (/arm_range)");}
+        if ((t - last_valid_).seconds() > lost_s_) {
+          finish_align(false, !off_ok ? "물체 놓침 (arm_offset)" : "박스 거리 무효 (/tfmini/range 끊김 · 무효 · 박스 모서리)");
+        }
         return;
       }
       last_valid_ = t;
-      c = fine_.step(result_->arm_offset.x, range_->range, align_target_, align_tol_);
+      c = fine_.step(result_->arm_offset.x, *box, align_target_, align_tol_);
       fb->lateral_error = static_cast<float>(result_->arm_offset.x);
-      fb->distance = range_->range;
+      fb->distance = static_cast<float>(*box);
     } else {
       const bool obj_ok = result_ && fresh(result_->header.stamp) && result_->object_found;
       if (!obj_ok) {
@@ -512,7 +550,11 @@ private:
   // 입력 (최신값, 300 ms 규칙은 쓸 때 확인)
   PerceptionResult::ConstSharedPtr result_;
   rclcpp::Time result_rx_{0, 0, RCL_ROS_TIME};
-  sensor_msgs::msg::Range::ConstSharedPtr range_;
+  BoxRangeFilter box_;   // /tfmini/range (박스 앞면)
+  double box_stop_margin_ = 0.03, box_stop_min_ = 0.10;
+  std::string obstacle_stop_node_;
+  bool box_approach_set_ = false;
+  std::shared_ptr<rclcpp::AsyncParametersClient> obstacle_params_;
   sensor_msgs::msg::LaserScan::ConstSharedPtr scan_;
   nav_msgs::msg::Odometry::ConstSharedPtr odom_;
 
@@ -533,7 +575,7 @@ private:
   std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
   rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr cmd_pub_;
   rclcpp::Subscription<PerceptionResult>::SharedPtr perc_sub_;
-  rclcpp::Subscription<sensor_msgs::msg::Range>::SharedPtr range_sub_;
+  rclcpp::Subscription<sensor_msgs::msg::Range>::SharedPtr box_sub_;
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
   rclcpp_action::Client<Nav>::SharedPtr nav_client_;

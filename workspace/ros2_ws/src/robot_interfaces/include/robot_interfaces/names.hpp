@@ -14,7 +14,9 @@ inline constexpr const char * PERCEPTION_PUCKS = "/perception/pucks";
 inline constexpr const char * PERCEPTION_TASK_MARKER = "/perception/task_marker";
 inline constexpr const char * PERCEPTION_SIGNAL = "/perception/signal";
 inline constexpr const char * PERCEPTION_BARCODE = "/perception/barcode";
-inline constexpr const char * ARM_RANGE = "/arm_range";
+inline constexpr const char * ARM_RANGE = "/arm_range";            // perception_node: 팔 끝 → 정렬 중인 퍽 표면 (D435 · Arducam 측위)
+inline constexpr const char * TFMINI_RANGE = "/tfmini/range";      // tfmini_node: 1층 렌즈 → 퍽이 놓인 박스 앞면
+inline constexpr const char * OBSTACLE_STOP = "/perception/obstacle_stop";
 inline constexpr const char * SCAN = "/scan";
 inline constexpr const char * ODOM_FILTERED = "/odometry/filtered";
 inline constexpr const char * CMD_VEL_DRIVE = "/cmd_vel_drive";
@@ -46,7 +48,7 @@ namespace qos
 {
 // /perception/result: Reliable, depth 1 (최신 하나만, 받는 쪽은 stamp 300 ms 규칙)
 inline rclcpp::QoS result() {return rclcpp::QoS(1).reliable();}
-// /arm_range · /scan: SensorData (BestEffort)
+// /arm_range · /tfmini/range · /scan: SensorData (BestEffort)
 inline rclcpp::QoS sensor() {return rclcpp::SensorDataQoS();}
 // /e_stop: Reliable + TransientLocal, depth 1 (늦게 켠 노드도 현재 값을 받음)
 inline rclcpp::QoS e_stop() {return rclcpp::QoS(1).reliable().transient_local();}

@@ -1,4 +1,4 @@
-# 라이다 설정: scan_merger(앞·뒤 LDS-03 합치기) · obstacle_stop(TFmini 앞쪽 거리 비상 정지). ★ = 실물에서 다시 확인할 값
+# 라이다 설정: scan_merger(앞·뒤 LDS-03 합치기) · obstacle_stop(TFmini 박스 · 앞쪽 거리 비상 정지 — bringup 에서는 control_container). ★ = 실물에서 다시 확인할 값
 scan_merger:
   ros__parameters:
     inputs: [/scan_front, /scan_rear]   # 첫 항목이 발행 기준(trigger). 라이다는 3층 판 아래 거꾸로 달림 → URDF scan 프레임에 roll π
@@ -32,3 +32,8 @@ obstacle_stop:
     near_m: 0.30                # 무효 값 직전 거리가 이보다 가까우면 "너무 가까움"으로 보고 정지 유지
     stale_s: 0.2                # [s] 입력이 이만큼 없으면 정지
     publish_rate: 10.0          # [Hz] 상태를 이 주기로 다시 발행 (바뀔 때는 바로)
+    # 박스 접근 (drive FINE 정렬): drive_node 가 approach_stop_m 을 "목표 − align.box_stop_margin" 으로 넣고 끝나면 0 으로 되돌린다
+    approach_stop_m: 0.0        # 0 = 끔 (평소 stop_m). 0 이 아니면 approach_min_m 이상 · stop_m 미만
+    approach_min_m: 0.10        # TFmini 최소 측정 거리
+    approach_hysteresis: 0.02   # [m] 접근 중 해제 · 너무 가까움 거리 = approach_stop_m + 이 값
+    approach_max_s: 60.0        # [s] drive 가 되돌리지 못해도 이 시간 뒤 평소 거리로

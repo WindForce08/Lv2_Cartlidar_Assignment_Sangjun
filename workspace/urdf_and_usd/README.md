@@ -6,7 +6,7 @@
 |---|---|---|
 | `waffle_4wd_description/` | ROS 2 (RViz) · Gazebo Sim 패키지: `urdf/waffle_4wd.urdf` · `waffle_4wd_loaded.urdf` · `.urdf.xacro` (collision:=full/light, pucks:=true/false), 메시, 센서 값, 팔레트 칸 자리, launch. 작업 공간 `src/` 에 넣고 `colcon build` | 그 폴더 `README.md`, 바뀐 것 `CHANGES_B.md` |
 | `isaac/` | Isaac Sim / Isaac Lab: USD 3 개 (`usd/light` 가벼운 · `usd/full` 정밀 · `usd/loaded` 가벼운 + 퍽 12개), 경기장 장면 (`scenes/`), 로봇 · 센서 설정 (`waffle_4wd_isaac/`), 물리값 `robot_params.json`, 실행기 `run.sh` | 그 폴더 `README.md`, `./run.sh check` · `./run.sh maze` |
-| `isaac/rl/` · `policy/manipulator/` | 강화 학습 과제 (집기 · 옮기기 · 넣기) 코드 · 정책 · 체크포인트 | `정책_학습기록.md`, `run_rl.sh` |
+| `isaac/rl/` · `policy/manipulator/` (같은 내용) | 강화 학습 과제 코드 · 정책 · 체크포인트. B안 팔레트: 위에서 집기 `Waffle-TopPick-Direct` + 놓기 고정 궤적 (`pallet_traj.py` · `pallet_place_check.py`) | `정책_학습기록.md` 4.15 절, `run_rl.sh` |
 
 ## 주요 파일
 | 파일 | 내용 |
@@ -30,4 +30,9 @@
 - 폴더 구조 그대로 둘 것: `isaac/urdf/*.urdf` 와 `isaac/tools/*.py` 가 `../waffle_4wd_description/` 를 상대 경로로 쓴다 (USD 는 메시가 안에 들어 있어 USD 폴더만 옮겨도 됨).
 - 큰 파일: `waffle_4wd_description/meshes/b/body_keep.stl` 31 MB, USD `geometries.usd` 각 24 MB.
 - **stow 자세**: zero → stow 로 갈 때 위팔이 팔레트 칸에 걸린다 (Isaac 오차 0.21 rad). J1 을 먼저 다 돌린 뒤 접을 것 (`CHANGES_B.md` 확인할 것 1).
-- `isaac/rl/` · `policy/manipulator/` 의 옮기기 · 넣기 과제 목표 (`store_starts.json` 의 C · P · N 통) 는 아직 옛 보관통 기준 - 팔레트 칸 (`config/pallet_slots.yaml`) 으로 바꿔야 한다. 로봇 USD 는 이미 B안이다.
+- 강화 학습 (`isaac/rl/` · `policy/manipulator/`, 2026-11-02): 팔레트 칸에는 **위에서 집기**로 (옆에서 쥐면 3열 4칸만). 집기 = `Waffle-TopPick-Direct` (상자를 로봇 앞 0 ~ 5 cm 에,
+  `policies/toppick_latest.pt` 실제 과제 86 % = 기울임 92 % · 수직 80 %, `./run_rl.sh toppick_eval`),
+  놓기 = 고정 궤적 (바깥 열부터 채움). Isaac 놓기 확인 **24/24**: 뒤 프로파일 기둥 옆 ±147° · ±155.6° 4칸은 **집게를 45° 기울여** 놓음 (퍽은 세운 채, joint5 한계 그대로).
+  이 4칸 퍽은 상자에서 집을 때부터 45° 로 쥠 (TopPick 기울임 모드).
+  남은 것: 손가락 폭 26 vs 홈 24 mm, 팔 처짐 보정 (호스트 적분), 퍽 · 팔레트 마찰 실측 (`isaac/rl/정책_학습기록.md` 4.15 절).
+  옛 통 (C · P · N) 기준 과제 (SidePick · Store · Insert) 는 쓰지 않는다.

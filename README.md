@@ -38,9 +38,11 @@ source workspace/ros2_ws/install/setup.bash
 ros2 launch bringup bringup.launch.py
 ```
 
-주요 인자: `use_hardware` · `use_teleop` · `use_perception` · `use_ekf` (기본 true), `ports` (기본 `/dev/ttyACM0,/dev/ttyACM1`, 역할은 프로토콜 응답으로 판별), `skill_enabled` (기본 false, ONNX 빌드에서만 true),
+주요 인자: `use_hardware` · `use_teleop` · `use_perception` · `use_ekf` · `use_tfmini` (기본 true — TFmini 박스 거리 · obstacle_stop · twist_mux obstacle lock, 시뮬레이션은 false), `ports` (기본 `/dev/ttyACM0,/dev/ttyACM1`, 역할은 프로토콜 응답으로 판별), `skill_enabled` (기본 false, ONNX 빌드에서만 true),
 `drive` (기본 `belt` = 증속벨트 1:1.5, `direct` = 직결 — URDF 바퀴 위치 · 한계, 기어비, diff_drive 바퀴 간격 · 속도 한계가 같이 바뀜).
 nav2 · slam_toolbox 는 기존 launch 를 쓰고, nav2 체인의 마지막 출력만 `/cmd_vel_nav` 로 둔다.
+퍽 박스(205 × 205 × 70 mm)는 LiDAR 평면(바닥 위 약 80 mm)보다 낮아 `/scan` 에 잡히지 않는다 → nav2 지도에 박스 6개(`perception_survey` `BOX_CENTERS`)를 정적 장애물 · keepout 으로 넣고, 마지막 접근은 drive 정렬(COARSE → FINE, TFmini 박스 거리)이 맡는다 ★
+Gazebo 모의에서 TFmini 를 쓰려면 `ros2 run perception scan_to_range` (`/tfmini/scan` LaserScan → `/tfmini/range`).
 
 운용 순서:
 1. 조이스틱을 켠다 (0.5 s 끊기면 E-stop 잠김).
@@ -67,7 +69,9 @@ colcon test && colcon test-result --verbose
 |---|---|
 | 접근 · 차체 | `approach.ready_reach`, `base.front_offset`, `target.exclude_min/max` |
 | 인식 | HSV 범위 (현장 조명), `d435.white_balance` · `exposure`, `target.size_min_m/max_m` |
-| TF · 카메라 | tfmini_link · arm_camera_link TF, Arducam 보정, 태그 크기 |
+| TF · 카메라 | tfmini_link (URDF base_link (0.130, 0, 0.0243) = 설계값, 바닥 위 31 mm) · arm_camera_link TF, Arducam 보정, 태그 크기 |
+| TFmini (박스 거리) | 실제 박스 재질 앞 0.10~0.40 m 줄자 실측 → `tfmini.yaml` `calib_raw_m` · `calib_true_m` (사양 ±5 cm), `min_strength`, mm 출력 확인. 미션표 `approach <거리>` = 렌즈 → 박스 앞면 (팔이 닿는 거리, ≥ 0.13). 빔이 박스 앞면(높이 70 mm)에 맞는지 (렌즈 바닥 위 약 31 mm) |
+| /arm_range | `perception.yaml` `arm.range.*` (tag_gate · seed_gate · hold_s), D435 보유 점 오차 (정밀 거리에서 D435 시야 밖) |
 | 팔 | STOW · READY · PLACE · TAG_VIEW 관절각, 링크 길이 · 관절 한계 (manipulator.yaml · URDF · config.h 세 곳 같게) |
 | 펌웨어 | 바퀴 ID · 방향 · 속도 한계, `WHEEL_MODEL` (바퀴 XM430-W210 = 1030 확정) |
 | 구동 (`drive:=belt`) | 바퀴 간격 실측 (URDF `wheel_y` 0.1585 · `drive_belt.yaml` `wheel_separation` 0.317 = 설계값), 실행 후 `ros2 param get /diff_drive_controller wheel_separation` = 0.317 확인 (`drive_belt.yaml` 이 기본 설정을 덮어쓰는지), `wheel_separation_multiplier` (회전 시험), 벨트 장력 · 이빨 건너뜀 |

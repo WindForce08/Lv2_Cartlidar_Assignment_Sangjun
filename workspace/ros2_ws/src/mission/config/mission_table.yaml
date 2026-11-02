@@ -1,8 +1,8 @@
 # 미션표 (Mission 팀) — 공통 시작 pose(TAG_VIEW) → read_tag 뒤에 붙는다
 #   navigate <위치>            주행 + 팔 STOW (병렬)
 #   search                     STOW → OFF → SEARCH_FRONT | SEARCH_REAR, 못 찾으면 45°씩 최대 4번 회전
-#   approach <거리>            STOW → COARSE (align.coarse_distance) → READY → FINE <거리> (m, TFmini 기준, >= 0.10)
-#   pick                       SEARCH_FRONT | ARM_ALIGN 유지, grasped 확인
+#   approach <거리>            STOW → COARSE (align.coarse_distance) → READY → FINE <거리> (m, 1층 TFmini 렌즈 → 퍽이 놓인 박스 앞면, >= 0.13) ★ 팔이 닿는 거리로 실측
+#   pick                       SEARCH_FRONT | ARM_ALIGN | READ_TAG 유지, grasped 확인 (/arm_range 로 미세 보정)
 #   pose <자세>                STOW · READY · PLACE · TAG_VIEW
 #   skill <drive|manipulator> <정책> [timeout] [mode=이름+이름] [fallback=단계]
 #     mode 없으면 SEARCH_FRONT+ARM_ALIGN, 숫자 불가. fallback의 공백은 ':' (예: fallback=navigate:home)

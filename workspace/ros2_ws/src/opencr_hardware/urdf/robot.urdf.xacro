@@ -110,9 +110,11 @@
        위치 · 방향은 기준 모델 arm_camera_joint (joint4 축에서 0.128256 0 0.077446, 아래로 15°) — link5 는 joint4 축에서 x 0.04 -->
   <xacro:fixed_link name="arm_camera_link" parent="link5" xyz="0.088256 0 0.077446" rpy="0 0.261788 0"/>
   <xacro:fixed_link name="arm_camera_optical_frame" parent="arm_camera_link" xyz="0 0 0" rpy="-1.570796 0 -1.570796"/>
-  <!-- TFmini 는 차체 1층 플레이트 앞쪽 바닥 브라켓에 장착, 정면 수평 (2026-10-28 확인). 기준 모델 tfmini_link (바닥 위 31.05 mm).
-       팔 끝이 아니라 차체 앞에서 잰 거리이므로 manipulator.yaml pick ① (range_offset) 가정도 다시 볼 것 -->
+  <!-- TFmini Plus: 차체 1층 플레이트 앞 가운데 받침대 (2026-10-28 확인, 받침대 설계 2026-10-31). 퍽이 놓인 박스 앞면 거리 → drive FINE · obstacle_stop.
+       원점 = 렌즈면, +x 앞. 기준 모델 tfmini_link: 바닥 위 31.05 mm = base_link(바닥 위 6.75 mm) 기준 z +0.0243 ★ 실측
+       팔 끝 → 퍽 거리(/arm_range)는 TFmini 가 아니라 perception 계산값 (manipulator range_frame = tool_link) -->
   <xacro:fixed_link name="tfmini_link"     parent="base_link" xyz="0.130 0 0.0243" rpy="0 0 0"/>
+
   <xacro:fixed_link name="tool_link"       parent="gripper_roll_link" xyz="0.086 0 0" rpy="0 0 0"/>
 
   <xacro:opencr_ros2_control ports="$(arg ports)" wheel_count="${wheel_count}" use_gripper="$(arg use_gripper)"

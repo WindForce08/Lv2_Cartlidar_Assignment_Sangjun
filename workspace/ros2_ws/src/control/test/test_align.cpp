@@ -81,3 +81,39 @@ TEST(ScanSafety, FrontAndRearSectors)
   r[5] = 0.2f;                                    // 후방 (-175°) 0.2 m
   EXPECT_TRUE(scan_blocked(r, amin, inc, M_PI, 0.349, 0.3));
 }
+
+// 박스 앞면 거리 다듬기: 중앙값, 퍼짐 · 무효 · 오래된 값
+TEST(BoxRange, MedianOfFreshValid)
+{
+  BoxRangeFilter f;   // window 5, min 3, spread 0.03, age 0.3
+  EXPECT_FALSE(f.value(0.0));
+  f.push(0.00, 0.200);
+  f.push(0.02, 0.210);
+  EXPECT_FALSE(f.value(0.02));                   // 2개 < 3
+  f.push(0.04, 0.205);
+  ASSERT_TRUE(f.value(0.04));
+  EXPECT_NEAR(*f.value(0.04), 0.205, 1e-9);
+  f.push(0.06, 0.202);
+  EXPECT_NEAR(*f.value(0.06), 0.2035, 1e-9);     // 짝수 개 → 가운데 둘 평균
+  EXPECT_FALSE(f.value(0.40));                   // 모두 300 ms 넘음
+}
+
+TEST(BoxRange, EdgeFlickerAndInvalidRejected)
+{
+  BoxRangeFilter f;
+  for (double t : {0.00, 0.02, 0.04}) {f.push(t, 0.20);}
+  f.push(0.06, 0.85);                            // 빔이 박스 옆으로 → 뒤쪽 먼 곳
+  EXPECT_FALSE(f.value(0.06));
+  BoxRangeFilter g;
+  g.push(0.00, 0.20);
+  g.push(0.02, std::nullopt);
+  g.push(0.04, std::nullopt);
+  g.push(0.06, std::nullopt);
+  EXPECT_FALSE(g.value(0.06));                   // 무효가 섞여 유효 1개
+}
+
+TEST(BoxRange, ApproachStopDistance)
+{
+  EXPECT_NEAR(box_approach_stop(0.15, 0.03, 0.10), 0.12, 1e-9);
+  EXPECT_NEAR(box_approach_stop(0.11, 0.03, 0.10), 0.10, 1e-9);   // TFmini 최소 거리 아래로는 안 내림
+}

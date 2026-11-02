@@ -111,3 +111,38 @@ TEST(ObstacleStop, StaleInputStops)
   EXPECT_TRUE(s.update(0.33, 1.0));
   EXPECT_FALSE(s.update(0.35, 1.0));
 }
+
+// 박스 접근: 정지 거리를 목표 앞(0.12)으로 바꾸면 0.15 까지 다가가도 서지 않고, 그보다 가까우면 선다
+TEST(ObstacleStop, ApproachLowersStopDistance)
+{
+  StopConfig c;   // 평소 stop 0.20 · release 0.30 · near 0.30, approach_hysteresis 0.02
+  ObstacleStop s(c);
+  for (int i = 0; i < 3; ++i) {s.update(0.02 * i, 0.40);}
+  ASSERT_FALSE(s.stopped());
+  EXPECT_TRUE(s.update(0.10, 0.19));             // 평소 거리로는 정지
+  s.set_approach(0.12);
+  EXPECT_DOUBLE_EQ(s.stop_m(), 0.12);
+  EXPECT_DOUBLE_EQ(s.release_m(), 0.14);
+  EXPECT_TRUE(s.update(0.12, 0.17));             // 해제 거리(0.14) 이상 연속 3번이어야 풂
+  EXPECT_TRUE(s.update(0.14, 0.16));
+  EXPECT_FALSE(s.update(0.16, 0.15));
+  EXPECT_FALSE(s.update(0.18, 0.13));            // 0.12 ~ 0.14: 풀린 상태 유지
+  EXPECT_TRUE(s.update(0.20, 0.11));             // 목표보다 더 가까움 → 정지
+  EXPECT_EQ(s.reason(), "obstacle");
+  EXPECT_TRUE(s.update(0.22, std::nullopt));     // 최소 거리 안 → 너무 가까움 유지
+  EXPECT_EQ(s.reason(), "too_close");
+}
+
+TEST(ObstacleStop, ApproachClearRestoresNormal)
+{
+  StopConfig c;
+  ObstacleStop s(c);
+  s.set_approach(0.12);
+  for (int i = 0; i < 3; ++i) {s.update(0.02 * i, 0.15);}
+  ASSERT_FALSE(s.stopped());
+  s.set_approach(std::nullopt);                  // 끝 → 평소 거리
+  EXPECT_DOUBLE_EQ(s.stop_m(), 0.20);
+  EXPECT_TRUE(s.update(0.10, 0.15));             // 0.15 < 0.20 → 정지
+  // 무효 값: 직전 0.15 < near 0.30 → 너무 가까움
+  EXPECT_TRUE(s.update(0.12, std::nullopt));
+}

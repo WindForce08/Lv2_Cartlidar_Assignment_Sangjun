@@ -199,10 +199,11 @@ TEST(RobotDescription, RobotUrdfProvidesFramesUsedByOtherNodes)
 
   std::string urdf;
   ASSERT_TRUE(expand_xacro(read_file(PKG_DIR "/urdf/robot.urdf.xacro"), urdf)) << urdf;
-  // ekf · mission · lidar (base_link), Perception 찾기 (base_footprint), IMU broadcaster (imu_link), Controller (arm_base_link · tfmini_link),
-  // LiDAR 드라이버 frame_id (laser_front · laser_rear), Arducam UVC 드라이버 frame_id (arm_camera_optical_frame),
+  // ekf · mission · lidar (base_link), Perception 찾기 (base_footprint), IMU broadcaster (imu_link), Controller (arm_base_link),
+  // TFmini (tfmini_link), /arm_range · /perception/arm_range 기준 (tool_link — perception arm.range.frame · arm.plane.range_frame,
+  // manipulator range_frame), LiDAR 드라이버 frame_id (laser_front · laser_rear), Arducam UVC 드라이버 frame_id (arm_camera_optical_frame),
   // realsense2_camera TF 뿌리 (top_camera_front_link · top_camera_rear_link)
-  for (const char * link : {"base_link", "base_footprint", "imu_link", "arm_base_link", "tfmini_link",
+  for (const char * link : {"base_link", "base_footprint", "imu_link", "arm_base_link", "tfmini_link", "tool_link",
       "laser_front", "laser_rear", "arm_camera_optical_frame", "top_camera_front_link", "top_camera_rear_link"})
   {
     EXPECT_NE(urdf.find(std::string("<link name=\"") + link + "\""), std::string::npos) << link;
@@ -228,7 +229,7 @@ TEST(RobotDescription, RobotUrdfProvidesFramesUsedByOtherNodes)
     ASSERT_EQ(joints.count(laser), 1u) << laser;
     EXPECT_NEAR(std::abs(joints.at(laser).rpy[0]), M_PI, 1e-5) << laser;
   }
-  // TFmini 는 차체 1층 플레이트에 장착 (2026-10-28 확인) — 팔이 움직여도 거리 기준이 바뀌지 않아야 한다
+  // TFmini 는 차체 1층 플레이트 앞 (박스 앞면 거리, drive FINE · obstacle_stop) — 팔이 움직여도 거리 기준이 바뀌지 않아야 한다
   ASSERT_EQ(joints.count("tfmini_link_joint"), 1u);
   EXPECT_EQ(joints.at("tfmini_link_joint").parent, "base_link");
   // realsense 드라이버가 발행하는 좌표를 URDF 가 또 만들면 TF 부모가 둘이 됨

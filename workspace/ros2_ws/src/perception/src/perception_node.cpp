@@ -31,6 +31,12 @@
 //      처리 주기마다 차례로 본다: 켜진 등 후보(signal_light.hpp) → 깊이로 크기 · 높이 거름 → 같은 자리 점멸로 신호등 고정
 //      → 프레임 상태(켜진 등이 없고 칸 앞을 무엇이 가리면 꺼짐이 아니라 모름) → 점멸 순서 세기(signal_sequence.hpp).
 //      READ_SIGNAL 을 끄면 센 것을 지운다
+//   /arm_range (토픽, Range): ARM_ALIGN 이 켜져 있으면 팔 영상마다 팔 끝(arm.range.frame, 기본 tool_link) → 정렬 중인 퍽 표면 거리
+//      (arm_range.hpp): ① Arducam 태그 퍽 중심(READ_TAG 도 켜졌을 때) ② D435 추적 목표를 odom 에 붙잡아 둔 점(hold_s 안).
+//      stamp = 팔 영상 촬영 시각. 못 구하면 +inf. TFmini 는 박스 앞면 거리(/tfmini/range) 전용이라 여기 쓰지 않는다
+//      ★ 위 ARM_ALIGN 의 /perception/arm_range 와 이름이 비슷하지만 다른 토픽이다 — 헷갈리지 말 것 (합칠지 팀 결정 필요)
+//        /arm_range            = 퍽 **표면**까지 (태그 · D435 보유 점), manipulator 가 씀
+//        /perception/arm_range = 퍽 **중심**까지 (팔 카메라 평면 교차), 예비 · 검증용. 두 값 차이 ≈ 퍽 반지름
 //   /perception/check_dice (서비스, CheckDice): 가장 최근 /perception/pucks 목록으로 선반 위 3×3 주사위 판정(dice_check.hpp)
 //   /perception/barcode (토픽, Barcode): READ_BARCODE 가 켜져 있으면 두 가지를 낸다
 //      LOCATE: barcode.camera D435 깊이를 barcode.depth_frames 장 모아 평균(로봇이 멈춘 동안, 평균 중 odom 으로
@@ -40,6 +46,7 @@
 #include <algorithm>
 #include <atomic>
 #include <deque>
+#include <limits>
 #include <chrono>
 #include <future>
 #include <cmath>
@@ -67,10 +74,12 @@
 #include "robot_interfaces/srv/set_perception_mode.hpp"
 #include "sensor_msgs/msg/camera_info.hpp"
 #include "sensor_msgs/msg/image.hpp"
-#include "sensor_msgs/msg/range.hpp"
 #include "geometry_msgs/msg/point_stamped.hpp"
 #include "perception/arm_plane.hpp"
+#include "perception/arm_range.hpp"
 #include "perception/arm_target_lock.hpp"
+#include "sensor_msgs/msg/range.hpp"
+#include "std_msgs/msg/header.hpp"
 #include "perception/barcode_locator.hpp"
 #include "perception/barcode_reader.hpp"
 #include "perception/camera_info_check.hpp"
@@ -449,6 +458,16 @@ public:
     marker_pub_ = create_publisher<TaskMarker>(names::PERCEPTION_TASK_MARKER, qos::result());
     signal_pub_ = create_publisher<SignalMsg>(names::PERCEPTION_SIGNAL, qos::result());
     barcode_pub_ = create_publisher<BarcodeMsg>(names::PERCEPTION_BARCODE, qos::result());
+    // ★ 팔 끝 → 퍽 거리 토픽이 둘 (헷갈리지 말 것): /arm_range = 퍽 표면 (manipulator 가 씀) · /perception/arm_range = 퍽 중심 (예비 · 검증)
+    // /arm_range: 팔 끝 → 정렬 중인 퍽 표면 (arm_range.hpp). 퍽 반지름은 puck.half_width 와 같게
+    arm_range_frame_ = declare_parameter("arm.range.frame", arm_range_frame_);
+    arm_range_cfg_.tag_gate = declare_parameter("arm.range.tag_gate", arm_range_cfg_.tag_gate);
+    arm_range_cfg_.seed_gate = declare_parameter("arm.range.seed_gate", arm_range_cfg_.seed_gate);
+    arm_range_cfg_.hold_s = declare_parameter("arm.range.hold_s", arm_range_cfg_.hold_s);
+    arm_range_cfg_.surface_offset = puck_geom_.half_width;
+    arm_range_max_ = declare_parameter("arm.range.max_range", arm_range_max_);
+    arm_range_pub_ = create_publisher<sensor_msgs::msg::Range>(names::ARM_RANGE, qos::sensor());
+    // /perception/arm_range: 팔 끝 → 퍽 중심 (arm_plane.hpp, 평면 교차). 위 /arm_range 와 다른 토픽
     if (plane_.enabled) {
       plane_target_pub_ = create_publisher<geometry_msgs::msg::PointStamped>(
         declare_parameter("arm.plane.target_topic", std::string("/perception/arm_target")), qos::result());
@@ -1546,6 +1565,44 @@ private:
     if (want_marker && T) {
       arm_.marker = best_marker(places, *T, img->header.stamp, Puck::CAMERA_ARM);
     }
+    if (mode & SetMode::Request::ARM_ALIGN) {publish_arm_range(img->header, (mode & SetMode::Request::READ_TAG) != 0);}
+  }
+
+  // /arm_range: 촬영 시각 팔 자세로 태그 퍽 중심(base_link) · D435 보유 점(odom) 을 range_frame 으로 옮겨 거리 계산
+  void publish_arm_range(const std_msgs::msg::Header & img_header, bool use_tags)
+  {
+    const rclcpp::Time stamp(img_header.stamp, get_clock()->get_clock_type());
+    std::vector<P3> tags;
+    if (use_tags && !arm_.pucks.empty()) {
+      if (const auto T = lookup_at(arm_range_frame_, base_frame_, stamp, false)) {
+        for (const auto & p : arm_.pucks) {
+          const tf2::Vector3 v = *T * tf2::Vector3(p.pose.position.x, p.pose.position.y, p.pose.position.z);
+          tags.push_back({v.x(), v.y(), v.z()});
+        }
+      }
+    }
+    std::optional<P3> seed;
+    if (seed_odom_) {
+      if (const auto T = lookup_at(arm_range_frame_, odom_frame_, stamp, false)) {
+        const tf2::Vector3 v = *T * tf2::Vector3(seed_odom_->x, seed_odom_->y, seed_odom_->z);
+        seed = P3{v.x(), v.y(), v.z()};
+      }
+    }
+    const auto e = arm_range(tags, seed, stamp.seconds() - seed_t_, arm_range_cfg_);
+    sensor_msgs::msg::Range m;
+    m.header.stamp = img_header.stamp;
+    m.header.frame_id = arm_range_frame_;
+    m.radiation_type = sensor_msgs::msg::Range::INFRARED;   // 측위 계산값 (Range 에 맞는 종류가 없음)
+    m.field_of_view = 0.0f;
+    m.min_range = 0.0f;
+    m.max_range = static_cast<float>(arm_range_max_);
+    m.range = std::numeric_limits<float>::infinity();
+    if (e && e->range <= arm_range_max_) {
+      m.range = static_cast<float>(e->range);
+      RCLCPP_DEBUG(get_logger(), "/arm_range %.3f m (%s, 옆 %.3f m)", e->range,
+        e->source == ArmRangeEstimate::Source::TAG ? "태그" : "D435 보유", e->lateral);
+    }
+    arm_range_pub_->publish(m);
   }
 
   void reset_arm_target()
@@ -1676,6 +1733,13 @@ private:
   double tf_fallback_max_s_ = 0.1;   // [s] 촬영 시각 TF 가 없을 때 최근 TF 를 써도 되는 시각 차 (lookup_near)
   TargetTracker tracker_;
   ArmTargetLock arm_lock_;             // ctl_cbg_ 에서만 쓴다 (on_set_mode · 처리 주기)
+  std::optional<Vec3> seed_odom_;      // 가장 최근 D435 추적 목표 (odom) — 팔 정렬 목표 · /arm_range 보유 점
+  // /arm_range (퍽 표면, manipulator 가 씀)
+  ArmRangeConfig arm_range_cfg_;
+  std::string arm_range_frame_ = "tool_link";
+  double arm_range_max_ = 1.0;
+  rclcpp::Publisher<sensor_msgs::msg::Range>::SharedPtr arm_range_pub_;
+  // /perception/arm_target · /perception/arm_range (퍽 중심, 평면 교차 예비 · 검증) — 위 /arm_range 와 다른 토픽
   struct PlaneConfig
   {
     bool enabled = true;
@@ -1685,7 +1749,6 @@ private:
     int edge_margin_px = 2;
     std::optional<double> height;      // 잠근 목표의 퍽 중심 높이 (frame 기준). ctl_cbg_ 에서만 쓴다
   } plane_;
-  std::optional<Vec3> seed_odom_;      // 가장 최근 D435 추적 목표 (odom)
   double seed_t_ = 0, seed_max_age_ = 1.0;
   uint8_t mode_ = SetMode::Request::OFF;   // ctl_cbg_ 에서만 읽고 쓴다
   bool restart_seen_ = false;
