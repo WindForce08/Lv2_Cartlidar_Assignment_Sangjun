@@ -8,6 +8,7 @@
 #   ./run_rl.sh pallet_check                   팔레트 놓기 고정 궤적 확인 (칸 12 x 원기둥 · 상자, pallet_place_check.json). 궤적은 python3 pallet_traj.py
 #   ./run_rl.sh pallet_check_play [대 수]      위 것을 창으로
 #   ./run_rl.sh pallet_drop                    팔 없이 퍽만 칸에 떨어뜨려 팔레트 충돌 형상 확인
+#   ./run_rl.sh pallet_unload                  팔레트 빼기 (놓기 궤적 거꾸로) 확인 (pallet_unload_check.json)
 # 아래는 옛 퍽 보관통 (C · P · N 통) 기준 - B안 팔레트에서는 쓰지 않음
 #   ./run_rl.sh sidepick [환경 수] [반복]      1 정렬·집기 학습 -> logs/rsl_rl/waffle_sidepick/
 #   ./run_rl.sh sidepick_play [환경 수]        1 정렬·집기 (policies/sidepick_latest.pt) 창으로
@@ -52,6 +53,7 @@ case "${1:-}" in
   pallet_check) "${PY[@]}" "$HERE/pallet_place_check.py" ;;
   pallet_check_play) env -u HEADLESS "${PY[@]}" "$HERE/pallet_place_check.py" --gui --num_envs "${2:-4}" ;;
   pallet_drop) "${PY[@]}" "$HERE/pallet_place_check.py" --drop ;;
+  pallet_unload) "${PY[@]}" "$HERE/pallet_place_check.py" --unload --row_speed "" ;;   # 빼기는 3열도 0.8 에서 24/24 (2026-11-03)
   sidepick) "${PY[@]}" "$HERE/train.py" --task Waffle-SidePick-Direct --num_envs "${2:-256}" --max_iterations "${3:-300}" --viz none ;;
   sidepick_play) env -u HEADLESS "${PY[@]}" "$HERE/play.py" --task Waffle-SidePick-Direct --num_envs "${2:-16}" --checkpoint latest --viz kit ;;
   sidepick_diag) "${PY[@]}" "$HERE/sidepick_diag.py" --num_envs "${2:-64}" --policy "$HERE/policies/sidepick_latest.pt" ;;

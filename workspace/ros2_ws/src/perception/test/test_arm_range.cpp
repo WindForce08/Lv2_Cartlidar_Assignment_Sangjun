@@ -1,4 +1,4 @@
-// /arm_range 계산 시험 (arm_range.hpp): 태그 우선 · D435 보유 점 · 옆 거리 문턱 · 보유 시간
+// /arm_range 계산 시험 (arm_range.hpp): 태그 우선 · D435 보유 점 · 평면 교차 예비 · 옆 거리 문턱 · 보유 시간
 #include <gtest/gtest.h>
 
 #include <optional>
@@ -50,4 +50,23 @@ TEST(ArmRange, ClampsInsideSurface)
   const auto e = arm_range({{0.010, 0.0, 0.0}}, std::nullopt, 0.0, c);
   ASSERT_TRUE(e);
   EXPECT_DOUBLE_EQ(e->range, 0.0);               // 끝단이 표면을 지남 → 0
+}
+
+// D435 보유 시간이 지나고 태그도 없으면 평면 교차 중심으로 낸다. 태그 · 보유 점이 있으면 그것이 먼저
+TEST(ArmRange, PlaneIsLastFallback)
+{
+  ArmRangeConfig c;
+  const P3 plane{0.140, 0.006, -0.003};
+  auto e = arm_range({}, P3{0.160, 0.010, 0.0}, 5.0, c, plane);   // 보유 점은 hold_s(3 s) 지남
+  ASSERT_TRUE(e);
+  EXPECT_EQ(e->source, ArmRangeEstimate::Source::PLANE);
+  EXPECT_NEAR(e->range, 0.125, 1e-9);
+  e = arm_range({}, P3{0.160, 0.010, 0.0}, 1.0, c, plane);
+  ASSERT_TRUE(e);
+  EXPECT_EQ(e->source, ArmRangeEstimate::Source::D435_HOLD);
+  e = arm_range({{0.150, 0.004, 0.0}}, std::nullopt, 0.0, c, plane);
+  ASSERT_TRUE(e);
+  EXPECT_EQ(e->source, ArmRangeEstimate::Source::TAG);
+  EXPECT_FALSE(arm_range({}, std::nullopt, 0.0, c, P3{0.140, 0.060, 0.0}));   // 팔 축에서 옆으로 60 mm(이웃)는 쓰지 않음
+  EXPECT_FALSE(arm_range({}, std::nullopt, 0.0, c, P3{-0.01, 0.0, 0.0}));     // 팔 뒤쪽
 }
