@@ -9,7 +9,12 @@
   <xacro:arg name="joy_required" default="true"/>
   <!-- 구동 방식: belt = 증속벨트 1:1.5 (2026-10-27 장착), direct = 직결 (urdfv2). 바퀴 y · 한계 · 기어비가 같이 바뀐다 -->
   <xacro:arg name="drive" default="belt"/>
-  <xacro:arg name="sim" default="false"/>   <!-- Isaac Sim: TopicBasedSystem (opencr.ros2_control.xacro) -->
+  <xacro:arg name="backend" default="opencr"/>   <!-- 하드웨어 플러그인: opencr (실물) | mock (장치 없이) | isaac (opencr.ros2_control.xacro) -->
+  <!-- 예전 이름 sim 은 launch 에서만 받는다 (sim:=true → backend:=isaac). xacro 에 직접 주면 모르는 인자로 무시돼 실물로 펼쳐지므로 막음 -->
+  <xacro:arg name="sim" default="false"/>
+  <xacro:if value="$(arg sim)">
+    ${xacro.fatal("sim 은 예전 이름 — xacro 에는 backend:=isaac")}
+  </xacro:if>
   <xacro:include filename="$(find opencr_hardware)/urdf/opencr.ros2_control.xacro"/>
 
   <xacro:property name="wheel_count" value="$(arg wheel_count)"/>
@@ -118,5 +123,5 @@
   <xacro:fixed_link name="tool_link"       parent="gripper_roll_link" xyz="0.086 0 0" rpy="0 0 0"/>
 
   <xacro:opencr_ros2_control ports="$(arg ports)" wheel_count="${wheel_count}" use_gripper="$(arg use_gripper)"
-                             joy_required="$(arg joy_required)" wheel_gear="${wheel_gear}" sim="$(arg sim)"/>
+                             joy_required="$(arg joy_required)" wheel_gear="${wheel_gear}" backend="$(arg backend)"/>
 </robot>

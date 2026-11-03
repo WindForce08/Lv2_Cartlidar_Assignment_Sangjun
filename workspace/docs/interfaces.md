@@ -43,7 +43,7 @@
 | /cmd_vel | TwistStamped | 기본 | twist_mux | diff_drive_controller |
 | /arm_controller/joint_trajectory | trajectory_msgs/JointTrajectory | 기본 | manipulator_node (RL 스트리밍) | arm_controller |
 | /mission/status | robot_interfaces/MissionStatus | 기본, 2 Hz + 변경 시 | mission_node | 모니터링 |
-| /joint_states | sensor_msgs/JointState | 기본, 50 Hz | joint_state_broadcaster | robot_state_publisher, manipulator |
+| /joint_states | sensor_msgs/JointState | 기본, 100 Hz (controller_manager update_rate). | joint_state_broadcaster | robot_state_publisher, manipulator |
 | /joy | sensor_msgs/Joy | 기본, 20 Hz autorepeat | joy_node | teleop_twist_joy, joy_teleop (시작 · 정지 버튼 → /mission/start · stop), OpenCRHardware (E-stop · 리셋 버튼, heartbeat) |
 | /e_stop | std_msgs/Bool | Reliable + TransientLocal, 10 Hz | OpenCRHardware (잠금식) · Isaac 브리지 (모의, 항상 false) | twist_mux (lock 0.5 s), mission |
 | /diagnostics | diagnostic_msgs/DiagnosticArray | 기본, 1 Hz + 오류 즉시 | OpenCRHardware (`opencr/link · motors · battery · estop`, hardware_id `opencr`) | mission (opencr/ 만) |

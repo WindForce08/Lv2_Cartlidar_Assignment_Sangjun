@@ -29,7 +29,7 @@
   <exec_depend>teleop_twist_joy</exec_depend>
   <exec_depend>joy</exec_depend>
   <exec_depend>xacro</exec_depend>
-  <exec_depend>topic_based_ros2_control</exec_depend>   <!-- sim:=true (Isaac Sim) -->
+  <exec_depend>topic_based_ros2_control</exec_depend>   <!-- backend:=isaac (Isaac Sim) -->
 
   <test_depend>ament_cmake_gtest</test_depend>
   <test_depend>xacro</test_depend>

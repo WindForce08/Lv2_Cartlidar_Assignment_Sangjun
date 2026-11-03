@@ -8,6 +8,8 @@
     <joint name="${name}">
       <param name="role">wheel</param>
       <param name="slot">${slot}</param>
+      <!-- controller_manager 가 바퀴마다 따로 자르면 좌우 비율 (회전 반경) 이 바뀜 → 속도 한계는 펌웨어 비례 축소에 맡김 -->
+      <limits enable="false"/>
       <command_interface name="velocity"/>
       <state_interface name="position"/>
       <state_interface name="velocity"/>
@@ -31,22 +33,34 @@
 
   <!-- 두 OpenCR의 순서는 고정하지 않고 STATE.role로 역할을 판별한다. -->
   <!-- wheel_count 4 의 칸 순서 (왼앞 0 · 왼뒤 1 · 오른앞 2 · 오른뒤 3) 는 주행 펌웨어 config.h WHEEL_IDS · WHEEL_DIR 와 같다 -->
-  <!-- sim: Isaac Sim — OpenCRHardware 대신 TopicBasedSystem 이 관절 상태 · 명령을 토픽으로 주고받는다 (브리지 workspace/tools/isaac_sim) -->
-  <xacro:macro name="opencr_ros2_control" params="name:=OpenCRSystem ports:=/dev/ttyACM0,/dev/ttyACM1 wheel_count:=4 use_gripper:=false joy_required:=true wheel_gear:=1.0 sim:=false">
+  <!-- backend: 관절 · 컨트롤러는 그대로 두고 하드웨어 플러그인만 바꾼다.
+       opencr = 실물 OpenCR 2대 · mock = mock_components (장치 없이, 명령이 곧 상태) ·
+       isaac = Isaac Sim — TopicBasedSystem 이 관절 상태 · 명령을 토픽으로 주고받는다 (브리지 workspace/tools/isaac_sim).
+       gazebo 는 3단계 (LCY 모델과 플러그인 선택 합의 후) -->
+  <xacro:macro name="opencr_ros2_control" params="name:=OpenCRSystem ports:=/dev/ttyACM0,/dev/ttyACM1 wheel_count:=4 use_gripper:=false joy_required:=true wheel_gear:=1.0 backend:=opencr">
+    <xacro:if value="${backend not in ['opencr', 'mock', 'isaac']}">
+      ${xacro.fatal("backend 는 opencr · mock · isaac: " + backend)}
+    </xacro:if>
     <ros2_control name="${name}" type="system">
       <hardware>
-        <xacro:if value="${sim}">
+        <xacro:if value="${backend == 'isaac'}">
+          <!-- Isaac Sim 은 /isaac_joint_commands, /isaac_joint_states 토픽으로 관절 명령/상태를 주고받는다.
+               관절 상태는 시뮬레이션이 직접 발행하고, 관절 명령은 브리지 workspace/tools/isaac_sim 가 받아서 시뮬레이션에 전달한다. -->
         <plugin>topic_based_ros2_control/TopicBasedSystem</plugin>
         <param name="joint_commands_topic">/isaac_joint_commands</param>
         <param name="joint_states_topic">/isaac_joint_states</param>
         </xacro:if>
-        <xacro:unless value="${sim}">
+        <xacro:if value="${backend == 'mock'}">
+        <plugin>mock_components/GenericSystem</plugin>
+        <param name="calculate_dynamics">true</param>   <!-- 바퀴 속도 명령을 적분해 위치도 움직임 -->
+        </xacro:if>
+        <xacro:if value="${backend == 'opencr'}">
         <plugin>opencr_hardware/OpenCRHardware</plugin>
         <param name="ports">${ports}</param>
         <param name="comm_timeout_s">0.5</param>
         <param name="first_state_timeout_s">2.0</param>
         <!-- 잠금식 E-stop: /joy heartbeat · 버튼 (조이스틱 모델에 맞춰 번호 확인 ★) -->
-        <param name="joy_required">${joy_required}</param>
+        <param name="joy_required">${str(joy_required).lower()}</param> <!-- xacro 는 True/False 로 펼침 → 소문자로 -->
         <param name="joy_timeout_s">0.5</param>
         <param name="estop_button">6</param>
         <param name="reset_button">7</param>
@@ -54,7 +68,7 @@
         <param name="battery_error_v">10.5</param>
         <!-- 바퀴 각속도 / 모터 각속도. 펌웨어는 모터 축 기준 (WHEEL_GEAR 1.0 고정), 변환은 하드웨어 인터페이스가 한다 -->
         <param name="wheel_gear">${wheel_gear}</param>
-        </xacro:unless>
+        </xacro:if>
       </hardware>
 
       <xacro:if value="${wheel_count == 4}">
@@ -92,8 +106,8 @@
         </joint>
       </xacro:if>
 
-      <!-- TopicBasedSystem 은 센서를 다루지 않는다 — 시뮬레이션은 브리지가 /imu/data 를 직접 발행 -->
-      <xacro:unless value="${sim}">
+      <!-- IMU 는 실물만 ros2_control 센서 — Isaac 은 브리지가 /imu/data 를 직접 발행, mock 은 IMU 없음 -->
+      <xacro:if value="${backend == 'opencr'}">
       <sensor name="imu">
         <state_interface name="orientation.x"/>
         <state_interface name="orientation.y"/>
@@ -106,7 +120,7 @@
         <state_interface name="linear_acceleration.y"/>
         <state_interface name="linear_acceleration.z"/>
       </sensor>
-      </xacro:unless>
+      </xacro:if>
     </ros2_control>
   </xacro:macro>
 </robot>
