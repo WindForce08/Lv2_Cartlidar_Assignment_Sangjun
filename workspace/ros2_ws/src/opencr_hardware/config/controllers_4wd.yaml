@@ -14,10 +14,9 @@ diff_drive_controller:
     odom_frame_id: odom
     base_frame_id: base_link
     enable_odom_tf: false            # odom→base_link TF 는 ekf 만 발행
-    publish_rate: 50.0
     cmd_vel_timeout: 0.5
     linear.x.max_acceleration: 1.5
-    linear.x.min_acceleration: -1.5
+    linear.x.max_deceleration: -1.5   # diff_drive 6.x 이름 (예전 min_acceleration 은 인자가 없어 무시됨). 음수
     angular.z.max_velocity: 2.0
     angular.z.min_velocity: -2.0
 

@@ -1,10 +1,12 @@
 #include "opencr_hardware/opencr_hardware.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <iterator>
 #include <limits>
+#include <optional>
 #include <sstream>
 
 #include "hardware_interface/types/hardware_interface_type_values.hpp"
@@ -32,6 +34,18 @@ const char * IMU_SUFFIX[10] = {
   "linear_acceleration.x", "linear_acceleration.y", "linear_acceleration.z"};
 }  // namespace
 
+// 참/거짓 인자: true · false (대소문자 무관 — xacro 는 True · False 로 펼친다) 와 1 · 0 만 받음. 다른 글은 오타로 보고 nullopt
+std::optional<bool> param_flag(const std::unordered_map<std::string, std::string> & m, const std::string & key, bool def)
+{
+  auto it = m.find(key);
+  if (it == m.end()) {return def;}
+  std::string v = it->second;
+  std::transform(v.begin(), v.end(), v.begin(), [](unsigned char c) {return static_cast<char>(std::tolower(c));});
+  if (v == "true" || v == "1") {return true;}
+  if (v == "false" || v == "0") {return false;}
+  return std::nullopt;
+}
+
 hi::CallbackReturn OpenCRHardware::on_init(const hi::HardwareComponentInterfaceParams & params)
 {
   if (hi::SystemInterface::on_init(params) != CallbackReturn::SUCCESS) {
@@ -41,14 +55,22 @@ hi::CallbackReturn OpenCRHardware::on_init(const hi::HardwareComponentInterfaceP
   port_ = param_or(hw, "ports", param_or(hw, "port", port_));
   comm_timeout_s_ = std::stod(param_or(hw, "comm_timeout_s", "0.5"));
   first_state_timeout_s_ = std::stod(param_or(hw, "first_state_timeout_s", "2.0"));
-  joy_required_ = param_or(hw, "joy_required", "true") == "true";
   joy_timeout_s_ = std::stod(param_or(hw, "joy_timeout_s", "0.5"));
   estop_button_ = std::stoi(param_or(hw, "estop_button", "6"));
   reset_button_ = std::stoi(param_or(hw, "reset_button", "7"));
   battery_warn_v_ = std::stod(param_or(hw, "battery_warn_v", "11.1"));
   battery_error_v_ = std::stod(param_or(hw, "battery_error_v", "10.5"));
-  listen_only_ = param_or(hw, "listen_only", "false") == "true";
-  auto_rearm_ = param_or(hw, "auto_rearm", "false") == "true";
+  const auto joy_required = param_flag(hw, "joy_required", true);
+  const auto listen_only = param_flag(hw, "listen_only", false);
+  const auto auto_rearm = param_flag(hw, "auto_rearm", false);
+  if (!joy_required || !listen_only || !auto_rearm) {
+    RCLCPP_FATAL(get_logger(), "joy_required · listen_only · auto_rearm 은 true 또는 false 여야 함");
+    return CallbackReturn::ERROR;
+  }
+  joy_required_ = *joy_required;
+  listen_only_ = *listen_only;
+  auto_rearm_ = *auto_rearm;
+
   wheel_gear_ = std::stod(param_or(hw, "wheel_gear", "1.0"));
   if (!std::isfinite(wheel_gear_) || wheel_gear_ <= 0.0) {
     RCLCPP_FATAL(get_logger(), "wheel_gear %.3f — 0 보다 커야 함", wheel_gear_);

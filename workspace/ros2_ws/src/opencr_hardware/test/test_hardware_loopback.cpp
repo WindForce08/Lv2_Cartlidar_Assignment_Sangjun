@@ -10,6 +10,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <map>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -134,7 +135,7 @@ private:
 
 // joint1_limits: joint1 command_interface 안에 넣을 <param name="min"/max> (빈 값이면 한계 없음)
 static std::string make_urdf(const std::string & ports, const std::string & extra_params = "",
-  const std::string & joint1_limits = "")
+  const std::string & joint1_limits = "", const std::string & joy_required = "false")
 {
   std::string joints;
   const char * wheels[6] = {"wheel_left_front_joint", "wheel_left_mid_joint", "wheel_left_rear_joint",
@@ -175,7 +176,8 @@ static std::string make_urdf(const std::string & ports, const std::string & extr
   return "<?xml version=\"1.0\"?><robot name=\"t\">" + links + urdf_joints +
          "<ros2_control name=\"OpenCRSystem\" type=\"system\"><hardware><plugin>opencr_hardware/OpenCRHardware</plugin>"
          "<param name=\"ports\">" + ports + "</param><param name=\"comm_timeout_s\">0.5</param>"
-         "<param name=\"joy_required\">false</param>" + extra_params + "</hardware>" + joints + imu +
+         //"<param name=\"joy_required\">false</param>" + extra_params + "</hardware>" + joints + imu +
+         "<param name=\"joy_required\">" + joy_required + "</param>" + extra_params + "</hardware>" + joints + imu +
          "</ros2_control></robot>";
 }
 
@@ -474,6 +476,42 @@ TEST(SerialPort, ExclusiveOpen)
   a.close();
   EXPECT_TRUE(b.open(fw.path(), B115200, err)) << err;
 }
+
+// 참/거짓 인자: xacro 가 펼친 True · False 도 같은 뜻. 오타는 시작 거부 (조이스틱 잠금이 몰래 꺼지지 않게)
+TEST(OpenCRHardware, FlagParamsAcceptCapitalizedAndRejectTypos)
+{
+  for (const auto & [v, estop] : std::map<std::string, bool>{{"True", true}, {"true", true}, {"1", true},
+      {"False", false}, {"false", false}, {"0", false}})
+  {
+    FakeOpenCR wheel(ROLE_WHEEL), arm(ROLE_ARM);
+    auto clock = std::make_shared<rclcpp::Clock>(RCL_STEADY_TIME);
+    hardware_interface::ResourceManager rm(make_urdf(wheel.path() + "," + arm.path(), "", "", v), clock,
+      rclcpp::get_logger("rm"), true, 100);
+    ASSERT_EQ(component_state(rm), "active") << v;
+    rclcpp::Time t = clock->now();
+    for (int i = 0; i < 5; ++i) {
+      rm.read(t, rclcpp::Duration::from_seconds(0.01));
+      rm.write(t, rclcpp::Duration::from_seconds(0.01));
+      std::this_thread::sleep_for(10ms);
+      t = clock->now();
+    }
+    // joy_required 이고 /joy 가 없으면 잠김 → CMD 에 ESTOP
+    EXPECT_EQ(static_cast<bool>(wheel.last_cmd().flags & FLAG_ESTOP), estop) << "joy_required " << v;
+  }
+  for (const char * v : {"yes", "ture", ""}) {
+    FakeOpenCR wheel(ROLE_WHEEL), arm(ROLE_ARM);
+    auto clock = std::make_shared<rclcpp::Clock>(RCL_STEADY_TIME);
+    bool active = false;
+    try {
+      hardware_interface::ResourceManager rm(make_urdf(wheel.path() + "," + arm.path(), "", "", v), clock,
+        rclcpp::get_logger("rm"), true, 100);
+      active = component_state(rm) == "active";
+    } catch (const std::exception &) {}
+    EXPECT_FALSE(active) << "joy_required '" << v << "'";
+    EXPECT_EQ(wheel.cmd_count_torque_on(), 0) << v;
+  }
+}
+
 
 int main(int argc, char ** argv)
 {
