@@ -12,6 +12,7 @@ find_package(rclcpp_components REQUIRED)
 find_package(robot_interfaces REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(tf2 REQUIRED)
@@ -59,12 +60,16 @@ target_link_libraries(perception_barcode PUBLIC ${OpenCV_LIBS} ${ZBAR_LIBRARIES}
 # barcode_compare: 렌더 장면에서 찾기 · 읽기 결과를 JSON 으로 (scripts/barcode_compare.py 가 기준 Python 과 견줌)
 add_executable(barcode_compare src/barcode_compare_main.cpp)
 target_link_libraries(barcode_compare perception_barcode)
+# place_box_check: 렌더 장면에서 장소 상자 윗면 찾기 (place_box.hpp) — Python 시제품과 견주는 도구
+add_executable(place_box_check src/place_box_check_main.cpp)
+target_include_directories(place_box_check PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(place_box_check ${OpenCV_LIBS})
 
 # perception_node: 카메라 3대(영상 토픽) → /perception/result
 add_library(perception_node SHARED src/perception_node.cpp)
 target_link_libraries(perception_node PUBLIC perception_detector perception_barcode ament_index_cpp::ament_index_cpp
   rclcpp::rclcpp rclcpp_components::component ${robot_interfaces_TARGETS} ${sensor_msgs_TARGETS} ${geometry_msgs_TARGETS}
-  ${std_msgs_TARGETS} cv_bridge::cv_bridge tf2::tf2 tf2_ros::tf2_ros tf2_geometry_msgs::tf2_geometry_msgs)
+  ${std_msgs_TARGETS} ${std_srvs_TARGETS} cv_bridge::cv_bridge tf2::tf2 tf2_ros::tf2_ros tf2_geometry_msgs::tf2_geometry_msgs)
 rclcpp_components_register_node(perception_node PLUGIN "perception::PerceptionNode" EXECUTABLE perception)
 
 # 라이다 노드들 (ROS 의존 없는 계산부는 include/perception/*.hpp, 단위 시험 대상)
@@ -90,7 +95,7 @@ rclcpp_components_register_node(perception_rear PLUGIN "perception::RearObstacle
 
 install(TARGETS perception_detector perception_barcode perception_node perception_lidar perception_rear
   ARCHIVE DESTINATION lib LIBRARY DESTINATION lib RUNTIME DESTINATION bin)
-install(TARGETS barcode_compare RUNTIME DESTINATION lib/${PROJECT_NAME})
+install(TARGETS barcode_compare place_box_check RUNTIME DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY include/ DESTINATION include/${PROJECT_NAME})
 install(DIRECTORY config launch udev data DESTINATION share/${PROJECT_NAME})
 
@@ -102,6 +107,9 @@ if(BUILD_TESTING)
   # 팔 카메라 평면 교차 (arm_plane.hpp, 헤더만)
   ament_add_gtest(test_arm_plane test/test_arm_plane.cpp)
   target_link_libraries(test_arm_plane perception_detector)
+  # 장소 상자 윗면 찾기 (place_box.hpp, 헤더만)
+  ament_add_gtest(test_place_box test/test_place_box.cpp)
+  target_link_libraries(test_place_box perception_detector)
   ament_add_gtest(test_perception_logic test/test_tfmini.cpp test/test_vision.cpp test/test_tracker_tag.cpp
     test/test_inputs.cpp test/test_lidar.cpp test/test_puck.cpp test/test_signal.cpp test/test_dice.cpp
     test/test_signal_light.cpp test/test_depth_split.cpp

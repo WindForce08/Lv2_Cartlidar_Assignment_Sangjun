@@ -235,6 +235,72 @@ TEST(RobotDescription, RobotUrdfProvidesFramesUsedByOtherNodes)
   // realsense 드라이버가 발행하는 좌표를 URDF 가 또 만들면 TF 부모가 둘이 됨
   EXPECT_EQ(urdf.find("_color_optical_frame\""), std::string::npos);
 }
+// 펼친 URDF 의 하드웨어 인자 · 관절 한계 강제 여부, 컨트롤러 설정 인자 이름 (controller_manager · diff_drive 6.x)
+TEST(RobotDescription, HardwareFlagsAndCommandLimits)
+{
+  if (!have_xacro()) {GTEST_SKIP() << "xacro 없음 (sudo apt install ros-lyrical-xacro)";}
+  // joy_required: 플러그인이 읽는 글자 그대로 (xacro 가 True · False 로 펼치면 안 됨)
+  for (const auto & [args, expect] : std::map<std::string, std::string>{{"", "true"}, {"joy_required:=true", "true"},
+      {"joy_required:=false", "false"}})
+  {
+    std::string urdf;
+    ASSERT_TRUE(expand_xacro(read_file(PKG_DIR "/urdf/robot.urdf.xacro"), urdf, args)) << urdf;
+    EXPECT_EQ(parse_one(urdf).hardware_parameters.at("joy_required"), expect) << "[" << args << "]";
+  }
+  // 바퀴: controller_manager 의 관절별 자르기 끔 (펌웨어가 좌우 같은 비율로 줄임), 팔: 켬 (URDF <limit> 로 자름)
+  std::string urdf;
+  ASSERT_TRUE(expand_xacro(read_file(PKG_DIR "/urdf/robot.urdf.xacro"), urdf)) << urdf;
+  for (const auto & j : parse_one(urdf).joints) {
+    EXPECT_EQ(j.enable_limits, j.parameters.at("role") != "wheel") << j.name;
+  }
+  // diff_drive 6.x 에 없는 인자 (경고 없이 무시됨) 를 쓰지 않음
+  for (const char * f : {"/config/controllers_4wd.yaml", "/config/controllers_6wd.yaml"}) {
+    const std::string yaml = read_file(std::string(PKG_DIR) + f);
+    EXPECT_EQ(yaml.find("min_acceleration:"), std::string::npos) << f;
+    EXPECT_EQ(yaml.find("publish_rate:"), std::string::npos) << f;
+    EXPECT_LT(yaml_number(yaml, R"(linear\.x\.max_deceleration)"), 0.0) << f;
+  }
+}
+
+// backend (opencr · mock · isaac): 관절 · 인터페이스 · 한계 강제 여부는 그대로, 하드웨어 플러그인과 IMU 센서만 바뀜
+TEST(RobotDescription, BackendSwapsOnlyHardwarePlugin)
+{
+  if (!have_xacro()) {GTEST_SKIP() << "xacro 없음 (sudo apt install ros-lyrical-xacro)";}
+  const std::string src = read_file(PKG_DIR "/urdf/robot.urdf.xacro");
+  // 관절마다 이름 · 한계 강제 · 명령 인터페이스 (이름 [min, max]) · 상태 인터페이스를 한 줄로
+  const auto joints = [](const hardware_interface::HardwareInfo & hw) {
+      std::vector<std::string> out;
+      for (const auto & j : hw.joints) {
+        std::string s = j.name + (j.enable_limits ? " limits" : " no-limits");
+        for (const auto & c : j.command_interfaces) {s += " cmd:" + c.name + "[" + c.min + "," + c.max + "]";}
+        for (const auto & st : j.state_interfaces) {s += " state:" + st.name;}
+        out.push_back(s);
+      }
+      return out;
+    };
+  std::string urdf;
+  ASSERT_TRUE(expand_xacro(src, urdf)) << urdf;   // 기본 = 실물
+  const auto real = parse_one(urdf);
+  EXPECT_EQ(real.hardware_plugin_name, "opencr_hardware/OpenCRHardware");
+  for (const auto & [backend, plugin] : std::map<std::string, std::string>{{"opencr", "opencr_hardware/OpenCRHardware"},
+      {"mock", "mock_components/GenericSystem"}, {"isaac", "topic_based_ros2_control/TopicBasedSystem"}})
+  {
+    ASSERT_TRUE(expand_xacro(src, urdf, "backend:=" + backend)) << urdf;
+    const auto hw = parse_one(urdf);
+    EXPECT_EQ(hw.hardware_plugin_name, plugin) << backend;
+    // IMU 는 실물만 (Isaac 은 브리지가 /imu/data 를 직접 발행, mock 은 없음)
+    EXPECT_EQ(hw.sensors.size(), backend == "opencr" ? 1u : 0u) << backend;
+    EXPECT_EQ(joints(hw), joints(real)) << backend;
+  }
+  // 모르는 값과 아직 없는 gazebo (3단계) 는 펼치기 실패
+  for (const std::string bad : {"gazebo", "real"}) {
+    EXPECT_FALSE(expand_xacro(src, urdf, "backend:=" + bad)) << bad;
+  }
+  // 예전 이름 sim:=true 를 xacro 에 직접 주면 실물로 펼치지 않고 실패 (launch 는 backend:=isaac 으로 바꿔 넘김)
+  EXPECT_FALSE(expand_xacro(src, urdf, "sim:=true"));
+}
+
+
 
 // 구동 방식별 diff_drive 설정 (drive_<belt|direct>.yaml) = URDF 바퀴 (README '실물에서 맞출 값': wheel_y · wheel_separation)
 TEST(RobotDescription, DriveConfigMatchesUrdfWheels)
