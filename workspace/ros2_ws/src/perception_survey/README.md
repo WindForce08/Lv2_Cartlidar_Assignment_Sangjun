@@ -2,7 +2,7 @@
 
 인지 관측을 누적하는 독립 ROS 2 패키지.
 
-- 입력: `/perception/pucks` (`robot_interfaces/PuckArray`), 메시지 촬영 시각의 world_frame←header.frame_id TF. 노드 기본 frame=`map`, perception.launch.py 설정(`puck_survey.yaml`)은 발제 원점 frame `mission_map`(SLAM 이 `mission_map → map` 정적 TF 로 냄). 모의 odom은 파라미터로 지정.
+- 입력: `/perception/pucks` (`robot_interfaces/PuckArray`), 메시지 촬영 시각의 world_frame←header.frame_id TF. 노드 기본 frame=`map`, perception.launch.py 설정(`puck_survey.yaml`)도 `map` — localization 패키지의 `map` 이 발제 원점 frame(Cartographer 지도는 `map → carto_map`). 모의 odom은 파라미터로 지정.
 - 출력: `/perception/puck_survey` (`std_msgs/String`, reliable·transient_local·depth1), B0의 boxes6개·slots12개 JSON. 좌표 mm, 초기 박스 중심은 발제 고정값. `complete`가 false인 결과는 할당에 쓰지 않는다.
 - 시작: `/perception/survey/start` (`std_srvs/Trigger`)가 초기화 후 수집 허용. 초기 상태는 수집 안 함.
 - 완료: `/perception/survey/finish`는 색·모양·자세·ID가 각각 독립 시각/카메라 관측 최소2개에서 충돌 없이 일치하고, ID0~11이 한 번씩 있을 때만 성공. output_path로 원자적 저장 후 고정·수집 중지. 저장할 경로가 없거나 실패하면 성공 응답하지 않음.

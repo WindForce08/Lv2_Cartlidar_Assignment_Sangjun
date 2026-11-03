@@ -3,8 +3,8 @@
 #   완료 파일 경로(output_path)는 launch 인자 survey_output 으로 준다
 puck_survey:
   ros__parameters:
-    world_frame: mission_map    # 발제 원점 좌표 frame. SLAM 이 mission_map → map(Cartographer 지도, 정적) → odom 으로 냄
-                                #   (map 은 지도를 만들 때마다 원점이 달라 칸 좌표와 안 맞음). 모의 odom 시험은 launch 사본 설정으로 바꿈
+    world_frame: map            # 발제 원점 좌표 frame. localization 패키지가 map(발제) → odom 을 내고 Cartographer 지도는 carto_map(map 아래)
+                                #   모의 odom 시험은 launch 사본 설정으로 바꿈
     merge_gate_m: 0.035         # 슬롯 결합 문턱 (퍽 중심 ±40 mm 배치, 0~40 mm)
     min_observations: 2
     max_revisits: 2             # ★ /perception/survey/revisit 로 한 칸을 다시 보는 횟수 한도. 넘으면 그 칸은 미확인(unconfirmed). 실물 조사 경로 시간에 맞춰 정할 값
