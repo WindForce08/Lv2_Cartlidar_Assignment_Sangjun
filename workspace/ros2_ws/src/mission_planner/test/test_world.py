@@ -1,6 +1,6 @@
 import math
 
-from mission_planner.poses import HALF_W, START_BOXES
+from mission_planner.poses import HALF_W, REACH_TILT, REACH_TILT_MIN, START_BOXES, turned
 
 
 def test_maps(world):
@@ -22,13 +22,20 @@ def test_approaches(world):
         if sides & {"W", "E"}:          # ±X 는 ±Y 가 모두 막힌 박스만
             assert not A.get(f"B{b}:S").ok and not A.get(f"B{b}:N").ok
         for a in opts:
-            assert all(v["dist"] <= 0.23 for v in a.extra["pucks"].values())
+            assert all(REACH_TILT_MIN <= v["dist"] <= REACH_TILT for v in a.extra["pucks"].values())
             if not a.extra["inline"]:   # ±Y 면: 두 퍽이 J1 앞 같은 거리, 옆 ±40 mm
                 d = [v["dist"] for v in a.extra["pucks"].values()]
                 assert abs(d[0] - d[1]) < 1e-3
+                for sx, v in a.extra["pucks"].items():   # 돈 뒤 J1→퍽 방향 = 처음 앞 방향 (상자 퍽 면)
+                    t = turned(a.final, v["turn_deg"])
+                    jx, jy = t.tf(0.096, 0.0)
+                    px, py = START_BOXES[b][0] + sx * 0.04, START_BOXES[b][1]
+                    err = math.atan2(py - jy, px - jx) - a.final.yaw
+                    assert abs(math.atan2(math.sin(err), math.cos(err))) < math.radians(0.5)
+                assert a.extra["turn_clearance"] >= 0.01
     h = A["HOME"]
     assert h.ok and h.extra["zone_margin_x"] > 0.05 and h.extra["zone_margin_y"] > 0.05
     assert abs(h.final.yaw - math.pi) < 1e-6
     for L in ("L1", "L2", "L3"):
-        assert A[L].ok and all(c["mode"] != "unreachable" for c in A[L].extra["cells"].values())
+        assert A[L].ok and all(c["mode"] == "tilt" for c in A[L].extra["cells"].values())
     assert HALF_W > 0.16

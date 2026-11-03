@@ -9,6 +9,12 @@
     로봇이 박스 중심 X 에 서면 두 퍽이 J1 앞 같은 거리, 옆 +-40 mm -> 한 번 서서 둘 다 집음.
   - L1 · L2 · L3: 장소 태그가 붙은 면 (접근 방향 수직 면) 쪽. L1 = 서쪽 면 (yaw 0), L2 = 받침대 북쪽 면 (yaw -90°), L3 = 남쪽 면 (yaw +90°).
   - final: 앞 끝 - 면 = gap (집기 · 놓기 자세), stage: 앞 끝 - 면 = standoff (nav2 목표, 그다음 drive align 이 곧게 들어감).
+
+집기 · 놓기는 모두 집게 45° (TopPick 기울임 모드 · pallet_traj 12 칸, 2026-11-03):
+  - 손가락 닫는 축 = J1 둘레 접선 -> 상자 퍽은 면이 J1→퍽 방향에 맞아야 함 (±3°).
+    ±Y 접근은 퍽이 J1 앞 옆 ±40 mm (14°) 라, 로봇 중심 둘레로 turn_deg (±17.1°) 돌아 J1 을 퍽 X 줄 위에 둠 -> J1→퍽 = 박스 축.
+    이 회전 때 앞 모서리가 박스에 닿지 않게 박스 접근 gap = BOX_GAP (여유 15 mm). inline (±X) 은 퍽이 J1 앞 일직선이라 회전 없음.
+  - J1 거리 REACH_TILT_MIN ~ REACH_TILT (윗면 70 mm 높이). L1 · L3 는 가까운 줄이 하한 아래라 gap 을 늘림 (PLACES gap).
 """
 from __future__ import annotations
 
@@ -27,9 +33,9 @@ START_BOXES = {  # 발제 07 쪽 시작 박스 중심 (m), 205 x 205 x 70
 BOX_HALF = 0.1025
 PUCK_DX = 0.040  # 박스 위 퍽 2 개 = 중심 X +-40 mm, Y 0
 PLACES = {  # 장소 격자 중심, 접근할 면 (바깥 법선 방향), 면까지 거리
-    "L1": dict(center=(3.670, 0.950), face_dir=(-1.0, 0.0), face_dist=0.1025, tag=12),
-    "L2": dict(center=(2.202, 3.700), face_dir=(0.0, 1.0), face_dist=3.910 - 3.700, tag=13),  # 820 받침대 (중심 y 3.5) 북쪽 면 y 3.91
-    "L3": dict(center=(3.670, 5.354), face_dir=(0.0, -1.0), face_dist=0.1025, tag=14),
+    "L1": dict(center=(3.670, 0.950), face_dir=(-1.0, 0.0), face_dist=0.1025, tag=12, gap=0.06),  # gap: 가까운 줄 J1 0.099 -> 0.139 (45° 하한 위)
+    "L2": dict(center=(2.202, 3.700), face_dir=(0.0, 1.0), face_dist=3.910 - 3.700, tag=13, gap=0.02),  # 820 받침대 (중심 y 3.5) 북쪽 면 y 3.91, 먼 줄 0.332
+    "L3": dict(center=(3.670, 5.354), face_dir=(0.0, -1.0), face_dist=0.1025, tag=14, gap=0.06),
 }
 OBSERVE = (0.734, 0.950)  # 출발 · 관측 · 복귀 (로봇 중심), -X 를 봄
 START_ZONE_HALF = 0.30
@@ -42,9 +48,29 @@ DICE = {  # 주사위 눈 -> 격자 칸 (dx, dy) 단위 칸, 지도 +Y 가 위 (
     5: [(-1, 1), (1, 1), (0, 0), (-1, -1), (1, -1)],
     6: [(-1, 1), (-1, 0), (-1, -1), (1, 1), (1, 0), (1, -1)],
 }
-REACH_VERTICAL = 0.23  # [m] J1 축 - 퍽 수평 거리: 수직 집기 · 놓기 (TopPick reach_max, pallet_traj IK)
-REACH_TILT = 0.35      # 45° 기울여 (팀 URDF IK: J1 거리 0.345 m · 옆 0.06 까지 오차 0, 2026-11-02). Isaac 놓기 미검증
+REACH_VERTICAL = 0.23  # [m] J1 축 - 퍽 수평 거리: 수직 집기 · 놓기 (참고만, 지금은 모두 45°)
+REACH_TILT_MIN = 0.12  # [m] 45° 집기 · 놓기 하한 (윗면 70 mm, 더 가까우면 joint4 하한 -1.9)
+REACH_TILT = 0.35      # 45° 상한 (팀 URDF IK 0.36 m 까지 풂). Isaac 칸 놓기 미검증
 GAP_INLINE = 0.04     # [m] ±X 대안 접근 (두 퍽이 앞뒤) 의 앞 끝 - 박스 면
+BOX_GAP = 0.06        # [m] ±Y 박스 접근 앞 끝 - 박스 면: turn_deg 회전 때 외곽 - 박스 여유 15 mm (0.05 면 10 mm, 0.02 면 닿음)
+TURN_DEG = math.degrees(math.asin(PUCK_DX / (J1_X - CENTER_X)))  # 17.06°: 로봇 중심 둘레 회전으로 J1 을 옆 40 mm 옮김
+
+
+def reach_mode(d):
+    """J1 거리 -> 집게 방식 (모두 45°)."""
+    return "tilt" if REACH_TILT_MIN <= d <= REACH_TILT else ("too_close" if d < REACH_TILT_MIN else "unreachable")
+
+
+def turn_deg(lat):
+    """J1 앞 옆 lat [m] 인 퍽 -> 로봇 중심 둘레로 돌 각 [deg] (+ = 왼쪽). J1 이 퍽 줄 위로 가서 J1→퍽 = 로봇 처음 앞 방향."""
+    return math.degrees(math.asin(max(-1.0, min(1.0, lat / (J1_X - CENTER_X)))))
+
+
+def turned(pose: Pose, deg):
+    """로봇 중심 (외곽 가운데) 둘레로 deg 돈 base_link 자세."""
+    cx, cy = pose.tf(CENTER_X, 0.0)
+    yaw = pose.yaw + math.radians(deg)
+    return Pose(cx - CENTER_X * math.cos(yaw), cy - CENTER_X * math.sin(yaw), yaw)
 
 
 def wrap(a):
@@ -166,27 +192,36 @@ def make_approaches(solids, gap=0.02, standoffs=(0.45, 0.35, 0.30), margin=0.05)
 
     for b, (cx, cy) in START_BOXES.items():
         # ±Y 면 (두 퍽 잇는 선에 수직) 이 기본. 둘 다 안 되는 박스만 ±X 면 (두 퍽이 앞뒤로 줄 섬 = inline) 을 대안으로
-        sides = {side: best(f"B{b}:{side}", "box", (cx, cy), fdir, BOX_HALF, {}) for side, fdir in (("S", (0.0, -1.0)), ("N", (0.0, 1.0)))}
+        sides = {side: best(f"B{b}:{side}", "box", (cx, cy), fdir, BOX_HALF, {}, gap=BOX_GAP) for side, fdir in (("S", (0.0, -1.0)), ("N", (0.0, 1.0)))}
         if not any(a.ok for a in sides.values()):
             # inline 은 가까운 퍽이 J1 0.12 m 아래로 오지 않게 틈 GAP_INLINE (TopPick 학습 gap 0.005 ~ 0.04 안)
             sides.update({side: best(f"B{b}:{side}", "box", (cx, cy), fdir, BOX_HALF, {}, gap=GAP_INLINE) for side, fdir in (("W", (-1.0, 0.0)), ("E", (1.0, 0.0)))})
         for side, a in sides.items():
-            pk = {sx: dict(zip(("dist", "fwd", "lat"), (round(v, 4) for v in j1_dist(a.final, cx + sx * PUCK_DX, cy)))) for sx in (-1, 1)}
-            far = max(v["dist"] for v in pk.values())
+            pk = {}
+            for sx in (-1, 1):
+                d, fwd, lat = j1_dist(a.final, cx + sx * PUCK_DX, cy)
+                t = 0.0 if side in ("W", "E") else turn_deg(lat)  # inline: 퍽이 J1 앞 일직선 (lat 0)
+                pk[sx] = dict(dist=round(d, 4), fwd=round(fwd, 4), lat=round(lat, 4), turn_deg=round(t, 2))
             a.extra = {**a.extra, "box": b, "side": side, "inline": side in ("W", "E"), "pucks": pk}
-            if a.ok and far > REACH_VERTICAL:
-                a.ok, a.note = False, f"먼 퍽 J1 거리 {far:.3f} > 수직 집기 {REACH_VERTICAL}"
+            bad = [f"{v['dist']:.3f}" for v in pk.values() if reach_mode(v["dist"]) != "tilt"]
+            if a.ok and bad:
+                a.ok, a.note = False, f"퍽 J1 거리 {', '.join(bad)} 가 45° 범위 {REACH_TILT_MIN} ~ {REACH_TILT} 밖"
+            if a.ok and not a.extra["inline"]:
+                sweep = [turned(a.final, v["turn_deg"] * k / 10) for v in pk.values() for k in range(1, 11)]
+                if not all(footprint_clear(solids, p, margin=0.0) for p in sweep):
+                    a.ok, a.note = False, f"상자 퍽 맞추기 회전 (±{TURN_DEG:.1f}°) 때 외곽이 닿음"
+                else:
+                    a.extra["turn_clearance"] = round(min(clearance(solids, p) for p in sweep[4::5]), 3)
             out[a.key] = a
     for name, p in PLACES.items():
         cx, cy = p["center"]
-        a = best(name, "place", (cx, cy), p["face_dir"], p["face_dist"], {})
+        a = best(name, "place", (cx, cy), p["face_dir"], p["face_dist"], {}, gap=p["gap"])
         cells = {}
         for gx in (-1, 0, 1):
             for gy in (-1, 0, 1):
                 wx, wy = cx + gx * GRID_STEP, cy + gy * GRID_STEP
                 d, fwd, lat = j1_dist(a.final, wx, wy)
-                mode = "vertical" if d <= REACH_VERTICAL else ("tilt" if d <= REACH_TILT else "unreachable")
-                cells[f"{gx},{gy}"] = dict(x=round(wx, 4), y=round(wy, 4), dist=round(d, 4), fwd=round(fwd, 4), lat=round(lat, 4), mode=mode)
+                cells[f"{gx},{gy}"] = dict(x=round(wx, 4), y=round(wy, 4), dist=round(d, 4), fwd=round(fwd, 4), lat=round(lat, 4), mode=reach_mode(d))
         a.extra = {**a.extra, "tag": p["tag"], "cells": cells}
         out[name] = a
     # 출발 · 관측 · 복귀: 로봇 중심 = (734, 950), -X 를 봄 -> base_link = 중심 - CENTER_X 방향

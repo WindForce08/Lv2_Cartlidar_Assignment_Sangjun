@@ -1,6 +1,6 @@
 """mission_node plan 모드 연동 시험용 가짜 서버 (drive · manipulator · perception). 실물 · 시뮬레이터 대신.
 
-  - /drive/navigate · /drive/align · /manipulator/pose · /manipulator/pick · /manipulator/execute_skill: 잠깐 뒤 성공
+  - /drive/navigate · /drive/align · /drive/execute_skill · /manipulator/pose · /manipulator/pick · /manipulator/execute_skill: 잠깐 뒤 성공
     (execute_skill 은 이름을 기록, --reject <접두어> 면 그 이름은 거절)
   - /perception/set_mode: READ_SIGNAL 이면 /perception/signal CONFIRMED (--signal), READ_BARCODE 면 /perception/barcode READ (--barcode)
   - /perception/check_dice: observed · passed true (요청 칸 · 기대값 기록)
@@ -28,7 +28,7 @@ class Mock(Node):
     def __init__(self, a):
         super().__init__("mock_robot")
         self.a = a
-        self.log = dict(navigate=[], align=[], pose=[], pick=[], skill=[], set_mode=[], check_dice=[])
+        self.log = dict(navigate=[], align=[], drive_skill=[], pose=[], pick=[], skill=[], set_mode=[], check_dice=[])
         self.mode = 0
         cg = ReentrantCallbackGroup()
 
@@ -46,6 +46,8 @@ class Mock(Node):
 
         server("navigate", NavigateToPose, "/drive/navigate", lambda g: NavigateToPose.Result())
         server("align", AlignBase, "/drive/align", lambda g: AlignBase.Result(success=True))
+        server("drive_skill", ExecuteSkill, "/drive/execute_skill",
+               lambda g: None if (a.reject and g.policy.startswith(a.reject)) else ExecuteSkill.Result(success=True))
         server("pose", ArmPose, "/manipulator/pose", lambda g: ArmPose.Result(success=True))
         server("pick", Pick, "/manipulator/pick", lambda g: Pick.Result(success=True, grasped=True))
         server("skill", ExecuteSkill, "/manipulator/execute_skill",
@@ -75,7 +77,7 @@ class Mock(Node):
         if kind == "pick":
             p = g.target.pose.position
             return [g.target.header.frame_id, round(p.x, 4), round(p.y, 4), round(p.z, 4)]
-        if kind == "skill":
+        if kind in ("skill", "drive_skill"):
             return g.policy
         return None
 
@@ -134,7 +136,7 @@ def main():
     out = dict(final=n.final or dict(state="TIMEOUT"), elapsed_s=round(time.time() - t0, 1), **n.log,
                steps_seen=[f"[{i}] {s}" for i, s in n.steps_seen])
     json.dump(out, open(a.out, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
-    print(f"[MOCK] {out['final']} navigate {len(n.log['navigate'])} align {len(n.log['align'])} pick {len(n.log['pick'])} "
+    print(f"[MOCK] {out['final']} navigate {len(n.log['navigate'])} align {len(n.log['align'])} drive_skill {len(n.log['drive_skill'])} pick {len(n.log['pick'])} "
           f"skill {len(n.log['skill'])} check_dice {len(n.log['check_dice'])} ({out['elapsed_s']} s)", flush=True)
     ex.shutdown()
     rclpy.shutdown()
