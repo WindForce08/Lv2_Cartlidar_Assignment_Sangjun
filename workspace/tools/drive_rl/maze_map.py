@@ -29,7 +29,7 @@ COLS, ROWS = "ABCDE", 8  # 칸 열 · 행 수
 CELL_X0, CELL_Y0 = 0.734, 0.95  # A1 가운데 [m]
 RES = 0.02  # 점유 격자 [m]
 HALF_W = 0.1676  # 차체 반폭 (바퀴 바깥)
-ROBOT_R = math.hypot(0.226, 0.1676)  # 제자리 회전 외접 반경 0.2814
+ROBOT_R = math.hypot(0.2135, 0.1676)  # 제자리 회전 외접 반경 0.2714
 START = (0.734, 0.95)  # 출발 구역 가운데 (start_zone)
 
 
