@@ -16,6 +16,7 @@ from .dice2_cfg import PUCK_H
 from .insert_env_cfg import INSERT_POSE
 from .robot_cfg import ARM_JOINTS, EE_BODY, FINGER_HOLD_30, ROOT_TO_BASE_LINK, WHEEL_REGEX
 from .store_env import WaffleStoreEnv
+from .train_log import TrainLog
 
 if TYPE_CHECKING:
     from .insert_env_cfg import WaffleInsertEnvCfg
@@ -78,6 +79,7 @@ class WaffleInsertEnv(WaffleStoreEnv):
         self.start_bucket = torch.zeros(n, dtype=torch.long, device=dev)
         self.best_xy = torch.ones(n, device=dev)
         self.max_bottom = torch.zeros(n, device=dev)
+        self.tlog = TrainLog(self, ("tipped", "dropped", "crash", "base_move"))  # 보상 항목별 · 종료 원인 · 행동 포화 기록 (종료는 store_env._get_dones)
         print(f"[Insert] 시작 상태 통 위 / 모따기 / 통 안 = {self._bucket_n}", flush=True)
 
     # ---- 행동: 잡는 점 위치 변화 -> IK ----
@@ -100,7 +102,9 @@ class WaffleInsertEnv(WaffleStoreEnv):
         dq = (Jf.transpose(1, 2) @ torch.linalg.solve(JJt, err.unsqueeze(-1))).squeeze(-1)
         q = r.data.joint_pos.torch[:, self._arm]
         lead = c.target_lead_max
-        self.arm_target = torch.clamp(torch.clamp(self.arm_target + dq, q - lead, q + lead), self._lo, self._hi)
+        t = torch.clamp(self.arm_target + dq, q - lead, q + lead)
+        self.tlog.actions(actions, self.arm_target + dq - q, lead, t, self._lo, self._hi)
+        self.arm_target = torch.clamp(t, self._lo, self._hi)
 
     def _apply_action(self):
         cmd = self.robot.actuators.target_command
@@ -151,15 +155,25 @@ class WaffleInsertEnv(WaffleStoreEnv):
         puck_body = (f_puck > c.contact_force) & ~((dxy < c.inside_xy) & (depth > -0.003))
         dropped = ~held & ~self.ever_inserted
         pre = held & ~self.ever_inserted
-        rew = (
-            pre.float() * (c.rew_xy * xy + c.rew_depth * depth_r) + c.rew_inserted * s["inside"].float() * held.float()
-            + c.rew_released * released.float() + c.rew_release_ok * release_ok.float() + c.rew_stored * s["stored"].float() + c.rew_retract * retract
-            + c.rew_puck_tilt * (1 - up) * held.float()
-            + c.rew_body_contact * body.float() + c.rew_finger_zone * fing_zone.float() + c.rew_body_crash * crash.float()
-            + c.rew_jam * jam.float() + c.rew_puck_body * puck_body.float() + c.rew_drop * dropped.float() + c.rew_time
-            + c.rew_action_rate * torch.sum(torch.square(self.actions - self.prev_actions), dim=1)
-            + c.rew_base_tilt * self.base_tilt()
-        )
+        rew = self.tlog.reward({  # 이름 = Episode_Reward/<이름>, 합은 이전 식과 같음
+            "xy": pre.float() * c.rew_xy * xy,
+            "depth": pre.float() * c.rew_depth * depth_r,
+            "inserted": c.rew_inserted * s["inside"].float() * held.float(),
+            "released": c.rew_released * released.float(),
+            "release_ok": c.rew_release_ok * release_ok.float(),
+            "stored": c.rew_stored * s["stored"].float(),
+            "retract": c.rew_retract * retract,
+            "puck_tilt": c.rew_puck_tilt * (1 - up) * held.float(),
+            "body_contact": c.rew_body_contact * body.float(),
+            "finger_zone": c.rew_finger_zone * fing_zone.float(),
+            "body_crash": c.rew_body_crash * crash.float(),
+            "jam": c.rew_jam * jam.float(),
+            "puck_body": c.rew_puck_body * puck_body.float(),
+            "drop": c.rew_drop * dropped.float(),
+            "time": c.rew_time,  # 상수 (스텝마다)
+            "action_rate": c.rew_action_rate * torch.sum(torch.square(self.actions - self.prev_actions), dim=1),
+            "base_tilt": c.rew_base_tilt * self.base_tilt(),
+        })
         self.hold = torch.where(s["stored"], self.hold + 1, torch.zeros_like(self.hold))
         self.succeeded |= self.hold >= int(c.success_hold_s / (c.sim.dt * c.decimation))
         self.contact_steps += body.float()
@@ -191,6 +205,7 @@ class WaffleInsertEnv(WaffleStoreEnv):
             log["Metrics/ever_inserted"] = self.ever_inserted[env_ids].float().mean().item()
             log["Metrics/contact_steps"] = self.contact_steps[env_ids].mean().item()
             log["Metrics/max_depth_mm"] = self.max_bottom[env_ids].mean().item() * 1000
+            self.tlog.reset(env_ids)
         DirectRLEnv._reset_idx(self, env_ids)
         c, r, n, dev = self.cfg, self.robot, len(env_ids), self.device
         org = self.scene.env_origins[env_ids]

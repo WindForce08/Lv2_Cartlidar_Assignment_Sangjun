@@ -15,6 +15,7 @@ from isaaclab.utils.math import quat_apply, quat_apply_inverse, quat_from_euler_
 from .dice2_cfg import BOX_SIZE, BOX_H, GRASP_OFFSET_A5, PUCK_Z
 from .robot_cfg import ARM_JOINTS, EE_BODY, GRIPPER_JOINT, GRIPPER_MIMIC, WHEEL_REGEX
 from .toppick_env_cfg import READY_TILT
+from .train_log import TrainLog
 
 if TYPE_CHECKING:
     from .toppick_env_cfg import WaffleTopPickEnvCfg
@@ -58,6 +59,7 @@ class WaffleTopPickEnv(DirectRLEnv):
         self.succeeded = torch.zeros(n, dtype=torch.bool, device=dev)
         self.max_lift = torch.zeros(n, device=dev)
         self.arm_box_steps = torch.zeros(n, device=dev)
+        self.tlog = TrainLog(self, ("tipped", "fell", "body_box", "base_move"))  # 보상 항목별 · 종료 원인 · 행동 포화 기록
 
     @property
     def robot(self) -> Articulation:
@@ -140,6 +142,7 @@ class WaffleTopPickEnv(DirectRLEnv):
         lead = self.cfg.target_lead_max
         dq = self._ik_step(self.actions[:, :3] * self.cfg.cart_scale)
         t = torch.clamp(self.arm_target + dq, q - lead, q + lead)
+        self.tlog.actions(actions, self.arm_target + dq - q, lead, t, self._lo, self._hi)
         self.arm_target = torch.clamp(t, self._lo, self._hi)
 
     def _ik_step(self, dp_b):
@@ -217,16 +220,25 @@ class WaffleTopPickEnv(DirectRLEnv):
         arm_box = self._contact("arm_box_contact")
         body_box = self._contact("body_box_contact")
         base_move = torch.linalg.norm(self.robot.data.root_link_pos_w.torch[:, :2] - self.root0[:, :2], dim=1)
-        rew = (
-            c.rew_reach * (1 - torch.tanh(dist_s / 0.1)) + c.rew_reach_fine * (1 - torch.tanh(dist / 0.02))
-            + close * (c.rew_down * down + c.rew_roll * roll_ok)
-            + c.rew_grasp * grasped.float() + c.rew_lifted * lifted.float() + c.rew_lift_height * height
-            + c.rew_puck_tilt * (1 - up) * close
-            + c.rew_arm_box * arm_box.float() + c.rew_body_box * body_box.float() + c.rew_base_move * (base_move > c.base_move_max).float()
-            + c.rew_action_rate * torch.sum(torch.square(self.actions - self.prev_actions), dim=1)
-            + c.rew_joint_vel * torch.sum(torch.square(self.robot.data.joint_vel.torch[:, self._arm]), dim=1)
-            + c.rew_neighbor_moved * moved + c.rew_toppled * toppled.float() + c.rew_base_tilt * tilt + c.rew_fall * self._fell().float()
-        )
+        rew = self.tlog.reward({  # 이름 = Episode_Reward/<이름>, 합은 이전 한 줄 식과 같음
+            "reach": c.rew_reach * (1 - torch.tanh(dist_s / 0.1)),
+            "reach_fine": c.rew_reach_fine * (1 - torch.tanh(dist / 0.02)),
+            "down": close * c.rew_down * down,
+            "roll": close * c.rew_roll * roll_ok,
+            "grasp": c.rew_grasp * grasped.float(),
+            "lifted": c.rew_lifted * lifted.float(),
+            "lift_height": c.rew_lift_height * height,
+            "puck_tilt": c.rew_puck_tilt * (1 - up) * close,
+            "arm_box": c.rew_arm_box * arm_box.float(),
+            "body_box": c.rew_body_box * body_box.float(),
+            "base_move": c.rew_base_move * (base_move > c.base_move_max).float(),
+            "action_rate": c.rew_action_rate * torch.sum(torch.square(self.actions - self.prev_actions), dim=1),
+            "joint_vel": c.rew_joint_vel * torch.sum(torch.square(self.robot.data.joint_vel.torch[:, self._arm]), dim=1),
+            "neighbor_moved": c.rew_neighbor_moved * moved,
+            "toppled": c.rew_toppled * toppled.float(),
+            "base_tilt": c.rew_base_tilt * tilt,
+            "fall": c.rew_fall * self._fell().float(),
+        })
         held = (lift > c.success_lift) & near & (up > c.upright_min) & (down > c.tilt_ok_cos)
         self.hold = torch.where(held, self.hold + 1, torch.zeros_like(self.hold))
         self.succeeded |= self.hold >= int(c.success_hold_s / (c.sim.dt * c.decimation))
@@ -250,7 +262,10 @@ class WaffleTopPickEnv(DirectRLEnv):
         tipped = self.robot.data.projected_gravity_b.torch[:, 2] > -0.6
         body_box = self._contact("body_box_contact")
         base_move = torch.linalg.norm(self.robot.data.root_link_pos_w.torch[:, :2] - self.root0[:, :2], dim=1) > self.cfg.base_move_max
-        return tipped | self._fell() | body_box | base_move, self.episode_length_buf >= self.max_episode_length - 1
+        fell = self._fell()
+        time_out = self.episode_length_buf >= self.max_episode_length - 1
+        self.tlog.dones(tipped=tipped, fell=fell, body_box=body_box, base_move=base_move, time_out=time_out)
+        return tipped | fell | body_box | base_move, time_out
 
     # ---- 초기화 ----
     def _place(self, k, env_ids, xy, yaw, z):
@@ -281,6 +296,7 @@ class WaffleTopPickEnv(DirectRLEnv):
                 log["Metrics/success_vertical"] = ok[~tl].mean().item()
             log["Metrics/max_lift"] = self.max_lift[env_ids].mean().item()
             log["Metrics/arm_box_steps"] = self.arm_box_steps[env_ids].mean().item()
+            self.tlog.reset(env_ids)
         super()._reset_idx(env_ids)
         c, r, n, dev = self.cfg, self.robot, len(env_ids), self.device
         org = self.scene.env_origins[env_ids]

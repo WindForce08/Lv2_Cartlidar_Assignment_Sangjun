@@ -16,6 +16,7 @@ from isaaclab.utils.math import quat_apply, quat_apply_inverse
 
 from .dice2_cfg import GRASP_OFFSET_A5, PUCK_H
 from .robot_cfg import ARM_JOINTS, EE_BODY, FINGER_HOLD_30, GRIPPER_JOINT, GRIPPER_MIMIC, ROOT_TO_BASE_LINK, WHEEL_REGEX, ee_axes
+from .train_log import TrainLog
 
 if TYPE_CHECKING:
     from .store_env_cfg import WaffleStoreEnvCfg
@@ -71,6 +72,7 @@ class WaffleStoreEnv(DirectRLEnv):
         self.contact_steps = torch.zeros(n, device=dev)
         self.best_xy = torch.ones(n, device=dev)
         self.max_bottom = torch.zeros(n, device=dev)
+        self.tlog = TrainLog(self, ("tipped", "dropped", "crash", "base_move"))  # 보상 항목별 · 종료 원인 · 행동 포화 기록
 
     @property
     def robot(self) -> Articulation:
@@ -142,6 +144,7 @@ class WaffleStoreEnv(DirectRLEnv):
         fine = (s["dxy"] < self.cfg.fine_xy) & (-s["depth"] < self.cfg.zone_clear)
         scale = self.cfg.action_scale * torch.where(fine, self.cfg.fine_scale, 1.0).unsqueeze(1)
         t = torch.clamp(self.arm_target + scale * self.actions[:, :5], q - lead, q + lead)
+        self.tlog.actions(actions, self.arm_target + scale * self.actions[:, :5] - q, lead, t, self._lo, self._hi)
         self.arm_target = torch.clamp(t, self._lo, self._hi)
         if self.cfg.lock_roll:  # 손목 롤 (관절 5) 0 고정: 집게 닫는 축 수평 = 퍽 세움 (261028 ST-N5)
             self.arm_target[:, 4] = 0.0
@@ -197,19 +200,31 @@ class WaffleStoreEnv(DirectRLEnv):
         puck_body = (f_puck > c.contact_force) & ~(near & (depth > -0.003))
         dropped = ~held & ~self.ever_inserted
         base_move = torch.linalg.norm(self.robot.data.root_link_pos_w.torch[:, :2] - self.root0[:, :2], dim=1) > c.base_move_max
-        rew = (
-            pre.float() * (c.rew_hold + c.rew_lift * lift + approach + c.rew_hover * hover + c.rew_upright * (1 - torch.tanh((1 - up) / c.upright_scale))
-                           + c.rew_level * (1 - torch.tanh(self.vec_bl(-self.a5_axes_w()[1])[:, 2].abs() / 0.03))
-                           + c.rew_yaw * (1 - self._yaw_err() / math.pi))
-            + c.rew_insert * insert * held.float() + c.rew_inserted * s["inside"].float() + c.rew_released * released.float()
-            + c.rew_stored * s["stored"].float() + c.rew_retract * retract
-            + c.rew_puck_tilt * (1 - up) * held.float()
-            + c.rew_body_contact * body.float() + c.rew_finger_zone * fing_zone.float() + c.rew_body_crash * crash.float() + c.rew_puck_body * puck_body.float()
-            + c.rew_drop * dropped.float() + c.rew_base_move * base_move.float()
-            + c.rew_action_rate * torch.sum(torch.square(self.actions - self.prev_actions), dim=1)
-            + c.rew_joint_vel * torch.sum(torch.square(self.robot.data.joint_vel.torch[:, self._arm]), dim=1)
-            + c.rew_base_tilt * self.base_tilt()
-        )
+        p = pre.float()
+        rew = self.tlog.reward({  # 이름 = Episode_Reward/<이름>, 합은 이전 식과 같음 (pre * (...) 를 항목별로 나눔)
+            "hold": p * c.rew_hold,
+            "lift": p * c.rew_lift * lift,
+            "approach": p * approach,
+            "hover": p * c.rew_hover * hover,
+            "upright": p * c.rew_upright * (1 - torch.tanh((1 - up) / c.upright_scale)),
+            "level": p * c.rew_level * (1 - torch.tanh(self.vec_bl(-self.a5_axes_w()[1])[:, 2].abs() / 0.03)),
+            "yaw": p * c.rew_yaw * (1 - self._yaw_err() / math.pi),
+            "insert": c.rew_insert * insert * held.float(),
+            "inserted": c.rew_inserted * s["inside"].float(),
+            "released": c.rew_released * released.float(),
+            "stored": c.rew_stored * s["stored"].float(),
+            "retract": c.rew_retract * retract,
+            "puck_tilt": c.rew_puck_tilt * (1 - up) * held.float(),
+            "body_contact": c.rew_body_contact * body.float(),
+            "finger_zone": c.rew_finger_zone * fing_zone.float(),
+            "body_crash": c.rew_body_crash * crash.float(),
+            "puck_body": c.rew_puck_body * puck_body.float(),
+            "drop": c.rew_drop * dropped.float(),
+            "base_move": c.rew_base_move * base_move.float(),
+            "action_rate": c.rew_action_rate * torch.sum(torch.square(self.actions - self.prev_actions), dim=1),
+            "joint_vel": c.rew_joint_vel * torch.sum(torch.square(self.robot.data.joint_vel.torch[:, self._arm]), dim=1),
+            "base_tilt": c.rew_base_tilt * self.base_tilt(),
+        })
         self.hold = torch.where(s["stored"], self.hold + 1, torch.zeros_like(self.hold))
         self.succeeded |= self.hold >= int(c.success_hold_s / (c.sim.dt * c.decimation))
         self.contact_steps += body.float()
@@ -240,7 +255,9 @@ class WaffleStoreEnv(DirectRLEnv):
         self.term_reason = torch.where(dropped, 1, torch.where(crash, 2, torch.where(base_move, 3, torch.where(tipped, 4, z))))  # 진단용
         self.term_arm_f = self._force("arm_body_contact")
         self.term_fing_f = self._force("finger_body_contact")
-        return tipped | dropped | crash | base_move, self.episode_length_buf >= self.max_episode_length - 1
+        time_out = self.episode_length_buf >= self.max_episode_length - 1
+        self.tlog.dones(tipped=tipped, dropped=dropped, crash=crash, base_move=base_move, time_out=time_out)
+        return tipped | dropped | crash | base_move, time_out
 
     # ---- 초기화 ----
     def _reset_idx(self, env_ids: Sequence[int] | None):
@@ -257,6 +274,7 @@ class WaffleStoreEnv(DirectRLEnv):
             log["Metrics/contact_steps"] = self.contact_steps[env_ids].mean().item()
             log["Metrics/best_xy_mm"] = self.best_xy[env_ids].mean().item() * 1000
             log["Metrics/max_bottom_above_rim_mm"] = self.max_bottom[env_ids].mean().item() * 1000
+            self.tlog.reset(env_ids)
         super()._reset_idx(env_ids)
         c, r, n, dev = self.cfg, self.robot, len(env_ids), self.device
         org = self.scene.env_origins[env_ids]
