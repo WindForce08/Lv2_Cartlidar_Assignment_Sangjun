@@ -408,6 +408,9 @@ public:
       RCLCPP_FATAL(get_logger(), "검출기 생성 실패: %s", info.c_str());
       throw std::runtime_error("detector");
     }
+    if (!dc.engine_path.empty() && detector_->name() != "tensorrt") {   // 실물에서 YOLO 없이 도는 것을 알아채게
+      RCLCPP_WARN(get_logger(), "detector.engine_path 를 쓰지 못해 색 검출기로 대신함: %s", info.c_str());
+    }
     split_on_ = split_on_ && detector_->name() != "tensorrt";   // 깊이 나누기는 색 검출기 덩어리에만
     // class_names 는 엔진 클래스 번호의 뜻. 색 검출기(auto 대체 포함)는 번호가 0 빨강 · 1 초록 · 2 파랑으로 정해져 있어 쓰지 않는다
     if (detector_->name() != "tensorrt" && !class_names_.empty()) {
