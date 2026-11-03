@@ -8,6 +8,7 @@ import numpy as np
 import rclpy
 import tf2_ros
 from rclpy.duration import Duration
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from rclpy.time import Time
@@ -131,7 +132,7 @@ def main():
     node = ScanMerge()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
 
 

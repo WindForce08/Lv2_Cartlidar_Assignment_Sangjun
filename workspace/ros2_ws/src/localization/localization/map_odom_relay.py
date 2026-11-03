@@ -9,6 +9,7 @@ import rclpy
 import tf2_ros
 from geometry_msgs.msg import PoseStamped, TransformStamped
 from rclpy.duration import Duration
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.time import Time
 
@@ -78,7 +79,10 @@ class MapOdomRelay(Node):
 
 def main():
     rclpy.init()
-    rclpy.spin(MapOdomRelay())
+    try:
+        rclpy.spin(MapOdomRelay())
+    except (KeyboardInterrupt, ExternalShutdownException):
+        pass
 
 
 if __name__ == '__main__':

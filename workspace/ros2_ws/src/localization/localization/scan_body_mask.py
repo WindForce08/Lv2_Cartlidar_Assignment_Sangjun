@@ -9,6 +9,7 @@ import math
 import numpy as np
 import rclpy
 import tf2_ros
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from rclpy.time import Time
@@ -105,7 +106,10 @@ class ScanBodyMask(Node):
 
 def main():
     rclpy.init()
-    rclpy.spin(ScanBodyMask())
+    try:
+        rclpy.spin(ScanBodyMask())
+    except (KeyboardInterrupt, ExternalShutdownException):
+        pass
 
 
 if __name__ == '__main__':

@@ -17,11 +17,10 @@ import time
 import numpy as np
 import rclpy
 import tf2_ros
-from cartographer_ros_msgs.srv import FinishTrajectory, StartTrajectory, TrajectoryQuery
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, TwistStamped
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.duration import Duration
-from rclpy.executors import MultiThreadedExecutor
+from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from rclpy.time import Time
@@ -108,10 +107,12 @@ class LocMonitor(Node):
             self.create_subscription(LaserScan, tp, lambda m, tp=tp: self.on_scan(tp, m), qos_profile_sensor_data, callback_group=self.cb)
         pose_topic = g('pose_topic') or ('/tracked_pose' if self.backend == 'carto' else '/amcl_pose')
         if self.backend == 'carto':
+            from cartographer_ros_msgs import srv as carto_srv   # carto 일 때만 불러옴(AMCL 만 쓰는 기계에는 cartographer_ros 가 없을 수 있음)
+            self.carto_srv = carto_srv
             self.create_subscription(PoseStamped, pose_topic, self.on_tracked, 10, callback_group=self.cb)
-            self.cli_q = self.create_client(TrajectoryQuery, '/trajectory_query', callback_group=self.cb)
-            self.cli_fin = self.create_client(FinishTrajectory, '/finish_trajectory', callback_group=self.cb)
-            self.cli_start = self.create_client(StartTrajectory, '/start_trajectory', callback_group=self.cb)
+            self.cli_q = self.create_client(self.carto_srv.TrajectoryQuery, '/trajectory_query', callback_group=self.cb)
+            self.cli_fin = self.create_client(self.carto_srv.FinishTrajectory, '/finish_trajectory', callback_group=self.cb)
+            self.cli_start = self.create_client(self.carto_srv.StartTrajectory, '/start_trajectory', callback_group=self.cb)
         else:                                  # amcl_pose: map 좌표, 스캔 시각. 다시 넣기는 /initialpose
             self.create_subscription(PoseWithCovarianceStamped, pose_topic, self.on_tracked, 10, callback_group=self.cb)
             self.pub_init = self.create_publisher(PoseWithCovarianceStamped, '/initialpose', 10)
@@ -346,17 +347,17 @@ class LocMonitor(Node):
 
     def restart_carto(self, mission_pose):
         """Cartographer 궤적을 끝내고 mission_pose(발제 좌표)에서 새로 시작"""
-        r = self.call(self.cli_fin, FinishTrajectory.Request(trajectory_id=self.traj))
+        r = self.call(self.cli_fin, self.carto_srv.FinishTrajectory.Request(trajectory_id=self.traj))
         self.event('finish_trajectory', traj=self.traj, code=None if r is None else r.status.code, msg=None if r is None else r.status.message)
-        q = self.call(self.cli_q, TrajectoryQuery.Request(trajectory_id=self.g('frozen_trajectory_id')))
+        q = self.call(self.cli_q, self.carto_srv.TrajectoryQuery.Request(trajectory_id=self.g('frozen_trajectory_id')))
         if q is None or not q.trajectory:
             self.event('restart_fail', why='trajectory_query')
             return False
         fp = q.trajectory[0].pose
         first = (fp.position.x, fp.position.y, yaw_of(fp.orientation))
         rel = compose(inverse(first), compose(inverse(self.align), mission_pose))
-        req = StartTrajectory.Request(configuration_directory=self.g('carto_config_dir'), configuration_basename=self.g('carto_config'),
-                                      use_initial_pose=True, relative_to_trajectory_id=self.g('frozen_trajectory_id'))
+        req = self.carto_srv.StartTrajectory.Request(configuration_directory=self.g('carto_config_dir'), configuration_basename=self.g('carto_config'),
+                                                     use_initial_pose=True, relative_to_trajectory_id=self.g('frozen_trajectory_id'))
         req.initial_pose.position.x, req.initial_pose.position.y = rel[0], rel[1]
         req.initial_pose.orientation.z, req.initial_pose.orientation.w = math.sin(rel[2] / 2), math.cos(rel[2] / 2)
         r = self.call(self.cli_start, req)
@@ -374,7 +375,10 @@ def main():
     n = LocMonitor()
     ex = MultiThreadedExecutor(num_threads=4)
     ex.add_node(n)
-    ex.spin()
+    try:
+        ex.spin()
+    except (KeyboardInterrupt, ExternalShutdownException):
+        pass
 
 
 if __name__ == '__main__':
