@@ -15,7 +15,7 @@
 
 | 토픽 | 타입 | QoS | Publisher | Subscriber |
 |---|---|---|---|---|
-| /scan_front · /scan_rear | sensor_msgs/LaserScan | SensorData (intra) | LiDAR 드라이버 | scan_merger |
+| /scan_front · /scan_rear | sensor_msgs/LaserScan | SensorData (intra) | coin_d4_driver (bringup `sensors.launch.py`, LDS-03) · Isaac 브리지 — frame_id `laser_front` · `laser_rear` | scan_merger |
 | /scan | sensor_msgs/LaserScan | SensorData | scan_merger | slam_toolbox, nav2, drive_node |
 | /top_camera_front · /top_camera_rear `/color/image_raw` · `/color/camera_info` · `/aligned_depth_to_color/image_raw` | sensor_msgs/Image · CameraInfo | SensorData | realsense2_camera (bringup `sensors.launch.py`) · Isaac 브리지 — frame_id `top_camera_*_color_optical_frame` | perception_node |
 | /arm_camera/image_raw · /arm_camera/camera_info | sensor_msgs/Image · CameraInfo | SensorData | usb_cam (bringup `sensors.launch.py`) · Isaac 브리지 — frame_id `arm_camera_optical_frame`, 640×480 | perception_node |
@@ -24,11 +24,18 @@
 | /perception/arm_range | sensor_msgs/Range | SensorData | perception_node (ARM_ALIGN, `arm.plane`) — 팔 끝(`tool_link`) → 잠근 퍽 **중심** 거리 (팔 카메라 평면 교차). 함께 /perception/arm_target (PointStamped). ★ 위 `/arm_range`(퍽 **표면**)와 다른 토픽 — 이름이 비슷하니 헷갈리지 말 것, 두 값 차이 ≈ 퍽 반지름 | (없음 — 예비 · 검증용) |
 | /tfmini/range | sensor_msgs/Range | SensorData, 50 Hz | tfmini_node (실물) · scan_to_range (Gazebo) — 1층 렌즈(`tfmini_link`) → **퍽이 놓인 박스 앞면** 거리, mm 출력 + 실측 보정 | drive (FINE 정렬 전후), obstacle_stop |
 | /perception/pucks | robot_interfaces/PuckArray | Reliable, depth 1 (`qos::result()`, /perception/result 와 같음) | perception_node | perception_survey (mission 은 필요하면) |
-| /perception/puck_survey | std_msgs/String (JSON) | Reliable + TransientLocal, depth 1 | perception_survey — B0 박스 6 · 칸 12. 필드 `slots[]`(box, side, x_mm, y_mm, color, shape, pose, id, status …) · `complete` · `errors` · `revisit` · `unconfirmed` · `frame`(발제 원점, mm). `complete` false 면 할당에 쓰지 않음. 자세한 것은 perception_survey/README.md | mission |
+| /perception/puck_survey | std_msgs/String (JSON) | Reliable + TransientLocal, depth 1 | perception_survey — B0 박스 6 · 칸 12. 필드 `slots[]`(box, side, x_mm, y_mm, color, shape, pose, id, status …) · `complete` · `errors` · `revisit` · `unconfirmed` · `frame`(발제 원점, mm). `complete` false 면 할당에 쓰지 않음. 자세한 것은 perception_survey/README.md | (mission 연동 미구현 — 계획) |
+| /perception/signal | robot_interfaces/SignalSequence | Reliable, depth 1 | perception_node (READ_SIGNAL) | mission (plan 모드), mission_planner |
+| /perception/barcode | robot_interfaces/Barcode | Reliable, depth 1 | perception_node (READ_BARCODE) | mission (plan 모드), mission_planner |
+| /perception/task_marker | robot_interfaces/TaskMarker | Reliable, depth 1 | perception_node (READ_MARKER) | (없음) |
+| /perception/rear_obstacle · `/reason` · `/distance` | std_msgs/Bool · String · Float32 | Reliable + TransientLocal (distance 기본) | rear_obstacle (뒤 D435 깊이, perception.launch `use_rear_obstacle`) | (없음 — 후진 판단에 쓸지 결정 필요) |
+| /localization/status | std_msgs/String | Reliable + TransientLocal | **(발행 노드 없음 — 재위치 노드 미구현)** | perception_survey (못 받으면 관측을 그대로 받음) |
 | /perception/obstacle_stop | std_msgs/Bool | Reliable + TransientLocal, 10 Hz | obstacle_stop (`/tfmini/range` 판정) | twist_mux (lock priority 60, 0.5 s: drive · nav 막음, 조이스틱 통과) |
+| /perception/obstacle_stop/reason | std_msgs/String | Reliable + TransientLocal | obstacle_stop (obstacle · too_close · stale · clear · no_return) | 모니터링 |
+| /tfmini/scan | sensor_msgs/LaserScan | SensorData | Gazebo (gz_bridge) | scan_to_range → /tfmini/range |
 | /map | nav_msgs/OccupancyGrid | Reliable + TransientLocal | slam_toolbox | nav2 |
 | /odom | nav_msgs/Odometry | 기본 | diff_drive_controller | ekf |
-| /imu/data | sensor_msgs/Imu | 기본 | imu_sensor_broadcaster | ekf |
+| /imu/data | sensor_msgs/Imu | 기본 | imu_sensor_broadcaster (실물) · Isaac 브리지 (모의) | ekf |
 | /odometry/filtered | nav_msgs/Odometry | 기본 | ekf | nav2, drive_node |
 | /cmd_vel_teleop | TwistStamped | 기본 | teleop_twist_joy | twist_mux (100, 0.5 s) |
 | /cmd_vel_drive | TwistStamped | 기본 | drive_node (align · skill) | twist_mux (50, 0.25 s) |
@@ -37,11 +44,12 @@
 | /arm_controller/joint_trajectory | trajectory_msgs/JointTrajectory | 기본 | manipulator_node (RL 스트리밍) | arm_controller |
 | /mission/status | robot_interfaces/MissionStatus | 기본, 2 Hz + 변경 시 | mission_node | 모니터링 |
 | /joint_states | sensor_msgs/JointState | 기본, 50 Hz | joint_state_broadcaster | robot_state_publisher, manipulator |
-| /joy | sensor_msgs/Joy | 기본, 20 Hz autorepeat | joy_node | teleop_twist_joy, OpenCRHardware (heartbeat) |
-| /e_stop | std_msgs/Bool | Reliable + TransientLocal, 10 Hz | OpenCRHardware (잠금식) | twist_mux (lock 0.5 s), mission, manipulator |
+| /joy | sensor_msgs/Joy | 기본, 20 Hz autorepeat | joy_node | teleop_twist_joy, joy_teleop (시작 · 정지 버튼 → /mission/start · stop), OpenCRHardware (E-stop · 리셋 버튼, heartbeat) |
+| /e_stop | std_msgs/Bool | Reliable + TransientLocal, 10 Hz | OpenCRHardware (잠금식) · Isaac 브리지 (모의, 항상 false) | twist_mux (lock 0.5 s), mission |
 | /diagnostics | diagnostic_msgs/DiagnosticArray | 기본, 1 Hz + 오류 즉시 | OpenCRHardware (`opencr/link · motors · battery · estop`, hardware_id `opencr`) | mission (opencr/ 만) |
 | /tf · /tf_static | tf2_msgs/TFMessage | 기본 · TransientLocal | slam_toolbox · ekf · robot_state_publisher · realsense2_camera — 규약 [frames_tf.md](frames_tf.md) | 전체 |
-| /arm/skill_state · /arm/safety_state | robot_interfaces/SkillState · SafetyState | TransientLocal | manipulator_node | 모니터링 — **표 추가 여부 결정 필요** |
+| /arm/skill_state · /arm/safety_state | robot_interfaces/SkillState · SafetyState | TransientLocal | **(발행 노드 없음 — 이름 · 메시지만 정의, manipulator 가 내지 않음)** | 모니터링 — **유지 또는 삭제 결정 필요** |
+| /clock · /isaac_joint_states · /isaac_joint_commands | rosgraph_msgs/Clock · sensor_msgs/JointState | 기본 | Isaac 브리지 (`/clock` · 관절 상태) · TopicBasedSystem (관절 명령) | 모의 전용 (`sim:=true`) |
 
 ## Action · Service
 
@@ -58,8 +66,11 @@
 | /arm_controller/follow_joint_trajectory | Action | control_msgs/FollowJointTrajectory | manipulator | arm_controller |
 | /gripper_controller/gripper_cmd | Action | control_msgs/ParallelGripperCommand | manipulator | gripper_controller |
 | /perception/set_mode | Service | robot_interfaces/SetPerceptionMode | mission | perception |
-| /perception/survey/start · /reset · /finish · /revisit | Service | std_srvs/Trigger | mission | perception_survey — 순서: start → `complete` 토픽 → finish 성공. finish 실패면 revisit 로 문제 칸만 다시 |
+| /perception/survey/start · /reset · /finish · /revisit | Service | std_srvs/Trigger | (mission 연동 미구현 — CLI) | perception_survey — 순서: start → `complete` 토픽 → finish 성공. finish 실패면 revisit 로 문제 칸만 다시 |
 | /mission/start · /mission/stop | Service | std_srvs/Trigger | joy_teleop · CLI | mission |
+| /perception/check_dice | Service | robot_interfaces/CheckDice | mission (plan 모드) | perception |
+| /mission_planner/plan | Service | std_srvs/Trigger | mission (plan 모드, `mission_plan.yaml` service) | mission_planner |
+| /obstacle_stop `approach_stop_m` | Parameter | double (0 = 끔) | drive (FINE 정렬 시작 · 끝) | obstacle_stop |
 
 ## 메시지
 
@@ -75,6 +86,10 @@
 | ExecuteSkill | |
 | MissionStatus | |
 | SkillState · SafetyState | 모니터링 전용 |
+| TaskMarker | /perception/task_marker (장소 태그) |
+| SignalSequence | /perception/signal (신호등 점멸 순서, CONFIRMED 12개) |
+| Barcode | /perception/barcode (LOCATE 위치 · READ 문자열) |
+| CheckDice | /perception/check_dice (선반 3×3 주사위 판정) |
 | Puck · PuckArray | /perception/pucks. Puck = tag_id · color · shape · pose (base_link) · standing · confidence · camera |
 
 ## USB 패킷 (opencr_protocol.hpp = opencr_firmware/opencr_protocol.h)
