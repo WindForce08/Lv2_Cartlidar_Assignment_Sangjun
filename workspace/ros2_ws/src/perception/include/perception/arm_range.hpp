@@ -5,6 +5,8 @@
 //     1) Arducam 태그 퍽 중심 (READ_TAG 가 켜져 있을 때, 촬영 시각 팔 자세로 변환): 팔 축에서 옆으로 tag_gate 안인 것 중 가장 가까운 것
 //     2) D435 추적 목표를 odom 에 붙잡아 둔 점 (팔 정렬 목표를 고른 그 점): 마지막으로 본 지 hold_s 안, 팔 축에서 seed_gate 안
 //        퍽은 정지해 있으므로 D435 시야 아래로 빠진 정밀 거리에서도 odom 으로 현재 팔 위치에서 다시 계산할 수 있다
+//     3) 팔 카메라 평면 교차 퍽 중심 (arm_plane.hpp, 이 영상에서 잠근 박스): 팔 축에서 plane_gate 안. 태그도 D435 보유 점도 없을 때
+//        (보유 시간이 지났거나 D435 가 처음부터 못 본 경우) 쓰는 예비
 //   거리 = 퍽 중심의 x − surface_offset(퍽 반지름) → 기존 TFmini 기준과 같은 "표면까지" 거리
 #pragma once
 
@@ -25,11 +27,12 @@ struct ArmRangeConfig
   double seed_gate = 0.05;       // [m] D435 보유 점의 팔 축 옆 거리 상한 (D435 깊이 · odom 오차 포함)
   double hold_s = 3.0;           // [s] D435 가 마지막으로 본 뒤 이 시간까지 보유 점을 쓴다
   double surface_offset = 0.015; // [m] 퍽 중심 → 팔 쪽 표면 (퍽 반지름 · 짧은 변 / 2)
+  double plane_gate = 0.05;      // [m] 평면 교차 중심의 팔 축 옆 거리 상한 (A1 모의 퍽 중심 오차 p95 8 · 팔만 13 mm)
 };
 
 struct ArmRangeEstimate
 {
-  enum class Source { TAG, D435_HOLD };
+  enum class Source { TAG, D435_HOLD, PLANE };
   double range = 0.0;            // [m] 표면까지 (0 미만이면 0)
   double lateral = 0.0;          // [m] 팔 축 옆 거리
   Source source = Source::TAG;
@@ -37,9 +40,11 @@ struct ArmRangeEstimate
 
 inline double lateral_of(const P3 & p) {return std::hypot(p[1], p[2]);}
 
-// tags: 태그로 찾은 퍽 중심들, seed: D435 보유 점 (없으면 nullopt), seed_age: 그 점을 마지막으로 본 뒤 지난 시간 [s]
+// tags: 태그로 찾은 퍽 중심들, seed: D435 보유 점 (없으면 nullopt), seed_age: 그 점을 마지막으로 본 뒤 지난 시간 [s],
+// plane: 이 영상의 평면 교차 퍽 중심 (없으면 nullopt)
 inline std::optional<ArmRangeEstimate> arm_range(
-  const std::vector<P3> & tags, const std::optional<P3> & seed, double seed_age, const ArmRangeConfig & c)
+  const std::vector<P3> & tags, const std::optional<P3> & seed, double seed_age, const ArmRangeConfig & c,
+  const std::optional<P3> & plane = std::nullopt)
 {
   const P3 * best = nullptr;
   for (const auto & p : tags) {
@@ -54,6 +59,9 @@ inline std::optional<ArmRangeEstimate> arm_range(
   {
     best = &*seed;
     e.source = ArmRangeEstimate::Source::D435_HOLD;
+  } else if (plane && (*plane)[0] > 0.0 && lateral_of(*plane) <= c.plane_gate) {
+    best = &*plane;
+    e.source = ArmRangeEstimate::Source::PLANE;
   } else {
     return std::nullopt;
   }

@@ -32,11 +32,12 @@
 //      → 프레임 상태(켜진 등이 없고 칸 앞을 무엇이 가리면 꺼짐이 아니라 모름) → 점멸 순서 세기(signal_sequence.hpp).
 //      READ_SIGNAL 을 끄면 센 것을 지운다
 //   /arm_range (토픽, Range): ARM_ALIGN 이 켜져 있으면 팔 영상마다 팔 끝(arm.range.frame, 기본 tool_link) → 정렬 중인 퍽 표면 거리
-//      (arm_range.hpp): ① Arducam 태그 퍽 중심(READ_TAG 도 켜졌을 때) ② D435 추적 목표를 odom 에 붙잡아 둔 점(hold_s 안).
+//      (arm_range.hpp): ① Arducam 태그 퍽 중심(READ_TAG 도 켜졌을 때) ② D435 추적 목표를 odom 에 붙잡아 둔 점(hold_s 안)
+//      ③ 둘 다 없으면 팔 카메라 평면 교차 퍽 중심(arm_plane.hpp, 이 영상에서 잠근 박스).
 //      stamp = 팔 영상 촬영 시각. 못 구하면 +inf. TFmini 는 박스 앞면 거리(/tfmini/range) 전용이라 여기 쓰지 않는다
 //      ★ 위 ARM_ALIGN 의 /perception/arm_range 와 이름이 비슷하지만 다른 토픽이다 — 헷갈리지 말 것 (합칠지 팀 결정 필요)
-//        /arm_range            = 퍽 **표면**까지 (태그 · D435 보유 점), manipulator 가 씀
-//        /perception/arm_range = 퍽 **중심**까지 (팔 카메라 평면 교차), 예비 · 검증용. 두 값 차이 ≈ 퍽 반지름
+//        /arm_range            = 퍽 **표면**까지 (태그 · D435 보유 점 · 평면 교차 순), manipulator 가 씀
+//        /perception/arm_range = 퍽 **중심**까지 (팔 카메라 평면 교차만), 검증용 비교. 같은 출처면 두 값 차이 = 퍽 반지름
 //   /perception/check_dice (서비스, CheckDice): 가장 최근 /perception/pucks 목록으로 선반 위 3×3 주사위 판정(dice_check.hpp)
 //   /perception/barcode (토픽, Barcode): READ_BARCODE 가 켜져 있으면 두 가지를 낸다
 //      LOCATE: barcode.camera D435 깊이를 barcode.depth_frames 장 모아 평균(로봇이 멈춘 동안, 평균 중 odom 으로
@@ -464,6 +465,7 @@ public:
     arm_range_cfg_.tag_gate = declare_parameter("arm.range.tag_gate", arm_range_cfg_.tag_gate);
     arm_range_cfg_.seed_gate = declare_parameter("arm.range.seed_gate", arm_range_cfg_.seed_gate);
     arm_range_cfg_.hold_s = declare_parameter("arm.range.hold_s", arm_range_cfg_.hold_s);
+    arm_range_cfg_.plane_gate = declare_parameter("arm.range.plane_gate", arm_range_cfg_.plane_gate);
     arm_range_cfg_.surface_offset = puck_geom_.half_width;
     arm_range_max_ = declare_parameter("arm.range.max_range", arm_range_max_);
     arm_range_pub_ = create_publisher<sensor_msgs::msg::Range>(names::ARM_RANGE, qos::sensor());
@@ -1490,6 +1492,7 @@ private:
     const cv::Mat u = undistort(cv->image, info);
     const std::string frame = arm_.frame_id.empty() ? img->header.frame_id : arm_.frame_id;
     const rclcpp::Time stamp(img->header.stamp, get_clock()->get_clock_type());
+    std::optional<tf2::Vector3> plane_pt;   // 이 영상의 평면 교차 퍽 중심 (plane_.frame) → /arm_range 예비 출처
     if (mode & SetMode::Request::ARM_ALIGN) {
       cv::Mat small = u;
       if (detect_w_ > 0 && u.cols > detect_w_) {
@@ -1526,7 +1529,7 @@ private:
         const int m = plane_.edge_margin_px;
         const bool cut = bx.x <= m || bx.y <= m || bx.x + bx.width >= small.cols - m || bx.y + bx.height >= small.rows - m;
         if (plane_.enabled && !newK_.empty() && !cut) {
-          publish_plane(frame, stamp, img->header.stamp, (1.0 + boxes[b].x) * u.cols / 2.0, (1.0 + boxes[b].y) * u.rows / 2.0);
+          plane_pt = publish_plane(frame, stamp, img->header.stamp, (1.0 + boxes[b].x) * u.cols / 2.0, (1.0 + boxes[b].y) * u.rows / 2.0);
         }
       }
     }
@@ -1565,11 +1568,11 @@ private:
     if (want_marker && T) {
       arm_.marker = best_marker(places, *T, img->header.stamp, Puck::CAMERA_ARM);
     }
-    if (mode & SetMode::Request::ARM_ALIGN) {publish_arm_range(img->header, (mode & SetMode::Request::READ_TAG) != 0);}
+    if (mode & SetMode::Request::ARM_ALIGN) {publish_arm_range(img->header, (mode & SetMode::Request::READ_TAG) != 0, plane_pt);}
   }
 
   // /arm_range: 촬영 시각 팔 자세로 태그 퍽 중심(base_link) · D435 보유 점(odom) 을 range_frame 으로 옮겨 거리 계산
-  void publish_arm_range(const std_msgs::msg::Header & img_header, bool use_tags)
+  void publish_arm_range(const std_msgs::msg::Header & img_header, bool use_tags, const std::optional<tf2::Vector3> & plane_pt)
   {
     const rclcpp::Time stamp(img_header.stamp, get_clock()->get_clock_type());
     std::vector<P3> tags;
@@ -1588,7 +1591,14 @@ private:
         seed = P3{v.x(), v.y(), v.z()};
       }
     }
-    const auto e = arm_range(tags, seed, stamp.seconds() - seed_t_, arm_range_cfg_);
+    std::optional<P3> plane;
+    if (plane_pt) {
+      if (const auto T = lookup_at(arm_range_frame_, plane_.frame, stamp, false)) {
+        const tf2::Vector3 v = *T * *plane_pt;
+        plane = P3{v.x(), v.y(), v.z()};
+      }
+    }
+    const auto e = arm_range(tags, seed, stamp.seconds() - seed_t_, arm_range_cfg_, plane);
     sensor_msgs::msg::Range m;
     m.header.stamp = img_header.stamp;
     m.header.frame_id = arm_range_frame_;
@@ -1600,7 +1610,8 @@ private:
     if (e && e->range <= arm_range_max_) {
       m.range = static_cast<float>(e->range);
       RCLCPP_DEBUG(get_logger(), "/arm_range %.3f m (%s, 옆 %.3f m)", e->range,
-        e->source == ArmRangeEstimate::Source::TAG ? "태그" : "D435 보유", e->lateral);
+        e->source == ArmRangeEstimate::Source::TAG ? "태그" :
+        e->source == ArmRangeEstimate::Source::D435_HOLD ? "D435 보유" : "평면 교차", e->lateral);
     }
     arm_range_pub_->publish(m);
   }
@@ -1613,8 +1624,8 @@ private:
 
   // 잠근 박스 중심 (u, v: 왜곡 보정한 원본 화소) → 평면 교차 퍽 중심 · 거리 발행.
   //   평면 높이는 D435 추적 목표가 살아 있으면 그 높이로 고르고(받침 · 반높이 목록), 잠근 동안 유지한다.
-  //   그래서 D435 가 목표를 놓친 뒤(가까이 다가가 화면 밖)에도 팔 카메라만으로 낸다
-  void publish_plane(const std::string & frame, const rclcpp::Time & stamp, const builtin_interfaces::msg::Time & st,
+  //   그래서 D435 가 목표를 놓친 뒤(가까이 다가가 화면 밖)에도 팔 카메라만으로 낸다. 퍽 중심(plane_.frame)을 돌려준다(/arm_range ③ 출처)
+  std::optional<tf2::Vector3> publish_plane(const std::string & frame, const rclcpp::Time & stamp, const builtin_interfaces::msg::Time & st,
     double u, double v)
   {
     if (seed_odom_ && std::abs(stamp.seconds() - seed_t_) <= seed_max_age_) {
@@ -1624,16 +1635,16 @@ private:
       }
     }
     if (!plane_.height && plane_.default_height >= 0.0) {plane_.height = plane_.default_height;}
-    if (!plane_.height) {return;}
+    if (!plane_.height) {return std::nullopt;}
     const auto T_pc = lookup_at(plane_.frame, frame, stamp, false);
-    if (!T_pc) {return;}
+    if (!T_pc) {return std::nullopt;}
     const tf2::Matrix3x3 & b = T_pc->getBasis();
     const tf2::Vector3 & o = T_pc->getOrigin();
     const cv::Matx33d R(b[0][0], b[0][1], b[0][2], b[1][0], b[1][1], b[1][2], b[2][0], b[2][1], b[2][2]);
     cv::Matx33d K;
     for (int i = 0; i < 9; ++i) {K(i / 3, i % 3) = newK_.at<double>(i / 3, i % 3);}
     const auto p = ray_plane(K, u, v, R, cv::Vec3d(o.x(), o.y(), o.z()), *plane_.height);
-    if (!p) {return;}
+    if (!p) {return std::nullopt;}
     geometry_msgs::msg::PointStamped pt;
     pt.header.stamp = st;
     pt.header.frame_id = plane_.frame;
@@ -1641,11 +1652,12 @@ private:
     pt.point.y = (*p)[1];
     pt.point.z = (*p)[2];
     plane_target_pub_->publish(pt);
+    const tf2::Vector3 center((*p)[0], (*p)[1], (*p)[2]);
     // 거리: range_frame(기본 tool_link = 파지점) 원점에서 그 +x 방향으로 퍽 중심까지 (표면이 아니라 중심)
     const auto T_rp = lookup_at(plane_.range_frame, plane_.frame, stamp, false);
-    if (!T_rp) {return;}
-    const double x = (*T_rp * tf2::Vector3((*p)[0], (*p)[1], (*p)[2])).x();
-    if (!(x > 0.0) || x > plane_.max_range) {return;}
+    if (!T_rp) {return center;}
+    const double x = (*T_rp * center).x();
+    if (!(x > 0.0) || x > plane_.max_range) {return center;}
     sensor_msgs::msg::Range rg;
     rg.header = pt.header;
     rg.header.frame_id = plane_.range_frame;
@@ -1655,6 +1667,7 @@ private:
     rg.max_range = static_cast<float>(plane_.max_range);
     rg.range = static_cast<float>(x);
     plane_range_pub_->publish(rg);
+    return center;
   }
 
   // D435 추적 목표(odom)를 팔 영상(왜곡 보정 뒤)에 투영한 정규화 점(화면 밖이면 −1~1 밖). 목표가 seed_max_age_ 보다
