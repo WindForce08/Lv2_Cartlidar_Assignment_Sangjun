@@ -35,6 +35,19 @@
 //                                 칸 = (cx, cy) ± 0.06 격자 (행 우선, 위 줄 +Y 부터, 줄 안은 -X 부터), expect9 = 칸마다 0 빈칸 · 1 R · 2 G · 3 Y.
 //                                 결과는 로그 (log_dir/mission_log.jsonl) 에 남기고, 틀려도 verify.stop_on_fail=false 면 계속 (복귀 점수)
 //   wait <s>                      제자리 대기 (복귀 후 정지 등)
+//   퍽 측량 (survey.enabled, 이슈 #39 #53) — observe 와 plan 사이에 붙는다:
+//   survey_start                  /perception/survey/start (std_srvs/Trigger) → survey.mode 켜기
+//   survey_view <box> <arm_pose>  팔 자세 → survey.mode → survey.settle_s 기다림 (perception_survey 가 /perception/pucks 를 쌓음)
+//                                 박스마다 goto (survey.poses) [+ approach survey.approach_distance] 뒤에 붙는다
+//   survey_finish                 /perception/survey/finish. 성공 = 12칸 확정 → 완료 파일 (message = 경로) 을 계획기 퍽 등록표
+//                                 (survey.pucks_out, mission_planner pucks_file 과 같은 경로) 로 바꿔 씀.
+//                                 실패면 /perception/survey/revisit → 문제 칸이 있는 박스만 survey.revisit_arm_pose 로 다시 보고 finish (#53).
+//                                 다시 볼 칸이 없고 미확인 칸만 남으면 survey.on_unconfirmed: fail (안전 정지) | registered (등록표 그대로 계획)
+//   장소 태그 (/perception/task_marker, READ_MARKER, #39) — L1 · L2 · L3 = marker.ids (12 · 13 · 14):
+//     verify 에서 verify.check_marker 면 READ_MARKER 를 같이 켜고, 새로 본 태그 ID · 위치 (base_link · map) 를
+//     check_dice 결과와 같은 줄에 기록 (발제 채점: 새 관측 기반 장소별 ID · 위치). ID 가 다르면 verify.stop_on_fail 에 따름
+//   check_marker <L>              marker.check_before_place 면 그 장소 첫 place_<L>_* skill 앞에 자동으로 붙음:
+//                                 READ_MARKER → 기대 ID 를 보면 성공, 다른 ID 면 실패 (엉뚱한 장소에 놓지 않게)
 //
 // callback group
 // - mission_cb_group_: Action · Service 클라이언트 · 서버, 타이머. 상태는 이 그룹에서만 바뀐다
@@ -42,6 +55,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <cmath>
 #include <ctime>
 #include <filesystem>
@@ -52,6 +66,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -73,11 +88,13 @@
 #include "robot_interfaces/msg/barcode.hpp"
 #include "robot_interfaces/msg/perception_result.hpp"
 #include "robot_interfaces/msg/signal_sequence.hpp"
+#include "robot_interfaces/msg/task_marker.hpp"
 #include "robot_interfaces/srv/check_dice.hpp"
 #include "robot_interfaces/srv/set_perception_mode.hpp"
 #include "std_msgs/msg/bool.hpp"
 #include "std_srvs/srv/trigger.hpp"
 #include "tf2/utils.hpp"
+#include "yaml-cpp/yaml.h"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 #include "tf2_ros/buffer.hpp"
 #include "tf2_ros/transform_listener.hpp"
@@ -100,6 +117,7 @@ public:
   using Trigger = std_srvs::srv::Trigger;
   using SignalSequence = robot_interfaces::msg::SignalSequence;
   using Barcode = robot_interfaces::msg::Barcode;
+  using TaskMarker = robot_interfaces::msg::TaskMarker;
   using CheckDice = robot_interfaces::srv::CheckDice;
   using Report = std::function<void (bool ok, const std::string & message)>;
 
@@ -138,6 +156,9 @@ public:
       barcode_sub_ = create_subscription<Barcode>(
         "/perception/barcode", rclcpp::QoS(1).reliable(),
         [this](Barcode::ConstSharedPtr msg) {onBarcode(msg);}, sub_opt);
+      marker_sub_ = create_subscription<TaskMarker>(
+        "/perception/task_marker", rclcpp::QoS(1).reliable(),
+        [this](TaskMarker::ConstSharedPtr msg) {onMarker(msg);}, sub_opt);
     }
 
     // --- 클라이언트 ---
@@ -154,6 +175,12 @@ public:
     if (plan_mode_) {
       plan_client_ = create_client<Trigger>(plan_service_, rclcpp::ServicesQoS(), mission_cb_group_);
       dice_client_ = create_client<CheckDice>("/perception/check_dice", rclcpp::ServicesQoS(), mission_cb_group_);
+      if (survey_enabled_) {
+        survey_start_client_ = create_client<Trigger>("/perception/survey/start", rclcpp::ServicesQoS(), mission_cb_group_);
+        survey_finish_client_ = create_client<Trigger>("/perception/survey/finish", rclcpp::ServicesQoS(), mission_cb_group_);
+        survey_revisit_client_ =
+          create_client<Trigger>("/perception/survey/revisit", rclcpp::ServicesQoS(), mission_cb_group_);
+      }
     }
 
     // --- 서버: 시작 · 정지 (joy_teleop 버튼 또는 CLI에서 호출) ---
@@ -300,11 +327,37 @@ private:
     timeout_["verify"] = declare_parameter<double>("timeout.verify", 40.0);
     observe_arm_pose_ = declare_parameter<std::string>("observe.arm_pose", "TAG_VIEW");
     verify_arm_pose_ = declare_parameter<std::string>("verify.arm_pose", "TAG_VIEW");
+    // 신호 묶음을 이만큼 (점멸 수가 맞는 것) 보고도 확정이 안 되면 안전 정지. 한 묶음 약 26 s (12 x 2 s + 3 s 텀 - 1 s)
+    observe_max_cycles_ = declare_parameter<int>("observe.max_cycles", 4);
     verify_mode_text_ = declare_parameter<std::string>("verify.mode", "READ_TAG+SEARCH_FRONT");
     verify_settle_ = declare_parameter<double>("verify.settle_s", 2.0);
     verify_tolerance_ = declare_parameter<double>("verify.tolerance", 0.0);   // 0 = perception 설정값
     verify_stop_on_fail_ = declare_parameter<bool>("verify.stop_on_fail", false);
     log_dir_ = declare_parameter<std::string>("log_dir", "");                // 비우면 기록 안 함
+
+    // 퍽 측량 (perception_survey, #39 #53). 박스 1~6 마다 조사 자세 [x, y, yaw] (지도 = 발제 좌표)
+    //   기본값 = mission_planner config/approach_poses.yaml 의 stage (B1~B4 남쪽 · B5 북쪽 · B6 서쪽)
+    survey_enabled_ = declare_parameter<bool>("survey.enabled", false);
+    survey_boxes_ = declare_parameter<std::vector<int64_t>>("survey.boxes", {1, 2, 3, 4, 5, 6});
+    survey_poses_ = declare_parameter<std::vector<double>>("survey.poses", {
+      1.468, 0.3647, 1.5708, 3.67, 2.4667, 1.5708, 2.936, 4.6687, 1.5708,
+      0.734, 4.6687, 1.5708, 2.202, 5.9393, -1.5708, 2.9847, 3.886, 0.0});
+    survey_approach_ = declare_parameter<double>("survey.approach_distance", 0.13);   // 0 = 조사 자세에서 바로 봄
+    survey_arm_pose_ = declare_parameter<std::string>("survey.arm_pose", "BOX_VIEW");
+    survey_revisit_arm_pose_ = declare_parameter<std::string>("survey.revisit_arm_pose", "TAG_VIEW");   // 다른 각도
+    survey_mode_text_ = declare_parameter<std::string>("survey.mode", "READ_TAG+SEARCH_FRONT");
+    survey_settle_ = declare_parameter<double>("survey.settle_s", 2.0);
+    survey_max_rounds_ = declare_parameter<int>("survey.max_rounds", 2);              // 다시 보기 횟수 (perception max_revisits)
+    survey_on_unconfirmed_ = declare_parameter<std::string>("survey.on_unconfirmed", "fail");   // fail | registered
+    survey_pucks_out_ = declare_parameter<std::string>("survey.pucks_out", "/tmp/mission_log/pucks_survey.yaml");
+    // 장소 태그 (#39): L1 · L2 · L3 의 태그 ID
+    marker_ids_ = declare_parameter<std::vector<int64_t>>("marker.ids", {12, 13, 14});
+    verify_check_marker_ = declare_parameter<bool>("verify.check_marker", true);
+    verify_marker_wait_ = declare_parameter<double>("verify.marker_wait_s", 3.0);    // settle 뒤 태그를 더 기다리는 시간
+    marker_check_before_place_ = declare_parameter<bool>("marker.check_before_place", false);   // ★ 놓는 자리에서 태그가 보이면 true
+    timeout_["check_marker"] = declare_parameter<double>("timeout.check_marker", 10.0);
+    timeout_["survey"] = declare_parameter<double>("timeout.survey", 20.0);          // start · finish 서비스
+    timeout_["survey_view"] = declare_parameter<double>("timeout.survey_view", 30.0);
   }
 
   void validation()
@@ -344,7 +397,26 @@ private:
     if (!std::isfinite(diag_timeout_) || diag_timeout_ < 0.0) {
       throw std::invalid_argument("diagnostics.timeout must be >= 0 (0 = off)");
     }
+    if (plan_mode_ && survey_enabled_) {
+      if (survey_poses_.size() != 3 * survey_boxes_.size()) {
+        throw std::invalid_argument("survey.poses must have [x, y, yaw] for each of survey.boxes");
+      }
+      for (int64_t b : survey_boxes_) {
+        if (b < 1 || b > 6) {throw std::invalid_argument("survey.boxes must be 1..6");}
+      }
+      if (!parseModeNames(survey_mode_text_)) {throw std::invalid_argument("survey.mode: names joined by '+'");}
+      if (!(survey_settle_ >= 0.0) || survey_max_rounds_ < 0 || (survey_approach_ != 0.0 && survey_approach_ < 0.13)) {
+        throw std::invalid_argument("survey.settle_s >= 0, survey.max_rounds >= 0, survey.approach_distance 0 or >= 0.13");
+      }
+      if (survey_on_unconfirmed_ != "fail" && survey_on_unconfirmed_ != "registered") {
+        throw std::invalid_argument("survey.on_unconfirmed must be fail or registered");
+      }
+      if (survey_pucks_out_.empty()) {throw std::invalid_argument("survey.pucks_out must be set (planner pucks_file)");}
+    }
     if (plan_mode_) {
+      if (observe_max_cycles_ < 2) {throw std::invalid_argument("observe.max_cycles must be >= 2 (CONFIRMED needs 2)");}
+      if (marker_ids_.size() != 3) {throw std::invalid_argument("marker.ids must be [L1, L2, L3] tag ids");}
+      if (!(verify_marker_wait_ >= 0.0)) {throw std::invalid_argument("verify.marker_wait_s must be >= 0");}
       if (!parseModeNames(verify_mode_text_)) {throw std::invalid_argument("verify.mode: names joined by '+'");}
       if (!(verify_settle_ >= 0.0) || !(verify_tolerance_ >= 0.0)) {
         throw std::invalid_argument("verify.settle_s · verify.tolerance must be >= 0");
@@ -438,7 +510,13 @@ private:
         bad("mode= takes names joined by '+' (OFF · SEARCH_FRONT · ARM_ALIGN · READ_TAG · SEARCH_REAR · "
           "READ_MARKER · READ_SIGNAL · READ_BARCODE), no numbers");
       }
-    } else if (s.type == "search" || s.type == "pick" || s.type == "observe" || s.type == "plan") {
+    } else if (s.type == "check_marker") {
+      if (s.args.size() != 1 || markerIdOf(s.args[0]) < 0) {bad("needs <L1|L2|L3>");}
+    } else if (s.type == "survey_view") {
+      if (s.args.size() != 2 || !isNumber(s.args[0], v) || v < 1 || v > 6) {bad("needs <box 1-6> <arm_pose>");}
+    } else if (s.type == "search" || s.type == "pick" || s.type == "observe" || s.type == "plan" ||
+      s.type == "survey_start" || s.type == "survey_finish")
+    {
       if (!s.args.empty()) {bad("takes no arguments");}
     } else if (s.type == "goto" || s.type == "pick_target") {
       if (s.args.size() != 3 || !isNumber(s.args[0], v) || !isNumber(s.args[1], v) || !isNumber(s.args[2], v)) {
@@ -496,7 +574,17 @@ private:
     std::lock_guard<std::mutex> lock(sensor_mutex_);
     signal_status_ = msg->status;
     signal_seq_ = msg->sequence;
+    signal_cycles_ = msg->cycles;
     signal_rx_ = now();
+  }
+
+  // 장소 태그: 보인 것만 (found) 300ms 규칙으로 걸러 기억
+  void onMarker(TaskMarker::ConstSharedPtr msg)
+  {
+    if (!msg->found || !isFresh(msg->header.stamp)) {return;}
+    std::lock_guard<std::mutex> lock(sensor_mutex_);
+    last_marker_ = msg;
+    marker_rx_ = now();
   }
 
   void onBarcode(Barcode::ConstSharedPtr msg)
@@ -621,6 +709,10 @@ private:
       tickObserve();
     } else if (s.type == "verify") {
       tickVerify();
+    } else if (s.type == "survey_view") {
+      if (watching_ && (now() - view_since_).seconds() >= survey_settle_) {stepSucceeded();}
+    } else if (s.type == "check_marker") {
+      tickCheckMarker();
     } else if (s.type == "wait") {
       if (now() >= wait_until_) {stepSucceeded();}
     }
@@ -631,7 +723,8 @@ private:
     const Step & s = steps_[step_idx_];
     if (s.type == "skill") {return skillTimeout(s) + skill_timeout_margin_;}
     if (s.type == "wait") {return std::stod(s.args[0]) + 5.0;}
-    const std::string key = s.type == "goto" ? "navigate" : s.type == "pick_target" ? "pick" : s.type;
+    const std::string key = s.type == "goto" ? "navigate" : s.type == "pick_target" ? "pick" :
+      (s.type == "survey_start" || s.type == "survey_finish") ? "survey" : s.type;
     auto it = timeout_.find(key);
     return it != timeout_.end() ? it->second : 60.0;
   }
@@ -658,6 +751,12 @@ private:
     if (plan_mode_) {
       // 출발 구역에서 신호 · 바코드 관측 → 계획기에 단계 요청 (뒤에 붙음)
       steps_.push_back(parseStep("observe"));
+      if (survey_enabled_) {
+        survey_round_ = 0;
+        steps_.push_back(parseStep("survey_start"));
+        for (size_t i = 0; i < survey_boxes_.size(); ++i) {appendSurveyBox(steps_, survey_boxes_[i], survey_arm_pose_);}
+        steps_.push_back(parseStep("survey_finish"));
+      }
       steps_.push_back(parseStep("plan"));
     } else {
       steps_.push_back(parseStep("pose TAG_VIEW"));
@@ -667,6 +766,8 @@ private:
       steps_.push_back(read);
     }
     tag_id_ = -1;
+    marker_checked_.clear();
+    mismatch_logged_cycles_ = -1;
     retry_count_.clear();
     fallback_used_.clear();
     run_ = Run::RUNNING;
@@ -741,8 +842,30 @@ private:
       sendArmPose(s.type == "observe" ? observe_arm_pose_ : verify_arm_pose_);
     } else if (s.type == "plan") {
       requestPlan();
+    } else if (s.type == "survey_start") {
+      callTrigger(survey_start_client_, "/perception/survey/start", [this](bool ok, const std::string & msg) {
+          if (!ok) {failStep("survey start: " + msg); return;}
+          logEvent("survey", "\"event\": \"start\"");
+          setModeThen(*parseModeNames(survey_mode_text_), [this]() {stepSucceeded();});
+        });
+    } else if (s.type == "survey_view") {
+      // ① 팔 자세 → ② survey.mode → ③ settle_s 동안 perception_survey 가 관측을 쌓음 (sequenced)
+      drive_done_ = true;
+      sendArmPose(s.args[1]);
+    } else if (s.type == "survey_finish") {
+      finishSurvey();
     } else if (s.type == "wait") {
       wait_until_ = now() + rclcpp::Duration::from_seconds(std::stod(s.args[0]));
+    } else if (s.type == "check_marker") {
+      drive_done_ = true;
+      setModeThen(Mode::READ_MARKER, [this]() {beginWatch();});
+    } else if (s.type == "skill" && needsMarkerCheck(s)) {
+      // 이 장소 첫 놓기 앞에서 한 번 장소 태그 확인 (marker.check_before_place)
+      const std::string L = s.args[1].substr(6, 2);
+      marker_checked_.insert(L);
+      steps_.insert(steps_.begin() + static_cast<std::ptrdiff_t>(idx), parseStep("check_marker " + L));
+      enterStep(idx);
+      return;
     } else if (s.type == "skill") {
       const bool on_drive = s.args[0] == "drive";
       (on_drive ? arm_done_ : drive_done_) = true;
@@ -769,7 +892,10 @@ private:
       // 팔 자세 완료 → 신호 · 바코드 읽기. 이 시각 뒤에 받은 값만 쓴다
       setModeThen(Mode::READ_SIGNAL | Mode::READ_BARCODE, [this]() {beginWatch();});
     } else if (s.type == "verify" && phase_ == 1) {
-      setModeThen(*parseModeNames(verify_mode_text_), [this]() {beginWatch();});
+      const uint8_t mode = *parseModeNames(verify_mode_text_) | (verify_check_marker_ ? Mode::READ_MARKER : 0);
+      setModeThen(mode, [this]() {beginWatch();});
+    } else if (s.type == "survey_view" && phase_ == 1) {
+      setModeThen(*parseModeNames(survey_mode_text_), [this]() {beginWatch();});
     } else if (s.type == "approach") {
       switch (phase_) {
         case 1:  // STOW 완료 → 전방 탐색만 켜고 먼 거리 정렬 (drive는 ARM_ALIGN 비트가 없으면 먼 거리 모드)
@@ -793,7 +919,7 @@ private:
   bool isSequenced() const
   {
     const auto & t = steps_[step_idx_].type;
-    return t == "search" || t == "approach" || t == "observe" || t == "verify";
+    return t == "search" || t == "approach" || t == "observe" || t == "verify" || t == "survey_view";
   }
 
   void stepSucceeded()
@@ -863,7 +989,7 @@ private:
   void tickObserve()
   {
     if (!watching_) {return;}
-    uint8_t status;
+    uint8_t status, cycles;
     std::string seq, code;
     bool sig_new, code_new;
     {
@@ -872,19 +998,238 @@ private:
       code_new = barcode_rx_ >= view_since_;
       status = signal_status_;
       seq = signal_seq_;
+      cycles = signal_cycles_;
       code = barcode_text_;
     }
+    // 신호는 12회 점멸 → 3 s 꺼짐 → 다시 처음부터 반복된다. perception 은 같은 순서 2 묶음이면 CONFIRMED,
+    // 묶음끼리 다르면 MISMATCH 지만 다음 묶음이 앞의 것과 같으면 CONFIRMED 로 바뀐다 → MISMATCH 는 바로 멈추지 않고
+    // 묶음을 observe.max_cycles 개까지 본 뒤에도 확정이 안 되면 오류 기록 후 안전 정지 (발제: 오류 기록 · 안전 정지)
     if (sig_new && status == SignalSequence::MISMATCH) {
-      // 발제: 다시 보여주기 · 수동 수정 없음 → 오류 기록 후 안전 정지
-      logEvent("observe", "\"ok\": false, \"reason\": \"signal mismatch\", \"sequence\": \"" + seq + "\"");
-      finish(Run::FAILED, "signal MISMATCH (" + seq + ")");
-      return;
+      if (cycles >= observe_max_cycles_) {
+        logEvent("observe", "\"ok\": false, \"reason\": \"signal mismatch\", \"cycles\": " + std::to_string(cycles) +
+          ", \"sequence\": \"" + seq + "\"");
+        finish(Run::FAILED, "signal MISMATCH after " + std::to_string(cycles) + " cycles (" + seq + ")");
+        return;
+      }
+      if (cycles != mismatch_logged_cycles_) {
+        mismatch_logged_cycles_ = cycles;
+        RCLCPP_WARN(get_logger(), "observe: cycles differ (%d seen, last %s) -> wait for next cycle", cycles, seq.c_str());
+        logEvent("observe", "\"ok\": null, \"reason\": \"mismatch, waiting next cycle\", \"cycles\": " +
+          std::to_string(cycles) + ", \"sequence\": \"" + seq + "\"");
+      }
     }
     if (sig_new && status == SignalSequence::CONFIRMED && code_new) {
       RCLCPP_INFO(get_logger(), "observe: signal %s, barcode %s", seq.c_str(), code.c_str());
       logEvent("observe", "\"ok\": true, \"sequence\": \"" + seq + "\", \"barcode\": \"" + code + "\"");
       stepSucceeded();
     }
+  }
+
+  // ------------------------------------------------------------------ 퍽 측량 (#39 #53)
+  // 박스 하나 조사: 조사 자세로 주행 (+ 정밀 접근) → 팔 자세로 보기
+  void appendSurveyBox(std::vector<Step> & out, int64_t box, const std::string & arm_pose) const
+  {
+    for (size_t i = 0; i < survey_boxes_.size(); ++i) {
+      if (survey_boxes_[i] != box) {continue;}
+      std::ostringstream go;
+      go << "goto " << survey_poses_[3 * i] << " " << survey_poses_[3 * i + 1] << " " << survey_poses_[3 * i + 2];
+      out.push_back(parseStep(go.str()));
+      if (survey_approach_ > 0.0) {
+        out.push_back(parseStep("approach " + std::to_string(survey_approach_)));
+      }
+      out.push_back(parseStep("survey_view " + std::to_string(box) + " " + arm_pose));
+      return;
+    }
+  }
+
+  void callTrigger(const rclcpp::Client<Trigger>::SharedPtr & client, const std::string & name, Report cb)
+  {
+    if (!client || !client->service_is_ready()) {
+      cb(false, name + " not ready");
+      return;
+    }
+    const uint64_t id = stage_id_;
+    client->async_send_request(std::make_shared<Trigger::Request>(),
+      [this, id, cb](rclcpp::Client<Trigger>::SharedFuture future) {
+        if (id != stage_id_) {return;}
+        const auto res = future.get();
+        cb(res->success, res->message);
+      });
+  }
+
+  // finish 성공 → 완료 파일을 계획기 퍽 등록표로. 실패 → revisit 로 문제 칸만 다시 보기 (#53)
+  void finishSurvey()
+  {
+    callTrigger(survey_finish_client_, "/perception/survey/finish", [this](bool ok, const std::string & msg) {
+        if (ok) {
+          std::string err;
+          if (!writePucksFromSurvey(msg, err)) {
+            logEvent("survey", "\"event\": \"finish\", \"ok\": false, \"reason\": \"" + escape(err) + "\"");
+            finish(Run::FAILED, "survey: " + err);
+            return;
+          }
+          RCLCPP_INFO(get_logger(), "survey complete: %s -> %s", msg.c_str(), survey_pucks_out_.c_str());
+          logEvent("survey", "\"event\": \"finish\", \"ok\": true, \"file\": \"" + escape(msg) +
+            "\", \"pucks\": \"" + escape(survey_pucks_out_) + "\"");
+          stepSucceeded();
+          return;
+        }
+        RCLCPP_WARN(get_logger(), "survey finish failed: %s", msg.c_str());
+        logEvent("survey", "\"event\": \"finish\", \"ok\": false, \"reason\": \"" + escape(msg) + "\"");
+        if (survey_round_ >= survey_max_rounds_) {
+          surveyUnconfirmed("revisit rounds used up (" + std::to_string(survey_max_rounds_) + "): " + msg);
+          return;
+        }
+        callTrigger(survey_revisit_client_, "/perception/survey/revisit", [this](bool rok, const std::string & rmsg) {
+            onSurveyRevisit(rok, rmsg);
+          });
+      });
+  }
+
+  // revisit 응답 message = {"revisit": [{"slot": "box:side", ...}], "unconfirmed": [...]}
+  void onSurveyRevisit(bool ok, const std::string & msg)
+  {
+    std::set<int64_t> boxes;
+    std::string unconfirmed;
+    try {
+      const YAML::Node doc = YAML::Load(msg);
+      for (const auto & r : doc["revisit"]) {
+        const std::string slot = r["slot"].as<std::string>();
+        boxes.insert(std::stoll(slot.substr(0, slot.find(':'))));
+      }
+      for (const auto & u : doc["unconfirmed"]) {unconfirmed += (unconfirmed.empty() ? "" : ", ") + u.as<std::string>();}
+    } catch (const std::exception &) {
+      if (ok) {
+        finish(Run::FAILED, "survey revisit: cannot read response: " + msg);
+        return;
+      }
+    }
+    logEvent("survey", "\"event\": \"revisit\", \"ok\": " + std::string(ok ? "true" : "false") +
+      ", \"message\": \"" + escape(msg) + "\"");
+    if (!ok || boxes.empty()) {
+      surveyUnconfirmed(unconfirmed.empty() ? msg : "unconfirmed " + unconfirmed);
+      return;
+    }
+    ++survey_round_;
+    std::vector<Step> added;
+    for (int64_t b : boxes) {appendSurveyBox(added, b, survey_revisit_arm_pose_);}
+    added.push_back(parseStep("survey_finish"));
+    RCLCPP_INFO(get_logger(), "survey revisit round %d: %zu box(es)", survey_round_, boxes.size());
+    steps_.insert(steps_.begin() + static_cast<std::ptrdiff_t>(step_idx_) + 1, added.begin(), added.end());
+    stepSucceeded();
+  }
+
+  // 미확인 칸이 남음: fail = 안전 정지 (할당에는 12칸이 다 필요), registered = 계획기 등록표 그대로 계획
+  void surveyUnconfirmed(const std::string & why)
+  {
+    if (survey_on_unconfirmed_ == "registered") {
+      RCLCPP_WARN(get_logger(), "survey incomplete (%s) -> plan with registered pucks_file", why.c_str());
+      logEvent("survey", "\"event\": \"incomplete\", \"use\": \"registered\", \"reason\": \"" + escape(why) + "\"");
+      stepSucceeded();
+      return;
+    }
+    finish(Run::FAILED, "survey incomplete: " + why);
+  }
+
+  // perception_survey 완료 파일 (JSON) → mission_planner 퍽 등록표 yaml (pucks: [{id, color, shape, box, side}])
+  bool writePucksFromSurvey(const std::string & path, std::string & err)
+  {
+    std::ostringstream out;
+    try {
+      const YAML::Node doc = YAML::LoadFile(path);
+      const YAML::Node slots = doc["slots"];
+      if (!slots || slots.size() != 12) {err = "complete file must have 12 slots: " + path; return false;}
+      out << "# mission_node 가 perception_survey 완료 파일 (" << path << ") 에서 만든 퍽 등록표\npucks:\n";
+      for (const auto & t : slots) {
+        if (!t["id"] || t["id"].IsNull() || !t["color"] || t["color"].IsNull() || !t["shape"] || t["shape"].IsNull()) {
+          err = "slot without id · color · shape in " + path;
+          return false;
+        }
+        const std::string shape = t["shape"].as<std::string>() == "cuboid" ? "box" : t["shape"].as<std::string>();
+        out << "  - {id: " << t["id"].as<int>() << ", color: " << t["color"].as<std::string>() << ", shape: " << shape
+            << ", box: " << t["box"].as<int>() << ", side: " << t["side"].as<int>() << "}\n";
+      }
+    } catch (const std::exception & e) {
+      err = std::string("cannot read ") + path + ": " + e.what();
+      return false;
+    }
+    std::error_code ec;
+    std::filesystem::create_directories(std::filesystem::path(survey_pucks_out_).parent_path(), ec);
+    std::ofstream f(survey_pucks_out_);
+    if (!f || !(f << out.str())) {err = "cannot write " + survey_pucks_out_; return false;}
+    return true;
+  }
+
+  // ------------------------------------------------------------------ 장소 태그 (#39)
+  // "L1" → marker.ids[0] (없으면 -1)
+  int markerIdOf(const std::string & place) const
+  {
+    if (place.size() != 2 || place[0] != 'L' || place[1] < '1' || place[1] > '3') {return -1;}
+    return static_cast<int>(marker_ids_[place[1] - '1']);
+  }
+
+  // place_<L>_* skill 이고 그 장소를 아직 확인하지 않았으면 true
+  bool needsMarkerCheck(const Step & s) const
+  {
+    if (!plan_mode_ || !marker_check_before_place_ || s.args.size() < 2 || s.args[0] != "manipulator") {return false;}
+    const std::string & name = s.args[1];
+    if (name.rfind("place_L", 0) != 0 || name.size() < 8) {return false;}
+    return marker_checked_.count(name.substr(6, 2)) == 0;
+  }
+
+  // 태그 기록 JSON: 기대 ID · 본 ID · 일치 · base_link 와 지도 위치 (새 관측). bad = 못 봤거나 ID 가 다름
+  std::string markerJson(const TaskMarker::ConstSharedPtr & m, int expect, bool & bad)
+  {
+    std::ostringstream o;
+    o << std::fixed << std::setprecision(4) << "{\"expect\": " << expect;
+    if (!m) {
+      bad = true;
+      o << ", \"seen\": false}";
+      return o.str();
+    }
+    bad = m->marker_id != expect;
+    o << ", \"seen\": true, \"id\": " << m->marker_id << ", \"match\": " << (bad ? "false" : "true")
+      << ", \"distance\": " << m->distance << ", \"camera\": " << int(m->camera)
+      << ", \"base\": [" << m->pose.position.x << ", " << m->pose.position.y << ", " << m->pose.position.z << "]";
+    try {
+      geometry_msgs::msg::PoseStamped in, out;
+      in.header = m->header;
+      in.pose = m->pose;
+      geometry_msgs::msg::TransformStamped tf;
+      try {
+        tf = tf_buffer_->lookupTransform(map_frame_, m->header.frame_id, tf2_ros::fromMsg(m->header.stamp));
+      } catch (const tf2::TransformException &) {
+        tf = tf_buffer_->lookupTransform(map_frame_, m->header.frame_id, tf2::TimePointZero);
+      }
+      tf2::doTransform(in, out, tf);
+      o << ", \"map\": [" << out.pose.position.x << ", " << out.pose.position.y << ", " << out.pose.position.z << "]";
+    } catch (const tf2::TransformException & e) {
+      o << ", \"map_error\": \"" << escape(e.what()) << "\"";
+    }
+    o << "}";
+    return o.str();
+  }
+
+  // 놓기 전 장소 확인: 기대 ID 를 보면 성공, 다른 장소 태그면 실패 (timeout.check_marker 안에 못 보면 실패 → 재시도)
+  void tickCheckMarker()
+  {
+    if (!watching_) {return;}
+    TaskMarker::ConstSharedPtr m;
+    {
+      std::lock_guard<std::mutex> lock(sensor_mutex_);
+      if (last_marker_ && marker_rx_ >= view_since_) {m = last_marker_;}
+    }
+    if (!m) {return;}
+    const std::string L = steps_[step_idx_].args[0];
+    bool bad = false;
+    const std::string j = markerJson(m, markerIdOf(L), bad);
+    logEvent("check_marker", "\"place\": \"" + L + "\", \"marker\": " + j);
+    if (bad) {
+      failStep("place " + L + ": saw marker " + std::to_string(m->marker_id) + ", expected " +
+        std::to_string(markerIdOf(L)));
+      return;
+    }
+    stepSucceeded();
   }
 
   void requestPlan()
@@ -927,6 +1272,18 @@ private:
   {
     if (!watching_ || dice_pending_ || (now() - view_since_).seconds() < verify_settle_) {return;}
     const Step & s = steps_[step_idx_];
+    // 장소 태그: settle 뒤 marker_wait_s 까지 새로 본 태그를 기다림 (없어도 칸 판정은 함)
+    std::string marker_json;
+    bool marker_bad = false;
+    if (verify_check_marker_) {
+      TaskMarker::ConstSharedPtr m;
+      {
+        std::lock_guard<std::mutex> lock(sensor_mutex_);
+        if (last_marker_ && marker_rx_ >= view_since_) {m = last_marker_;}
+      }
+      if (!m && (now() - view_since_).seconds() < verify_settle_ + verify_marker_wait_) {return;}
+      marker_json = markerJson(m, markerIdOf(s.args[0]), marker_bad);
+    }
     auto req = std::make_shared<CheckDice::Request>();
     req->header.frame_id = map_frame_;
     const double cx = std::stod(s.args[1]), cy = std::stod(s.args[2]), z = std::stod(s.args[3]);
@@ -944,7 +1301,7 @@ private:
     const uint64_t id = stage_id_;
     const std::string place = s.args[0];
     dice_client_->async_send_request(req,
-      [this, id, place](rclcpp::Client<CheckDice>::SharedFuture future) {
+      [this, id, place, marker_json, marker_bad](rclcpp::Client<CheckDice>::SharedFuture future) {
         if (id != stage_id_) {return;}
         const auto r = future.get();
         std::ostringstream o;
@@ -955,10 +1312,15 @@ private:
             << ", \"offset\": " << r->offset[k] << ", \"color\": " << int(r->color[k]) << ", \"shape\": " << int(r->shape[k]) << "}";
         }
         o << "]";
+        if (!marker_json.empty()) {o << ", \"marker\": " << marker_json;}
         logEvent("verify", o.str());
         RCLCPP_INFO(get_logger(), "verify %s: observed %d, passed %d (%s)", place.c_str(), r->observed, r->passed, r->message.c_str());
         if ((!r->observed || !r->passed) && verify_stop_on_fail_) {
           failStep("verify " + place + ": " + (r->observed ? r->message : "nothing observed"));
+          return;
+        }
+        if (marker_bad && verify_stop_on_fail_) {
+          failStep("verify " + place + ": place marker not seen or wrong id");
           return;
         }
         stepSucceeded();
@@ -1329,6 +1691,16 @@ private:
   std::string plan_service_, observe_arm_pose_, verify_arm_pose_, verify_mode_text_, log_dir_;
   double verify_settle_{2.0}, verify_tolerance_{0.0};
   bool verify_stop_on_fail_{false};
+  std::vector<int64_t> marker_ids_;
+  bool verify_check_marker_{true}, marker_check_before_place_{false};
+  double verify_marker_wait_{3.0};
+  std::set<std::string> marker_checked_;   // 놓기 전 태그를 확인한 장소 (미션마다 초기화)
+  bool survey_enabled_{false};
+  std::vector<int64_t> survey_boxes_;
+  std::vector<double> survey_poses_;
+  double survey_approach_{0.13}, survey_settle_{2.0};
+  int survey_max_rounds_{2}, survey_round_{0};
+  std::string survey_arm_pose_, survey_revisit_arm_pose_, survey_mode_text_, survey_on_unconfirmed_, survey_pucks_out_;
 
   // ROS 인터페이스
   rclcpp::CallbackGroup::SharedPtr mission_cb_group_, sensor_cb_group_;
@@ -1339,7 +1711,9 @@ private:
   rclcpp::Subscription<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr diag_sub_;
   rclcpp::Subscription<SignalSequence>::SharedPtr signal_sub_;
   rclcpp::Subscription<Barcode>::SharedPtr barcode_sub_;
+  rclcpp::Subscription<TaskMarker>::SharedPtr marker_sub_;
   rclcpp::Client<Trigger>::SharedPtr plan_client_;
+  rclcpp::Client<Trigger>::SharedPtr survey_start_client_, survey_finish_client_, survey_revisit_client_;
   rclcpp::Client<CheckDice>::SharedPtr dice_client_;
   rclcpp::Client<SetPerceptionMode>::SharedPtr mode_client_;
   rclcpp_action::Client<NavigateToPose>::SharedPtr nav_client_;
@@ -1363,9 +1737,12 @@ private:
   int found_count_{0}, tag_count_{0}, last_tag_id_{-1};
   std::string diag_error_;
   rclcpp::Time diag_rx_{0, 0, RCL_ROS_TIME};
-  uint8_t signal_status_{0};
+  uint8_t signal_status_{0}, signal_cycles_{0};
+  int observe_max_cycles_{4}, mismatch_logged_cycles_{-1};
   std::string signal_seq_, barcode_text_;
   rclcpp::Time signal_rx_{0, 0, RCL_ROS_TIME}, barcode_rx_{0, 0, RCL_ROS_TIME};
+  TaskMarker::ConstSharedPtr last_marker_;
+  rclcpp::Time marker_rx_{0, 0, RCL_ROS_TIME};
   std::atomic<bool> estop_active_{false};
 
   // 상태 (mission_cb_group_ 전용)
