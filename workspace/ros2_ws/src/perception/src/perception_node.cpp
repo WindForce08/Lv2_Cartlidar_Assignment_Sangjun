@@ -425,9 +425,9 @@ public:
       RCLCPP_FATAL(get_logger(), "%s", cls_err.c_str());
       throw std::runtime_error("detector.class_names");
     }
-    // 팔 카메라(ARM_ALIGN) 검출기: arm.detector = color(기본, 엔진이 있어도 색 검출) | main(주 검출기와 같은 것)
-    //   엔진(YOLO)은 D435 영상으로만 학습 · 평가했으므로 팔 영상에 쓰려면 main 을 명시한다
-    const std::string arm_det = declare_parameter("arm.detector", std::string("color"));
+    // 팔 카메라(ARM_ALIGN) 검출기: arm.detector = main(기본, 주 검출기와 같은 것) | color(엔진이 있어도 색 검출)
+    //   주 검출기가 색 검출기(엔진 없음)면 main 도 아래에서 라벨 인식 색 검출기를 따로 둔다 (color 와 같음)
+    const std::string arm_det = declare_parameter("arm.detector", std::string("main"));
     arm_lock_log_ = declare_parameter("arm.lock_log", false);   // 진단용: ARM_LOCK 줄을 장마다 남김
     engine_merge_iou_ = declare_parameter("arm.engine_merge_iou", engine_merge_iou_);
     if (arm_det != "color" && arm_det != "main") {

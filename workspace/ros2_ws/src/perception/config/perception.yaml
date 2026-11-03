@@ -31,8 +31,9 @@ perception_node:
       window: 3                 # 깊이 중앙값 창 반폭 (7×7 px)
       sync_tol_s: 0.02          # [s] 컬러와 깊이 stamp 차이 허용 (이전 모듈 2026-10-06 Pi 실측: D435 640x480 30 Hz, 미리보기 끔에서 짝 놓침 0.4 %)
     arm:
-      detector: color           # ARM_ALIGN 검출기: color(엔진이 있어도 색 · 라벨 검출, A1 모의 검증 경로) | main(주 검출기, 엔진이면 YOLO)
-                                #   YOLO 후보는 D435 영상으로만 학습 · 평가(팔 카메라 영상 0장) → 팔 영상 검증 전에는 color
+      detector: main            # ARM_ALIGN 검출기: main(주 검출기, 엔진이면 YOLO, 엔진 없으면 색 · 라벨 검출) | color(엔진이 있어도 색 · 라벨 검출)
+                                #   근거(A1 렌더 모의, 시드 20261106 12 장면): main P2 96.2 % · 다른 퍽 0, color P2 94.8 % · 다른 퍽 3(같은 색 퍽이 줄지어 서면 하나로 합침)
+                                #   YOLO D 는 팔 카메라(Arducam) 실물 사진도 학습함
       detect_width: 640         # ARM_ALIGN 검출 해상도 (줄여서 15 Hz 확보, 오차는 정규화 값이라 해상도와 무관)
       engine_merge_iou: 0.7     # ★ detector main(YOLO)일 때: 같은 색 · 이 IoU 이상 겹친 박스는 점수 높은 하나만 (같은 퍽에 클래스만 다른 박스). 0 이면 끔
       lock_gate: 0.25           # ★ ARM_ALIGN 목표 유지(arm_target_lock.hpp): 따라가기 문턱 상한. 거리는 x 단위(화면 반폭, 세로는 × 높이/폭)
