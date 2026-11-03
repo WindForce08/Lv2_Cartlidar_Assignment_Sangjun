@@ -34,12 +34,15 @@ perception_node:
       detector: color           # ARM_ALIGN 검출기: color(엔진이 있어도 색 · 라벨 검출, A1 모의 검증 경로) | main(주 검출기, 엔진이면 YOLO)
                                 #   YOLO 후보는 D435 영상으로만 학습 · 평가(팔 카메라 영상 0장) → 팔 영상 검증 전에는 color
       detect_width: 640         # ARM_ALIGN 검출 해상도 (줄여서 15 Hz 확보, 오차는 정규화 값이라 해상도와 무관)
+      engine_merge_iou: 0.7     # ★ detector main(YOLO)일 때: 같은 색 · 이 IoU 이상 겹친 박스는 점수 높은 하나만 (같은 퍽에 클래스만 다른 박스). 0 이면 끔
       lock_gate: 0.25           # ★ ARM_ALIGN 목표 유지(arm_target_lock.hpp): 따라가기 문턱 상한. 거리는 x 단위(화면 반폭, 세로는 × 높이/폭)
       lock_seed_gate: 0.10      # ★ 처음 잠글 때 · 놓친 뒤 다시 잡을 때 D435 목표 투영점에서 이 안만 (넘으면 그 장은 잡지 않음)
       lock_follow_k: 0.6        # ★ 따라가기 문턱 = 이 값 × 직전 박스 폭 (맞닿은 이웃은 중심 사이 약 폭 하나 이상)
                                 # 근거(2026-10-27, A1 렌더 모의): 고정 0.25 로는 첫 장에 0.2 옆 퍽을 잠그고, 목표가 화면 밖으로 나간 동안 그 자리로 들어온 5 cm 옆 이웃을 잡음
       lock_size_ratio: 1.3      # ★ 따라가는 동안 박스 폭이 직전 장의 1/배 ~ 배 안이어야 같은 퍽 (라벨이 잘려 이웃과 합쳐진 상자는 약 1.5 배)
       lock_reacquire_size_ratio: 2.0   # ★ 놓친 뒤 다시 잡을 때 직전 폭 대비 배율
+      lock_bias_margin: 0.02    # ★ 다시 잡을 때 D435 투영점 근처 후보가 모호하면, 마지막으로 본 (박스 − 투영점) 치우침을 더한 점에서 이만큼 더 가까운 후보를 고름
+      lock_log: false           # 진단: true 면 팔 영상마다 ARM_LOCK 줄(고른 박스 · 빠진 이유 · 박스 목록)
       # ★ 팔 끝(tool_link) → 퍽 거리 토픽이 둘이다. 이름이 비슷하니 헷갈리지 말 것 (하나로 합칠지 팀 결정 필요)
       #   /arm_range            (아래 range)  : 퍽 **표면**까지. 태그 · D435 보유 점 · (둘 다 없으면) 평면 교차. manipulator 가 쓰는 것은 이것
       #   /perception/arm_range (아래 plane)  : 퍽 **중심**까지. 팔 카메라 평면 교차만. 검증용 비교, 받는 노드 없음
