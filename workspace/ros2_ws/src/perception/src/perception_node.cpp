@@ -48,6 +48,7 @@
 //      READ  : 팔 카메라(cameras.arm.image_topic) 새 영상마다 zbar 로 CODE128 읽기(barcode_reader.hpp, barcode.read_scale 배)
 //      둘 다 일꾼 스레드에서 돌아 다른 모드 처리 주기를 막지 않는다. 일꾼이 도는 동안 온 팔 영상은 건너뛴다
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <deque>
 #include <limits>
@@ -162,7 +163,9 @@ struct DepthCamera
 
   std::mutex m;
   Image::ConstSharedPtr color;
+  std::deque<Image::ConstSharedPtr> recent;                     // 최근 컬러 (촬영 시각 TF 가 온 장 고르기, pick_tf_frame)
   int64_t used_ns = -1;                                         // 마지막 결과에 쓴 컬러 stamp
+  std::array<uint64_t, 4> tf_pick{};                            // 고른 장: 가장 새 장 · 한 장 앞 · 기다림 · 최근 TF 로 대신
   NearestCache<Image::ConstSharedPtr> depth{5};
   CameraInfo::ConstSharedPtr info;
   StampGate gate;
@@ -401,6 +404,7 @@ public:
     base_frame_ = declare_parameter("frames.base", std::string("base_link"));
     odom_frame_ = declare_parameter("frames.odom", std::string("odom"));
     tf_fallback_max_s_ = declare_parameter("tf_fallback_max_s", tf_fallback_max_s_);
+    tf_wait_s_ = declare_parameter("tf_wait_s", tf_wait_s_);
 
     std::string info;
     detector_ = make_detector(dc, info);
@@ -618,6 +622,7 @@ private:
       c.info_sub.reset();
       std::lock_guard<std::mutex> lk(c.m);
       c.color.reset();
+      c.recent.clear();
       c.depth.clear();
       c.gate.reset();
       c.used_ns = -1;
@@ -672,8 +677,10 @@ private:
     std::lock_guard<std::mutex> lk(c.m);
     const GateResult g = gate_frame(c, m);
     if (g == GateResult::Duplicate) {return;}
-    if (g == GateResult::Restart) {c.depth.clear(); c.signal_q.clear();}   // 재시작 전 시각의 깊이와 짝짓지 않게
+    if (g == GateResult::Restart) {c.depth.clear(); c.signal_q.clear(); c.recent.clear();}   // 재시작 전 시각의 깊이와 짝짓지 않게
     c.color = m;
+    c.recent.push_back(m);
+    while (c.recent.size() > 4) {c.recent.pop_front();}
     if (signal_on_) {   // 신호등은 점멸이 짧을 수 있어 처리 주기와 상관없이 모든 프레임을 본다
       c.signal_q.push_back(m);
       while (c.signal_q.size() > signal_q_max_) {c.signal_q.pop_front();}
@@ -736,14 +743,46 @@ private:
     CameraInfo::ConstSharedPtr info;
     bool fresh = false;
   };
+  // odom → base 의 가장 최근 TF stamp [ns], 없으면 −1
+  int64_t latest_body_tf_ns()
+  {
+    try {
+      const auto m = tf_->buffer().lookupTransform(odom_frame_, base_frame_, tf2::TimePointZero);
+      return stamp_ns(m.header.stamp);
+    } catch (const tf2::TransformException &) {
+      return -1;
+    }
+  }
+
+  // 처리할 컬러 한 장. 촬영 시각의 odom → base TF 가 이미 온 가장 새 장을 쓴다(pick_tf_frame). 그런 장이 없고
+  // 기다릴 만하면 지난 결과에 쓴 장을 다시 준다(새 결과 아님 → 지난 퍽 · 마커를 다시 씀)
   std::optional<DepthSnapshot> take(DepthCamera & c, const rclcpp::Time & now_t)
   {
+    const int64_t tf_ns = latest_body_tf_ns();
     std::lock_guard<std::mutex> lk(c.m);
     if (!c.color) {return std::nullopt;}
-    const int64_t ns = stamp_ns(c.color->header.stamp);
-    if ((now_t - rclcpp::Time(c.color->header.stamp, now_t.get_clock_type())).seconds() > frame_max_age_) {return std::nullopt;}
+    Image::ConstSharedPtr color = c.color;
+    if (!c.recent.empty()) {   // tf_wait_s 0 이면 늘 가장 새 장(세기만 함)
+      std::vector<int64_t> stamps;
+      for (const auto & m : c.recent) {stamps.push_back(stamp_ns(m->header.stamp));}
+      const auto i = pick_tf_frame(stamps, c.used_ns, now_t.nanoseconds(), tf_ns, static_cast<int64_t>(tf_wait_s_ * 1e9));
+      if (i) {
+        color = c.recent[*i];
+        const bool newest = *i + 1 == stamps.size();
+        ++c.tf_pick[newest ? (tf_ns >= stamps.back() ? 0 : 3) : 1];
+      } else {
+        ++c.tf_pick[2];
+        auto it = std::find_if(c.recent.begin(), c.recent.end(), [&c](const auto & m) {return stamp_ns(m->header.stamp) == c.used_ns;});
+        if (it == c.recent.end()) {return std::nullopt;}
+        color = *it;
+      }
+      RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 30000, "%s 촬영 시각 TF 로 고른 장: 가장 새 장 %lu · 한 장 앞 %lu · 기다림 %lu · 최근 TF 로 대신 %lu",
+        c.name.c_str(), c.tf_pick[0], c.tf_pick[1], c.tf_pick[2], c.tf_pick[3]);
+    }
+    const int64_t ns = stamp_ns(color->header.stamp);
+    if ((now_t - rclcpp::Time(color->header.stamp, now_t.get_clock_type())).seconds() > frame_max_age_) {return std::nullopt;}
     DepthSnapshot s;
-    s.color = c.color;
+    s.color = color;
     s.info = c.info;
     if (auto d = c.depth.nearest(ns, depth_tol_ns_)) {s.depth = d->second;}
     s.fresh = ns != c.used_ns;
@@ -1855,6 +1894,7 @@ private:
   double merge_dist_ = 0.04, min_confidence_ = 0.5;
   double upright_gap_px_ = 1.0;
   double tf_fallback_max_s_ = 0.1;   // [s] 촬영 시각 TF 가 없을 때 최근 TF 를 써도 되는 시각 차 (lookup_near)
+  double tf_wait_s_ = 0.05;          // [s] D435 영상: 촬영 시각 TF 를 기다리는 한도 (pick_tf_frame, 0 이면 끔)
   TargetTracker tracker_;
   ArmTargetLock arm_lock_;             // ctl_cbg_ 에서만 쓴다 (on_set_mode · 처리 주기)
   std::optional<Vec3> seed_odom_;      // 가장 최근 D435 추적 목표 (odom) — 팔 정렬 목표 · /arm_range 보유 점
