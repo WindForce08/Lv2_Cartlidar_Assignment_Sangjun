@@ -1571,7 +1571,7 @@ private:
     if (mode & SetMode::Request::ARM_ALIGN) {publish_arm_range(img->header, (mode & SetMode::Request::READ_TAG) != 0, plane_pt);}
   }
 
-  // /arm_range: 촬영 시각 팔 자세로 태그 퍽 중심(base_link) · D435 보유 점(odom) 을 range_frame 으로 옮겨 거리 계산
+  // /arm_range: 촬영 시각 팔 자세로 태그 퍽 중심(base_link) · D435 보유 점(odom) · 평면 교차 중심을 range_frame 으로 옮겨 거리 계산
   void publish_arm_range(const std_msgs::msg::Header & img_header, bool use_tags, const std::optional<tf2::Vector3> & plane_pt)
   {
     const rclcpp::Time stamp(img_header.stamp, get_clock()->get_clock_type());

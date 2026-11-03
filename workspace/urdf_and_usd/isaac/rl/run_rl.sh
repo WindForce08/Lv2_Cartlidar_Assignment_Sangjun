@@ -11,6 +11,8 @@
 # 주행
 #   ./run_rl.sh drive [환경 수] [반복]         주행 학습 -> logs/rsl_rl/waffle_drive/
 #   ./run_rl.sh drive_play [환경 수]           주행 최근 체크포인트를 창으로
+#   ./run_rl.sh dock [환경 수] [반복]          박스 앞 세우기 학습 (주사위 경기장) -> logs/rsl_rl/waffle_dock/
+#   ./run_rl.sh dock_play [환경 수]            박스 앞 세우기 최근 체크포인트를 창으로
 # 아래는 옛 퍽 보관통 (C · P · N 통) 기준 - B안 팔레트에서는 쓰지 않음
 #   ./run_rl.sh sidepick [환경 수] [반복]      1 정렬·집기 학습 -> logs/rsl_rl/waffle_sidepick/
 #   ./run_rl.sh sidepick_play [환경 수]        1 정렬·집기 (policies/sidepick_latest.pt) 창으로
@@ -51,6 +53,8 @@ pol() { [ -f "$HERE/policies/$1" ] && echo "--checkpoint $HERE/policies/$1" || e
 case "${1:-}" in
   drive) "${PY[@]}" "$HERE/train.py" --task Waffle-Drive-Direct --num_envs "${2:-64}" --max_iterations "${3:-300}" --viz none ;;
   drive_play) env -u HEADLESS "${PY[@]}" "$HERE/play.py" --task Waffle-Drive-Direct --num_envs "${2:-16}" --checkpoint latest --viz kit ;;
+  dock) "${PY[@]}" "$HERE/train.py" --task Waffle-Dock-Direct --num_envs "${2:-128}" --max_iterations "${3:-1000}" --viz none ;;
+  dock_play) env -u HEADLESS "${PY[@]}" "$HERE/play.py" --task Waffle-Dock-Direct --num_envs "${2:-8}" --checkpoint latest --viz kit ;;
   toppick) "${PY[@]}" "$HERE/train.py" --task Waffle-TopPick-Direct --num_envs "${2:-256}" --max_iterations "${3:-300}" --viz none ;;
   toppick_play) env -u HEADLESS "${PY[@]}" "$HERE/play.py" --task Waffle-TopPick-Direct --num_envs "${2:-16}" --checkpoint latest --viz kit ;;
   toppick_eval) "${PY[@]}" "$HERE/toppick_eval.py" --num_envs "${2:-256}" ;;
@@ -73,5 +77,5 @@ case "${1:-}" in
   chain_play_rl) env -u HEADLESS "${PY[@]}" "$HERE/chain_play.py" --num_envs "${2:-4}" --gui --viz kit ;;
   chain_eval_rl) "${PY[@]}" "$HERE/chain_play.py" --num_envs "${2:-64}" ;;
   store_check) "${PY[@]}" "$HERE/store_check.py" ;;
-  *) sed -n 2,30p "$0"; exit 2 ;;
+  *) sed -n 2,32p "$0"; exit 2 ;;
 esac

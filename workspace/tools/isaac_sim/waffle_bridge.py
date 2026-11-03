@@ -6,7 +6,7 @@
 호스트 ros2_control 의 OpenCRHardware 자리를 topic_based_ros2_control/TopicBasedSystem 이 맡고, 이 스크립트가 실물 OpenCR 처럼:
   /isaac_joint_states    (발행)  저장소 관절 이름 (robot.urdf.xacro) 으로 위치 · 속도 · 힘
   /isaac_joint_commands  (구독)  바퀴 velocity · 팔 position. 0.5 s 끊기면 바퀴 정지 (펌웨어 comm_timeout 과 같게)
-  /clock · /imu/data (imu_link, 뒤집어 단 보드 축) · /e_stop false 10 Hz (실물은 OpenCRHardware 가 발행, twist_mux 잠금 해제)
+  /clock · /imu/data (imu_link = URDF 와 같은 축, rpy 0) · /e_stop false 10 Hz (실물은 OpenCRHardware 가 발행, twist_mux 잠금 해제)
   카메라 (--cams, 30 Hz): /top_camera_{front,rear}/color/image_raw · color/camera_info · aligned_depth_to_color/image_raw (32FC1 m),
       /arm_camera/image_raw · camera_info, /tf_static top_camera_*_link -> _color_optical_frame (실물은 realsense2_camera 가 냄)
   라이다 (--lidars, 10 Hz): /scan_front · /scan_rear (LaserScan, laser_front · laser_rear) — PhysX 레이캐스트, 로봇 자신은 맞지 않음
@@ -64,7 +64,8 @@ ARM = {"joint1": ("RMX52_Base_Yaw", -1.0), "joint2": ("RMX52_Shoulder", -1.0), "
 GRIPPER = "gripper_roll"
 GRIP_OPEN_RAD, GRIP_CLOSED_RAD = -0.7946, 0.9541           # 저장소 gripper_roll 한계 (열림 1550 · 닫힘 2650 tick)
 FINGER_OPEN, FINGER_CLOSED = 0.026186, -0.001414           # USD gripper_left_joint 한계 [m] (오른쪽은 부호 반대)
-IMU_RPY = (math.pi, 0.0, math.pi / 2)                      # 저장소 imu_link (base_link 기준, 뒤집어 장착)
+IMU_RPY = (0.0, 0.0, 0.0)                                  # 저장소 imu_link (base_link 기준) — robot.urdf.xacro 와 같게. 보드 바로 놓음 (2026-11-02 확인,
+                                                           # 이전 (π, 0, π/2) 는 뒤집어 단 옛 가정 → 모의 ekf 회전 부호가 반대였음). 위치 차이(9.5 · 20.2 mm)의 원심 가속도는 넣지 않음
 # 카메라 (docs/frames_tf.md "Isaac Sim 발행 규약"). prim 은 USD 광학 프레임 아래에 두고 ROS 광학 축 (z 앞 · y 아래) -> USD 카메라 (-z 앞 · y 위) 로 x 축 180° 돌림
 CAM_HZ = 30.0
 H_APERTURE = 20.955                                        # USD 카메라 기본 수평 조리개 [mm]

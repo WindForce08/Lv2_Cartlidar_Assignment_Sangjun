@@ -1,6 +1,7 @@
 """waffle_4wd 매니퓰레이터 강화 학습 과제 (팀 공유본 isaac/waffle_4wd_isaac 로봇 설정을 씀). import 하면 gym 에 등록된다.
 
   Waffle-Drive-Direct     주행 (무작위 목표점까지 4륜 스키드, drive_env.py)
+  Waffle-Dock-Direct      박스 앞 세우기 (주사위 경기장, approach_poses.yaml final 자세로, dock_env.py)
   Waffle-TopPick-Direct   B안 팔레트용 집기 (상자 위 퍽을 위에서 집어 들기, 2026-11-02). 놓기는 고정 궤적 (../pallet_traj.py, ../pallet_place_check.py)
 
   아래 셋은 옛 퍽 보관통 (C · P · N 통, 261028) 기준 - B안 팔레트에서는 쓰지 않음 (기록 · 비교용으로 남김):
@@ -14,6 +15,7 @@ import gymnasium as gym
 from . import agents
 
 for _id, _mod, _cfg, _agent in (
+    ("Waffle-Dock-Direct", "dock_env:WaffleDockEnv", "dock_env_cfg:WaffleDockEnvCfg", "WaffleDockPPORunnerCfg"),
     ("Waffle-Drive-Direct", "drive_env:WaffleDriveEnv", "drive_env_cfg:WaffleDriveEnvCfg", "WaffleDrivePPORunnerCfg"),
     ("Waffle-TopPick-Direct", "toppick_env:WaffleTopPickEnv", "toppick_env_cfg:WaffleTopPickEnvCfg", "WaffleTopPickPPORunnerCfg"),
     ("Waffle-SidePick-Direct", "sidepick_env:WaffleSidePickEnv", "sidepick_env_cfg:WaffleSidePickEnvCfg", "WaffleSidePickPPORunnerCfg"),

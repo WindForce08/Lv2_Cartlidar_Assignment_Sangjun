@@ -98,7 +98,7 @@ a{color:var(--info)} a:focus-visible{outline:2px solid var(--accent);outline-off
   <div class="update">
     <p><b>TFmini · 거리 구조 갱신 (2026-11-02)</b></p>
     <p>TFmini 는 팔 끝이 아니라 <b>차체 1층 정면 받침대</b>에 달고, 퍽이 놓인 박스(205 × 205 × 70 mm) 앞면 거리를 잽니다 → <code>/tfmini/range</code>(mm 출력 + 실측 보정) → 주행 정밀 정렬의 전후 거리와 <code>obstacle_stop</code>(twist_mux lock priority 60, 정밀 정렬 동안 정지 거리 = 목표 − 0.03 m).</p>
-    <p><code>/arm_range</code> 는 TFmini 가 아니라 <b>perception_node 가 D435 · Arducam 측위로 낸 팔 끝(tool_link) → 퍽 표면 거리</b>(① Arducam 태그 ② D435 목표를 odom 에 붙잡아 둔 점)이고 팔 노드의 미세 보정 · 최종 전진에 씁니다. 정밀 목표는 렌즈 → 박스 앞면 0.13 m 이상.</p>
+    <p><code>/arm_range</code> 는 TFmini 가 아니라 <b>perception_node 가 D435 · Arducam 측위로 낸 팔 끝(tool_link) → 퍽 표면 거리</b>(① Arducam 태그 ② D435 목표를 odom 에 붙잡아 둔 점 ③ 둘 다 없으면 팔 카메라 평면 교차, 11-03)이고 팔 노드의 미세 보정 · 최종 전진에 씁니다. 정밀 목표는 렌즈 → 박스 앞면 0.13 m 이상.</p>
     <p><b>통신 정의 동기화 (2026-11-03)</b> — <code>interfaces.md</code> · <code>robot_nodes.html</code> 을 지금 코드에 맞췄습니다. 영상은 perception 이 SDK 로 직접 열지 않고 <b>드라이버 토픽</b>(realsense2_camera · usb_cam, <code>sensors.launch.py</code> / 모의는 Isaac 브리지)을 구독합니다. 팔 노드는 <code>/e_stop</code> 을 구독하지 않고(팔은 OpenCRHardware ESTOP → 펌웨어 HOLD), <code>/arm/skill_state</code> · <code>/arm/safety_state</code> 는 발행 코드가 없습니다. plan 모드 미션은 신호 · 바코드 · 주사위 판정 · <code>/mission_planner/plan</code> 을 씁니다. 받는 쪽 · 내는 쪽이 없는 토픽은 3절 #6~#10.</p>
     <p>아래 표 · 목록의 TFmini 관련 칸은 이 구조로 고쳤고, 4절 시험 결과는 당시 기록 그대로입니다. 자세한 내용은 <code>interfaces.md</code> · <code>robot_nodes.html</code>.</p>
   </div>
@@ -106,7 +106,7 @@ a{color:var(--info)} a:focus-visible{outline:2px solid var(--accent);outline-off
     <div class="fact ok"><div class="v">48 / 48</div><div class="k">단위 시험 통과 (5개 패키지)</div></div>
     <div class="fact ok"><div class="v">2 / 2</div><div class="k">통합 시나리오 통과 (정상 미션 · E-stop 재개)</div></div>
     <div class="fact"><div class="v">2</div><div class="k">이번에 확정 (4륜 · ArmPose message)</div></div>
-    <div class="fact warn"><div class="v">7</div><div class="k">팀 결정이 남은 항목 (#1 · #3 · #6~#10, 11-03 기준)</div></div>
+    <div class="fact warn"><div class="v">6</div><div class="k">팀 결정이 남은 항목 (#1 명세 · #3 · #6 · #7 · #8 · #10, 11-03 기준)</div></div>
   </div>
 </header>
 
@@ -150,7 +150,7 @@ a{color:var(--info)} a:focus-visible{outline:2px solid var(--accent);outline-off
 <h2><span class="n">3</span>결정 사항</h2>
 <p class="lede">통신 정의는 동결 상태라, 아래 항목은 <code>docs/interfaces.md</code> 변경으로 처리합니다.</p>
 <div class="decide">
-  <div class="dec open"><span class="num">#1</span><div><h3>스킬 성공 조건</h3><p>문서에는 "타임아웃이면 0 속도 후 abort" 만 있어, 정해진 시간 동안 하는 주행(slalom 등)도 항상 실패로 끝납니다. policies.yaml 에 <code>finish_on_timeout</code> 을 넣어 두었습니다 (기본 false = 문서대로). 장기적으로는 정책별 성공 · 종료 조건을 명세에 넣는 것을 제안합니다.</p></div><span class="chip warn">결정 필요</span></div>
+  <div class="dec open"><span class="num">#1</span><div><h3>스킬 성공 조건</h3><p>문서에는 "타임아웃이면 0 속도 후 abort" 만 있어, 정해진 시간 동안 하는 주행(slalom 등)도 항상 실패로 끝납니다. policies.yaml 에 <code>finish_on_timeout</code> 을 넣어 두었습니다 (기본 false = 문서대로). 장기적으로는 정책별 성공 · 종료 조건을 명세에 넣는 것을 제안합니다. <span class="upd">[11-03]</span> 코드 반영됨 — <code>robot_policy</code> <code>finish_on_timeout</code> (slalom_v1 = true). 남은 것은 명세 문서화입니다.</p></div><span class="chip info">코드 반영</span></div>
   <div class="dec"><span class="num">#2</span><div><h3>ArmPose 결과에 실패 이유</h3><p><code>string message</code> 를 추가했습니다. 미션은 pose · pick · align · skill 의 message 를 상태 reason 에 붙입니다. 예: <code>read_tag 실패: pose TAG_VIEW 실패: 관절 상태 없음</code></p></div><span class="chip ok">반영</span></div>
   <div class="dec open"><span class="num">#3</span><div><h3>/arm/skill_state · /arm/safety_state</h3><p>문서 토픽표에 없는 모니터링 토픽입니다. 표에 넣을지 뺄지 정해야 합니다. <s>지금은 모니터링용으로 남겨 두었습니다.</s> <span class="upd">[11-03]</span> 지금은 발행 코드가 없습니다 (이름 <code>names.hpp</code> · 메시지만 정의). 발행을 구현할지 지울지 정해야 합니다.</p></div><span class="chip warn">결정 필요</span></div>
   <div class="dec"><span class="num">#4</span><div><h3>그리퍼가 정해지기 전의 grasped</h3><p>그리퍼가 없으면 잡았는지 판단할 수 없어 미션이 계속 재시도합니다. 벤치 시험용으로 <code>gripper.assume_grasped_without_gripper: true</code> 를 두었고, 그리퍼가 정해지면 false 로 바꿉니다.</p></div><span class="chip info">임시 설정</span></div>
@@ -158,7 +158,7 @@ a{color:var(--info)} a:focus-visible{outline:2px solid var(--accent);outline-off
   <div class="dec open"><span class="num">#6</span><div><h3>/perception/rear_obstacle · /perception/task_marker 받는 쪽 없음</h3><p><span class="upd">[11-03]</span> rear_obstacle 은 주행 후진 판단에 쓸지, task_marker 는 미션에 연결할지 정해야 합니다.</p></div><span class="chip warn">결정 필요</span></div>
   <div class="dec open"><span class="num">#7</span><div><h3>/localization/status 내는 쪽 없음</h3><p><span class="upd">[11-03]</span> puck_survey 가 구독하지만 내는 노드가 없어, 못 받은 것으로 보고 관측을 그대로 받습니다. 재위치 노드를 만들지, 구독을 뺄지 정해야 합니다.</p></div><span class="chip warn">결정 필요</span></div>
   <div class="dec open"><span class="num">#8</span><div><h3>puck_survey ↔ 미션 연결 없음</h3><p><span class="upd">[11-03]</span> <code>/perception/puck_survey</code> · survey 서비스를 미션이 쓰지 않습니다 (지금은 CLI). 미션 단계로 연결할지 정해야 합니다.</p></div><span class="chip warn">결정 필요</span></div>
-  <div class="dec open"><span class="num">#9</span><div><h3>/perception/arm_range (퍽 중심) 와 /arm_range (퍽 표면)</h3><p><span class="upd">[11-03]</span> 이름이 비슷한 두 토픽이고 앞의 것은 받는 쪽이 없습니다. 하나로 합칠지, 이름을 바꿀지 정해야 합니다.</p></div><span class="chip warn">결정 필요</span></div>
+  <div class="dec"><span class="num">#9</span><div><h3>/perception/arm_range (퍽 중심) 와 /arm_range (퍽 표면)</h3><p><span class="upd">[11-03]</span> 해결 (<code>f5ad509</code>, 이슈 #59 닫힘): 평면 교차가 <code>/arm_range</code> 의 세 번째 출처가 되었습니다 (태그 → D435 보유 점 → 평면 교차). <code>/perception/arm_range</code> · <code>arm_target</code> 은 검증용으로 남습니다.</p></div><span class="chip ok">해결</span></div>
   <div class="dec open"><span class="num">#10</span><div><h3>영상 복사 부하</h3><p><span class="upd">[11-03]</span> 처음 설계는 SDK 직접 열기(영상 토픽 없음), 지금은 드라이버 토픽입니다. Jetson 에서 드라이버와 perception 을 같은 컨테이너(intra-process)에 넣을지 1주차 부하 측정으로 정합니다.</p></div><span class="chip warn">결정 필요</span></div>
 </div>
 
@@ -207,10 +207,10 @@ a{color:var(--info)} a:focus-visible{outline:2px solid var(--accent);outline-off
   <li><b>READY 팔 끝 돌출</b> <code>approach.ready_reach</code></li>
   <li><b>base_link → 범퍼</b> <code>base.front_offset</code></li>
   <li><b>차체 · 그리퍼 제외 영역</b> <code>target.exclude_min/max</code></li>
-  <li><b>tfmini_link · arm_camera_link · tool_link TF</b> — tfmini_link 설계값 base_link (0.130, 0, -0.025), /arm_range · pick ① 정확도</li>
+  <li><b>tfmini_link · arm_camera_link · tool_link TF</b> — tfmini_link 설계값 base_link (0.130, 0, 0.0243) — 바닥 위 31 mm, /arm_range · pick ① 정확도</li>
   <li><b>TFmini 박스 거리 보정</b> — 박스 재질 앞 0.10~0.40 m 줄자 보정표 <code>tfmini.yaml</code>(사양 ±5 cm), mm 출력 확인, 미션표 <code>approach &lt;거리&gt;</code> 를 팔이 닿는 박스 거리로 실측</li>
   <li><b>/arm_range 보유 점 오차</b> — 정밀 거리에서 D435 시야 밖, <code>perception.yaml</code> <code>arm.range.*</code></li>
-  <li><b>nav2 지도에 퍽 박스 6개</b> — 박스는 LiDAR 평면보다 낮아 /scan 에 안 잡힘. 시뮬레이션은 bringup <code>use_tfmini:=false</code></li>
+  <li><b><s>nav2 지도에 퍽 박스 6개</s> 반영됨</b> — <code>mission_planner/maps/map_nav</code> 가 박스(70 mm)를 넣음 (AMCL 용 <code>map_amcl</code> 은 뺌). 시뮬레이션은 bringup <code>use_tfmini:=false</code></li>
   <li><b>Arducam 보정값 · 태그 실제 크기</b></li>
   <li><b>STOW · READY · PLACE · TAG_VIEW 관절각</b> — STOW · TAG_VIEW 는 차체 안</li>
   <li><b>조이스틱 버튼 번호</b> — E-stop · 리셋 · 시작 · 정지</li>
