@@ -64,6 +64,21 @@ perception_node:
         range_frame: tool_link    # /perception/arm_range 기준: 이 프레임 원점에서 +x 로 퍽 중심까지 (표면이 아니라 중심)
         max_range: 1.0            # [m]
         edge_margin_px: 2         # [px, 검출 해상도] 박스가 화면 가장자리에서 이 안이면 내지 않음 (잘린 박스는 중심이 밀림)
+      place_box:                # 장소 상자 윗면 찾기 (place_box.hpp): /perception/place_box/measure (Trigger) → 팔 영상 frames 장 → 중앙값
+                                #   → /perception/place_box (PoseStamped, odom, 윗면 중심 · 요) · /cells (PoseArray, 칸 9 개 행 우선) · /status (String JSON)
+                                #   놓기 칸을 발제 지도 좌표 대신 눈앞 상자 기준으로 (상자가 돌아가 있거나 밀려 있어도). 태그 위치에는 기대지 않음
+                                #   부르는 법: 최종 자리에서 팔을 내려다보는 자세 (B URDF: joint 0 · −0.65 · 0.00 · 1.95 · 0, 카메라 윗면 위 약 0.20 m) +
+                                #   READ_TAG (또는 ARM_ALIGN) 켜고 measure. 모의(Isaac 렌더 120 장, 요 ±30° · 옆 ±5 cm · 퍽 0 ~ 9 개): 중심 최대 0.68 mm · 요 0.37°
+        box: 0.205                # [m] 윗면 한 변 ★ 실물 상자
+        height: 0.07              # [m] 윗면 높이 (frame 기준) ★ 실물 상자
+        frame: base_footprint     # 높이 기준 프레임 (z = 바닥 위)
+        prior: [0.2553, 0.0]      # [m] 최종 자리에서 본 상자 중심 (앞 끝 0.1328 + 면 0.02 + 반 변 0.1025). 이 둘레 ±search 에서 찾음
+        prior_yaw: 0.0            # [rad] 이 ±45° 안의 요를 고름 (정사각형은 90° 마다 같음)
+        search: 0.08              # [m]
+        frames: 3                 # 모을 팔 영상 수 (중앙값)
+        max_spread_m: 0.003       # 장마다 중심이 이보다 흩어지면 내지 않음 (status ok false)
+        max_spread_deg: 1.0
+        cell_pitch: 0.06          # [m] 3 x 3 칸 간격 ★ 발제
       label:                    # ARM_ALIGN 색 검출 라벨 인식 (detector.hpp label_aware). TensorRT 검출기면 쓰지 않음
         # 근거(2026-10-27, A1 렌더 모의): 위에서 본 퍽은 가운데 흰 라벨이 색 덩어리의 구멍이 되어 채움이 하한 아래
         #   (서 있는 원기둥 0/20 · 서 있는 직육면체 88/127 검출) → 라벨로 묶고 나누면 19/20 · 124/127
