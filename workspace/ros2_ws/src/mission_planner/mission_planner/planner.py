@@ -4,10 +4,11 @@
 출력 (plan): 그룹 · 할당 · 팔레트 칸 · 방문 순서 · 단계 목록 (+ signal.json · allocation.json 용 내용).
 
 운영 방식 (mode):
-  per_location (기본)  L 마다: 그 그룹 퍽이 있는 박스들을 돌며 싣고 -> L 에 놓기. 한 번에 6 개 이하라 팔레트의 수직 칸 8 개만 씀
-                       (기둥 옆 기울임 칸 4 개 안 씀). 박스는 여러 번 들를 수 있음.
+  per_location (기본)  L 마다: 그 그룹 퍽이 있는 박스들을 돌며 싣고 -> L 에 놓기. 한 번에 6 개 이하라 팔레트 2 · 1 열 8 칸만 씀
+                       (3 열은 놓기가 느림: 쥔 구간 0.4 rad/s, 칸당 17.5 ~ 18.6 s vs 2 · 1 열 8.9 ~ 12.1 s, #75). 박스는 여러 번 들를 수 있음.
   single_load          12 개를 한 번에 실은 뒤 L 3 곳 배달. 팔레트는 3 열 -> 2 열 -> 1 열로 싣고 (쥔 퍽이 찬 칸 위로 못 지나감)
-                       1 열 -> 2 열 -> 3 열로 꺼냄 -> 처음 배달할 L 의 퍽을 1 열 (마지막에 실음) 에. 열마다 3 · 4 번째 칸은 기울임 칸.
+                       1 열 -> 2 열 -> 3 열로 꺼냄 -> 처음 배달할 L 의 퍽을 1 열 (마지막에 실음) 에.
+  집기 · 팔레트 · 칸 놓기는 모두 집게 45° (TopPick 기울임 모드 · pallet_traj 12 칸). 상자 퍽은 집기 전 제자리 turn_deg 회전 (poses.py).
   둘 다: 할당 (Y 모양 · ID) x L 방문 순서 x (single_load 는 열 나누기) 를 모두 따져 경로 비용이 가장 작은 것.
 경로 비용 = 대기 자세 (stage) 사이 A* 길이 + 회전 (pathcost) + 들어가고 나오는 직선 (2 x (standoff − gap)).
 """
@@ -20,12 +21,12 @@ from . import gtsp
 from .allocation import GROUPS, MissionError, count_signal, enumerate_allocations, order_groups, parse_pucks, y_options
 from .arena import build_maps, load_sdf
 from .pathcost import CostModel
-from .poses import PLACES, REACH_VERTICAL, make_approaches, place_order
+from .poses import PLACES, REACH_TILT, REACH_TILT_MIN, make_approaches, place_order
 
 ROW_ORDER = [1, 2, 0, 3]  # 같은 열 안 싣는 순서 (pallet_traj.py: J1 각이 큰 칸부터 = 1, 2 다음 0, 3)
-TILT_SLOTS = {(2, 0), (2, 3), (3, 0), (3, 3)}  # 기둥 옆 4칸 (집게 45° 기울여 놓음 -> 집을 때부터 45°)
-VERTICAL_SEQ = [(3, 1), (3, 2), (2, 1), (2, 2), (1, 1), (1, 2), (1, 0), (1, 3)]  # per_location 싣는 칸 (기울임 칸 뺌)
 FULL_SEQ = [(r, i) for r in (3, 2, 1) for i in ROW_ORDER]  # single_load 싣는 칸 (12)
+TILT_SLOTS = set(FULL_SEQ)  # 12 칸 모두 45° (pallet_traj.py TILT_SLOTS, Isaac 24/24)
+PER_LOC_SEQ = [(r, i) for r in (2, 1) for i in ROW_ORDER]  # per_location 싣는 칸 (빠른 2 · 1 열 8 칸)
 
 
 class World:
@@ -225,15 +226,13 @@ def _steps(world, mode, alloc, group_of_L, r):
 
     def pick(key, p, slot):
         a = world.approaches[key]
-        tilt = slot in TILT_SLOTS
-        d = a.extra["pucks"][p.side]["dist"]
+        pk = a.extra["pucks"][p.side]
+        turn = pk["turn_deg"] if p.shape == "box" else 0.0  # 상자 퍽: 면을 J1→퍽 방향에 맞추는 제자리 회전
         steps.append(dict(type="pick", at=key, puck=p.id, color=p.color, shape=p.shape, box=p.box, side=p.side,
-                          j1_dist=d, tilt=tilt, slot=list(slot)))
+                          j1_dist=pk["dist"], tilt=True, turn_deg=turn, slot=list(slot)))
         pallet[slot] = p
         if a.extra.get("inline"):
-            warn.append(f"퍽 {p.id}: 박스 {p.box} 는 ±Y 면이 막혀 {a.extra['side']} 면 (두 퍽 앞뒤) 에서 집음, J1 거리 {d:.3f}")
-        if tilt and p.shape == "box":
-            warn.append(f"퍽 {p.id}: 상자 퍽을 45° 기울여 집음 -> 퍽 면이 J1 반경 방향에 맞게 서야 함 (±3°)")
+            warn.append(f"퍽 {p.id}: 박스 {p.box} 는 ±Y 면이 막혀 {a.extra['side']} 면 (두 퍽 앞뒤) 에서 집음, J1 거리 {pk['dist']:.3f}")
 
     def place(L, unload):
         a = world.approaches[L]
@@ -241,14 +240,14 @@ def _steps(world, mode, alloc, group_of_L, r):
         for (cell, info), (slot, p) in zip(place_order(a, die), unload):
             steps.append(dict(type="place", at=L, puck=p.id, from_slot=list(slot), cell=cell, x=info["x"], y=info["y"],
                               j1_dist=info["dist"], mode=info["mode"]))
-            if info["mode"] != "vertical":
-                warn.append(f"{L} 칸 {cell}: J1 거리 {info['dist']:.3f} m -> {info['mode']} (수직 한계 {REACH_VERTICAL}) - 퍽 {p.id} 를 기울여 놓아야 함, 미검증")
+            if info["mode"] != "tilt":
+                warn.append(f"{L} 칸 {cell}: J1 거리 {info['dist']:.3f} m -> {info['mode']} (45° 범위 {REACH_TILT_MIN} ~ {REACH_TILT}) - 퍽 {p.id} 놓기 불가")
             del pallet[slot]
 
     if mode == "per_location":
         total, trips, vorder = r
         for L, stops in trips:
-            seq = iter(VERTICAL_SEQ)
+            seq = iter(PER_LOC_SEQ)
             loaded = []
             for key, ps in stops:
                 nav(key)
