@@ -8,6 +8,9 @@
 //      두 축 모두 아니면 끝면(긴 축 = 태그 법선). 색을 모르면 판단하지 않는다(orientation_valid = false, 옆면으로 봄)
 //      탐침이 화면 밖이면(3 × 3 점 중 화면 안이 절반 미만) 그 지점은 모름 → 면을 정하지 않는다(옆면으로 봄).
 //      화면 가장자리에 잘린 누운 퍽을 끝면(서 있음)으로 보지 않게 (B0′ 모의 판정, 2026-10-31)
+//   2-1) 높이 단서(face_hint_from_height): 태그가 위를 보고 받침 위 높이가 '서 있는 퍽 윗면'(받침 + 긴 변)에 맞고
+//      '누운 퍽 윗면'(받침 + 짧은 변)과 멀면 끝면으로 정하고 축 탐침을 건너뛴다. 비스듬히 보면 카메라 쪽 탐침은 자기 옆면,
+//      먼 쪽 탐침은 뒤 6 cm 같은 색 이웃의 옆면에 닿아 '옆면'으로 잘못 보던 것 (#81 면 요 모의, 2026-11-03)
 //      옆면이면 직육면체다(원기둥 옆은 곡면이라 라벨이 없음 — 과제 라벨은 윗면 · 아랫면)
 //   3) 중심: 태그 중심에서 법선 반대로 옆면이면 half_width, 끝면이면 half_length
 //   4) 끝면의 모양: 태그 대각선 네 방향 중심에서 corner_probe × √2(18 mm) 지점이 퍽 색인지.
@@ -47,6 +50,23 @@ struct PuckGeometry
   double cap_white_ratio = 0.8;  // 띠 밝기(V) / 흰 여백 밝기가 이 이상이고 채도가 낮으면 흰 스티커
   int cap_max_s = 60;
 };
+
+// 2-1) 의 단서: kEnd = 끝면(서 있음)으로 정함, kNone = 탐침으로 판단
+enum class FaceHint {kNone, kEnd};
+
+// 태그 가운데 높이(받침 기준 frame, z = 바닥 위) · 태그 법선 z 성분(위 = +1) → 단서.
+//   서 있는 윗면 = 받침 + 2·half_length, 누운 윗면 = 받침 + 2·half_width. 법선이 위에서 30° 넘게 기울면 단서 없음
+inline FaceHint face_hint_from_height(double tag_z, double normal_z, const std::vector<double> & levels,
+  double half_width, double half_length, double tol)
+{
+  if (!std::isfinite(tag_z) || !(normal_z > std::cos(M_PI / 6))) {return FaceHint::kNone;}
+  double end = 1e9, side = 1e9;
+  for (double l : levels) {
+    end = std::min(end, std::abs(tag_z - (l + 2 * half_length)));
+    side = std::min(side, std::abs(tag_z - (l + 2 * half_width)));
+  }
+  return end <= tol && end < side ? FaceHint::kEnd : FaceHint::kNone;
+}
 
 struct PuckEstimate
 {
@@ -192,7 +212,7 @@ inline cv::Matx33d from_columns(const cv::Vec3d & x, const cv::Vec3d & y, const 
 
 // bgr: 왜곡 보정한 영상, K: 그 영상의 내부값(왜곡 0), tag: pose_valid 인 검출 (태그 z 축 = 면에서 카메라 쪽)
 inline PuckEstimate estimate_puck(const cv::Mat & bgr, const cv::Mat & K, const TagDetection & tag,
-  const std::vector<HsvRange> & ranges, const PuckGeometry & g)
+  const std::vector<HsvRange> & ranges, const PuckGeometry & g, FaceHint hint = FaceHint::kNone)
 {
   PuckEstimate e;
   cv::Matx33d R;
@@ -237,7 +257,8 @@ inline PuckEstimate estimate_puck(const cv::Mat & bgr, const cv::Mat & K, const 
       if (a == Probe::kNo || b == Probe::kNo) {return Probe::kNo;}
       return a == Probe::kYes && b == Probe::kYes ? Probe::kYes : Probe::kUnknown;
     };
-    const Probe along_x = both(1, 0), along_y = both(0, 1);
+    const bool end_by_height = hint == FaceHint::kEnd;
+    const Probe along_x = end_by_height ? Probe::kNo : both(1, 0), along_y = end_by_height ? Probe::kNo : both(0, 1);
     const bool known = along_x != Probe::kUnknown && along_y != Probe::kUnknown;
     if (known && (along_x == Probe::kYes) != (along_y == Probe::kYes)) {   // 옆면: 긴 축이 태그 평면 안 → 직육면체
       const cv::Vec3d z = along_x == Probe::kYes ? ex : ey;

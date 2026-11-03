@@ -319,6 +319,7 @@ public:
     puck_geom_.min_votes = static_cast<int>(declare_parameter("puck.min_votes", puck_geom_.min_votes));
     merge_dist_ = declare_parameter("puck.merge_dist", 0.04);
     upright_gap_px_ = declare_parameter("puck.upright_gap_px", 1.0);
+    face_hint_tol_ = declare_parameter("puck.face_hint_tol", face_hint_tol_);
 
     LightBlobConfig & lb = light_cfg_;
     lb.v_min = static_cast<int>(declare_parameter("signal.v_min", lb.v_min));
@@ -858,7 +859,7 @@ private:
 
   // Arducam 태그 → 퍽. 같은 번호가 여러 면에 보이면 가장 크게 보이는 면 하나
   std::vector<Puck> pucks_from_tags(const std::vector<TagDetection> & tags, const cv::Mat & bgr, const cv::Mat & K,
-    const tf2::Transform & T)
+    const tf2::Transform & T, const std::optional<tf2::Transform> & T_plane)
   {
     std::vector<const TagDetection *> order;
     for (const auto & t : tags) {if (t.pose_valid) {order.push_back(&t);}}
@@ -871,7 +872,17 @@ private:
       // PnP 두 해의 오차가 거의 같으면 법선이 base_link 수직 · 수평에 가까운 해 (tag_upright.hpp)
       const tf2::Matrix3x3 & B = T.getBasis();
       const cv::Matx33d R_base_cam(B[0][0], B[0][1], B[0][2], B[1][0], B[1][1], B[1][2], B[2][0], B[2][1], B[2][2]);
-      const PuckEstimate e = estimate_puck(bgr, K, prefer_upright(*t, R_base_cam, upright_gap_px_), hsv_, puck_geom_);
+      const TagDetection tu = prefer_upright(*t, R_base_cam, upright_gap_px_);
+      FaceHint hint = FaceHint::kNone;   // 받침 위 태그 높이로 서 있는 윗면인지 (puck_estimator.hpp 2-1)
+      if (T_plane) {
+        cv::Matx33d Rt;
+        cv::Rodrigues(tu.rvec, Rt);
+        const tf2::Vector3 c = *T_plane * tf2::Vector3(tu.tvec[0], tu.tvec[1], tu.tvec[2]);
+        const tf2::Vector3 n = T_plane->getBasis() * tf2::Vector3(Rt(0, 2), Rt(1, 2), Rt(2, 2));
+        // 태그 z = 면 바깥 법선 (퍽 중심 = 태그 − z · 깊이, puck_estimator.hpp 3)
+        hint = face_hint_from_height(c.z(), n.z(), plane_.levels, puck_geom_.half_width, puck_geom_.half_length, face_hint_tol_);
+      }
+      const PuckEstimate e = estimate_puck(bgr, K, tu, hsv_, puck_geom_, hint);
       Puck p;
       p.tag_id = t->id;
       p.color = e.color_cls >= 0 ? static_cast<uint8_t>(e.color_cls + 1) : Puck::COLOR_UNKNOWN;
@@ -1602,7 +1613,7 @@ private:
           r.tag_pose.pose.orientation = tf2::toMsg(q);
         }
       }
-      if (T) {arm_.pucks = pucks_from_tags(tags, u, newK_, *T);}
+      if (T) {arm_.pucks = pucks_from_tags(tags, u, newK_, *T, lookup_at(plane_.frame, frame, stamp, false));}
     }
     if (want_marker && T) {
       arm_.marker = best_marker(places, *T, img->header.stamp, Puck::CAMERA_ARM);
@@ -1854,6 +1865,7 @@ private:
   PuckGeometry puck_geom_;
   double merge_dist_ = 0.04, min_confidence_ = 0.5;
   double upright_gap_px_ = 1.0;
+  double face_hint_tol_ = 0.012;   // [m] 서 있는 윗면 높이 허용 (누운 윗면과 30 mm 차이의 절반 안쪽)
   double tf_fallback_max_s_ = 0.1;   // [s] 촬영 시각 TF 가 없을 때 최근 TF 를 써도 되는 시각 차 (lookup_near)
   TargetTracker tracker_;
   ArmTargetLock arm_lock_;             // ctl_cbg_ 에서만 쓴다 (on_set_mode · 처리 주기)
