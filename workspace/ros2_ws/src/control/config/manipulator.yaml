@@ -101,8 +101,26 @@ manipulator_node:
 
     # 주사위 미션 skill (/manipulator/execute_skill 이름, #63 #74). 같은 이름 정책이 로드돼 있으면 정책을 쓴다
     toppick:
-      pitch: -0.7854             # toppick_tilt 집게 기울기 (45° 아래). pick 과 같은 과정 (/arm_range 보정 포함)
+      pitch: -0.7854             # toppick_tilt 집게 기울기 (45° 아래). pick 과 같은 과정
       approach_distance: 0.06    # 접근 위치 = 파지점에서 집게 축 반대로 (m)
+      # ① 정밀 정렬 결과 (/arm_range) · 미세 보정을 toppick 에서도 쓸지. 45° 는 집게 축이 퍽을 보지 않고 접근 위치에서
+      # 퍽이 팔 카메라 화면 밖이라 (#82) false → 목표 = 직전 target_look 이 잰 위치 (없으면 perception 추적 위치) 그대로 집음
+      use_alignment: false
+      latch_max_age: 30.0        # s, target_look 이 잰 위치를 toppick_tilt 가 쓸 수 있는 시간
+    # target_look:<frame>:<x>:<y>:<z> 타겟체크자세 (#82, include/control/target_look_pose.hpp). 집기 전 팔 카메라로 퍽 윗면을 내려다봄
+    #   카메라를 퍽 윗면에서 distances 만큼, 광축이 수평 아래 view_angles_deg 로 — 관절 한계 안에서 풀리는 첫 (거리, 각)
+    #   인지 #82 타겟체크자세 4 개 (A · B · C앞 · C뒤) 는 모두 약 70° · 0.15~0.21 m (test_target_look_pose 가 같은 카메라 모형인지 확인)
+    target_look:
+      camera_x: 0.128256         # joint4 축 → 팔 카메라, 집게 축 방향 (robot.urdf.xacro arm_camera_link 0.088256 + link5 0.04)
+      camera_z: 0.077446         # 집게 축에 수직 위
+      camera_tilt: 0.261788      # 광축이 집게 축보다 아래로 (15°)
+      view_angles_deg: [70.0, 72.0, 68.0, 75.0, 65.0, 78.0, 80.0, 62.0, 85.0, 60.0]   # 선호 순서
+      distances: [0.17, 0.16, 0.18, 0.15, 0.19, 0.20, 0.21, 0.22]                     # m, 선호 순서 (먼저 바뀜)
+      min_clearance: 0.04        # 집게 끝이 퍽 윗면보다 이만큼 위 (m)
+      settle_time: 0.3           # s, 자세에 선 뒤 이보다 나중에 촬영된 /perception/pucks 만
+      arm_wait: 1.0              # s, 이 동안은 팔 카메라 (태그) 퍽만, 지나면 D435 퍽도
+      timeout: 3.0               # s, 예상 자리 퍽이 없으면 실패 (mission 재시도)
+      match_distance: 0.04       # m, 예상 중심과 수평 거리. 이웃 퍽 (회전 뒤 0.08 m) 의 절반
     pallet:
       traj_file: ""              # 빈 문자열 = <control share>/config/pallet_place_traj.json (urdf_and_usd/policy/manipulator 사본)
       speed: 0.8                 # rad/s, 경유점 사이 관절 속도 (#75)

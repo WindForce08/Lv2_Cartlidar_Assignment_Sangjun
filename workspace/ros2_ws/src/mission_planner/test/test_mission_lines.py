@@ -1,12 +1,24 @@
+import math
 import os
 
 import yaml
 
 from mission_planner.mission_lines import expect_cells, to_lines
+from mission_planner.poses import CENTER_X, J1_X, puck_after_turn
 from mission_planner.planner import plan
 
 PROB = yaml.safe_load(open(os.path.join(os.path.dirname(__file__), "..", "config", "problem_q1_example.yaml"), encoding="utf-8"))
 KNOWN = {"goto", "approach", "skill", "verify", "wait"}
+
+
+def test_puck_after_turn():
+    # 회전 없으면 그대로. ±Y 접근 퍽 (J1 앞 0.2665 · 옆 +0.04) 을 +17.06° 돌면 J1 은 퍽 줄 위 -> J1→퍽 = 처음 앞 방향 (-17.06°),
+    # 거리는 J1 이 로봇 중심 둘레로 뒤로 (J1_X - CENTER_X)(1 - cos) = 6 mm 물러난 만큼 늘어남
+    x, y = puck_after_turn(0.2, 0.0, 0.0)
+    assert abs(x - (J1_X + 0.2)) < 1e-12 and abs(y) < 1e-12
+    x, y = puck_after_turn(0.2665, 0.04, 17.06)
+    assert abs(math.degrees(math.atan2(y, x - J1_X)) + 17.06) < 0.1
+    assert abs(math.hypot(x - J1_X, y) - (0.2665 + (J1_X - CENTER_X) * (1 - math.cos(math.radians(17.06))))) < 0.001
 
 
 def test_expect_cells():
@@ -31,6 +43,13 @@ def test_lines_q1(world):
         assert sorted(x.replace("pallet_load_", "") for x in loads) == sorted(x.replace("pallet_unload_", "") for x in unloads)
         assert len([t for t in types if t == "verify"]) == 3
         assert sum("toppick_tilt" in ln for ln in lines) == 12
+        # 집기 전 타겟체크자세 (#82): toppick_tilt 바로 앞마다 target_look:base_footprint:x:y:z, 예상 퍽은 J1 45° 범위 안
+        for k, ln in enumerate(lines):
+            if "toppick_tilt" in ln:
+                f = lines[k - 1].split()[2].split(":")
+                assert f[0] == "target_look" and f[1] == "base_footprint" and len(f) == 5
+                x, y, z = (float(v) for v in f[2:])
+                assert 0.12 <= math.hypot(x - J1_X, y) <= 0.35 and abs(z - 0.10) < 1e-9
         turns = [ln.split()[2] for ln in lines if ln.startswith("skill drive")]
         n_box = sum(s["shape"] == "box" and s["turn_deg"] != 0.0 for s in p["steps"] if s["type"] == "pick")
         assert len(turns) == 2 * n_box and turns.count("turn_0") == n_box            # 돌고 -> 집고 -> 되돌림

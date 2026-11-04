@@ -85,8 +85,8 @@ robot_interfaces 는 바꾸지 않음 (동결). 계획 단계 (`mission_planner/
 |---|---|
 | `goto x y yaw` | /drive/navigate (지도 좌표) + 팔 STOW |
 | `approach 0.13` | 기존 approach (COARSE → READY → FINE, TFmini 하한 0.13) |
-| `skill manipulator <이름>` | /manipulator/execute_skill — ★ manipulator 구현 필요. 집기 · 놓기는 모두 집게 45°: `toppick_tilt`, `pallet_load_<열>_<칸>_tilt`, `pallet_unload_<열>_<칸>_tilt` (속도 규칙 #75), `place_<L>_<dx>_<dy>_tilt` (dx, dy = m1 · 0 · p1) |
-| `skill drive turn_<p\|m>17` · `turn_0` | /drive/execute_skill — drive_node (#77, 실제 회전 중심 보정 `turn.icr_x`). 상자 퍽을 집기 전 FINE 정렬 방향에서 로봇 중심 둘레로 ±17° 제자리 회전 (J1→퍽 = 박스 축 = 퍽 면, ±3°), 집고 실은 뒤 `turn_0` 으로 되돌림. inline (박스 6) 은 회전 없음 |
+| `skill manipulator <이름>` | /manipulator/execute_skill (manipulator_node). 집기 · 놓기는 모두 집게 45°: `target_look:base_footprint:x:y:z` (집기 전 팔 카메라로 퍽을 내려다보고 재서 붙잡음, 회전 뒤 예상 위치 `poses.puck_after_turn`, #82) → `toppick_tilt` (그 위치로 45° 집기), `pallet_load_<열>_<칸>_tilt`, `pallet_unload_<열>_<칸>_tilt` (속도 규칙 #75), `place_<L>_<dx>_<dy>_tilt` (dx, dy = m1 · 0 · p1) |
+| `skill drive turn_<p\|m>17` · `turn_0` | /drive/execute_skill — drive_node (#77, 실제 회전 중심 보정 `base.icr_x` = control robot_geometry.yaml). 상자 퍽을 집기 전 FINE 정렬 방향에서 로봇 중심 둘레로 ±17° 제자리 회전 (J1→퍽 = 박스 축 = 퍽 면, ±3°), 집고 실은 뒤 `turn_0` 으로 되돌림. inline (박스 6) 은 회전 없음 |
 | `verify L cx cy z expect9 yshape` | 팔 TAG_VIEW → READ_TAG+SEARCH_FRONT → /perception/check_dice (지도 좌표 칸) → 기록, 틀려도 계속 (stop_on_fail false) |
 | `wait 3` | 복귀 뒤 정지 |
 

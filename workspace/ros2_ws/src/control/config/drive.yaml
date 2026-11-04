@@ -55,4 +55,4 @@ drive_node:
       max_deg: 30.0                # 이보다 큰 회전 이름은 거부
       j1_x: 0.096                  # base_link → J1 축 x (mission_planner poses.J1_X)
       center_x: -0.04035           # 계획기가 가정한 회전 중심 = 외곽 가운데 (poses.CENTER_X)
-      icr_x: -0.0658               # ★ 실제 제자리 회전 중심 x (Isaac B안 모의 #92). J1 옆 이동이 같게 각을 바꿈: 17.06° → 14.3°. 실물 회전 시험으로 다시 잼
+      # 실제 제자리 회전 중심 x 는 robot_geometry.yaml base.icr_x (EKF odom_icr 와 같은 값, #92). J1 옆 이동이 같게 각을 바꿈: 17.06° → 14.3°

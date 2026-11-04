@@ -117,7 +117,8 @@ public:
     turn_max_deg_ = declare_parameter("turn.max_deg", 30.0);
     turn_geo_.j1_x = declare_parameter("turn.j1_x", turn_geo_.j1_x);
     turn_geo_.center_x = declare_parameter("turn.center_x", turn_geo_.center_x);
-    turn_geo_.icr_x = declare_parameter("turn.icr_x", turn_geo_.center_x);   // 기본 = 보정 없음
+    // 실제 회전 중심 = robot_geometry.yaml base.icr_x (EKF odom_icr 와 같은 값, #92). 기본 = 보정 없음
+    turn_geo_.icr_x = declare_parameter("base.icr_x", turn_geo_.center_x);
 
     if (skill_enabled_) {
       std::vector<std::string> errs;

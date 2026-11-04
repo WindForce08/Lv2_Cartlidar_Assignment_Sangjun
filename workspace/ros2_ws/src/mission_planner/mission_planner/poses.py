@@ -71,6 +71,14 @@ def turn_deg(lat):
     return math.degrees(math.asin(max(-1.0, min(1.0, lat / (J1_X - CENTER_X)))))
 
 
+def puck_after_turn(fwd, lat, deg):
+    """J1 앞 fwd · 옆 lat 인 퍽 -> 로봇 중심 둘레로 deg 돈 뒤 base_link 좌표 (x, y). target_look 예상 위치 (#82).
+    실물은 실제 회전 중심 (drive base.icr_x) 둘레로 J1 옆 이동이 같게 돌아 몇 mm 다름 -> manipulator target_look.match_distance 안."""
+    t = math.radians(deg)
+    dx, dy = J1_X + fwd - CENTER_X, lat
+    return CENTER_X + dx * math.cos(t) + dy * math.sin(t), -dx * math.sin(t) + dy * math.cos(t)
+
+
 def turned(pose: Pose, deg):
     """로봇 중심 (외곽 가운데) 둘레로 deg 돈 base_link 자세."""
     cx, cy = pose.tf(CENTER_X, 0.0)
