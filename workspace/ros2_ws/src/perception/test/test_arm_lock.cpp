@@ -1,6 +1,8 @@
 // ARM_ALIGN 목표 퍽 유지 시험 (arm_target_lock.hpp). 정규화 좌표, 빨강 0 · 초록 1
 #include <gtest/gtest.h>
 
+#include <cmath>
+
 #include "perception/arm_target_lock.hpp"
 
 using namespace perception;
@@ -197,4 +199,60 @@ TEST(ArmLock, DepthPredictsSizeAndReacquireReference)
   EXPECT_EQ(lock.update({},ArmPoint{0,0,.4}),-1);
   EXPECT_EQ(lock.update({{0,0,.03,0,.9,.03,.03}},ArmPoint{0,0,.8}),0);
   EXPECT_EQ(lock.update({{0,0,.09,0,.9,.09,.09}},ArmPoint{0,0,.8}),-1);
+}
+
+// 진단: 따라가는 중 다른 클래스 · 크기가 크게 변한 박스는 이유별로 센다
+TEST(ArmTargetLock, DiagCountsRejectedBoxes)
+{
+  ArmTargetLock lock;
+  ASSERT_EQ(lock.update({box(0.0, RED, 0.9)}, std::nullopt), 0);
+  EXPECT_EQ(lock.update({box(0.0, GREEN, 0.9), box(0.01, RED, 0.9, 0.2)}, std::nullopt), -1);
+  EXPECT_EQ(lock.diag().boxes, 2);
+  EXPECT_EQ(lock.diag().cls, 1);
+  EXPECT_EQ(lock.diag().size, 1);
+  EXPECT_TRUE(lock.diag().was_locked);
+}
+
+// size 가 있으면 폭 대신 그것으로 비교: 넓은 화각 가장자리에서 폭은 1.36 배여도 √(폭 × 높이)는 1.17 배 (엔진 박스)
+TEST(ArmTargetLock, SizeFieldOverridesWidth)
+{
+  ArmTargetLock lock;
+  ArmBox a{0.0, 0.0, 0.0267, RED, 0.9, 0.05, std::sqrt(0.0267 * 0.05)};
+  ArmBox b{0.02, 0.0, 0.0363, RED, 0.9, 0.05, std::sqrt(0.0363 * 0.05)};
+  ASSERT_EQ(lock.update({a}, std::nullopt), 0);
+  EXPECT_EQ(lock.update({b}, std::nullopt), 0);
+  ArmTargetLock by_width;
+  a.size = b.size = 0;
+  ASSERT_EQ(by_width.update({a}, std::nullopt), 0);
+  EXPECT_EQ(by_width.update({b}, std::nullopt), -1);   // 폭만 보면 1.36 > 1.3
+}
+
+// 같은 색으로 거의 겹친 박스(같은 퍽에 클래스만 다름)는 점수 높은 하나만. 이웃 · 반쯤 겹친 박스 · 다른 색은 그대로
+TEST(ArmTargetLock, DropOverlappingSameClass)
+{
+  const std::vector<ArmBox> b{
+    {0.700, -0.40, 0.087, RED, 0.81, 0.12}, {0.702, -0.39, 0.085, RED, 0.45, 0.13},   // IoU 약 0.9
+    {0.900, -0.40, 0.087, RED, 0.80, 0.12},                                           // 이웃 (겹침 없음)
+    {0.700, -0.40, 0.087, GREEN, 0.70, 0.12},                                         // 다른 색
+    {0.650, -0.30, 0.060, RED, 0.60, 0.10}};                                          // 반쯤 겹침 (IoU < 0.7)
+  EXPECT_EQ(drop_overlapping(b, 0.7), (std::vector<size_t>{0, 2, 3, 4}));
+  EXPECT_EQ(drop_overlapping(b, 1.01).size(), 5u);
+}
+
+// 다시 잡기: seed 가 목표에서 +0.06 치우쳐 같은 색 이웃(목표 + 0.12)과 가운데에 떨어져도, 마지막으로 본 치우침으로 목표를 고른다
+TEST(ArmTargetLock, ReacquireUsesLastSeedBias)
+{
+  ArmTargetLock lock;
+  ASSERT_EQ(lock.update({box(0.30, GREEN, 0.9)}, ArmPoint{0.36, 0.0, 0.0}), 0);   // 보임: 치우침 −0.06
+  EXPECT_EQ(lock.update({}, ArmPoint{0.36, 0.0, 0.0}), -1);                        // 놓침
+  EXPECT_EQ(lock.update({box(0.30, GREEN, 0.9), box(0.42, GREEN, 0.9)}, ArmPoint{0.36, 0.0, 0.0}), 0);
+}
+
+// 치우침은 모호할 때만 쓴다: seed 근처 후보가 하나면 치우침과 어긋나도 그것을 다시 잡는다
+TEST(ArmTargetLock, BiasOnlyBreaksTies)
+{
+  ArmTargetLock lock;
+  ASSERT_EQ(lock.update({box(0.30, GREEN, 0.9)}, ArmPoint{0.36, 0.0, 0.0}), 0);
+  EXPECT_EQ(lock.update({}, ArmPoint{0.36, 0.0, 0.0}), -1);
+  EXPECT_EQ(lock.update({box(0.42, GREEN, 0.9)}, ArmPoint{0.36, 0.0, 0.0}), 0);
 }

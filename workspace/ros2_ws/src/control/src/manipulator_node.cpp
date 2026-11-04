@@ -13,6 +13,17 @@
 // - /arm_range: perception_node 가 D435 · Arducam 측위로 낸 "팔 끝(range_frame = tool_link) → 정렬 중인 퍽 표면" 거리.
 //   미세 보정의 전후 성분 · 최종 전진 거리에 쓴다. TFmini(1층, 박스 앞면 거리)는 drive 정렬 전용이라 여기서 쓰지 않는다
 // - align 진행 중에는 팔을 움직이지 않는다 — 순서는 mission이 보장
+// - 그리퍼 (gripper.mode=arm_joint, 실물): 6 번째 칸 gripper_roll = 그리퍼 개폐 모터 (열림 -0.764 · 닫힘 +0.923 rad).
+//   arm_controller 궤적의 6 번째 값으로 여닫고, 모든 팔 궤적에 지금 그리퍼 명령을 같이 실어 쥔 퍽을 놓치지 않는다.
+//   펌웨어 GripGuard 가 막히면 약하게 쥔다 → 닫은 뒤 위치가 닫힘 명령보다 grasp_margin 넘게 덜 닫혔으면 잡음
+// - 주사위 미션 skill (/manipulator/execute_skill 의 이름, mission_planner mission_lines.py · 이슈 #63 #74). 같은 이름의
+//   정책이 로드돼 있으면 정책을, 없으면 아래 고정 동작을 쓴다 (강화학습은 IK 대체 경로를 항상 유지)
+//     toppick_tilt                   박스 위 퍽을 집게 45° 로 집기 (pick 과 같은 과정, 기울기만 toppick.pitch)
+//     pallet_load_<열>_<칸>_tilt      쥔 퍽을 팔레트 칸에 놓기 = pallet_place_traj.json 의 칸 궤적 (3 열 쥔 구간 0.4 rad/s, #75)
+//     pallet_unload_<열>_<칸>_tilt    팔레트 칸의 퍽을 집어 들기 = 같은 궤적, 그리퍼만 반대 (0.8 rad/s)
+//     place_<L>_<dx>_<dy>_tilt        쥔 퍽을 장소 L 의 3×3 칸 (dx, dy = m1 · 0 · p1) 에 45° 로 놓기.
+//                                    칸 좌표 = mission_planner config/approach_poses.yaml cells (지도) → TF 로 팔 기준
+//     place_at:<frame>:<x>:<y>:<z>   쥔 퍽을 칸 좌표 (frame 기준 x, y, 윗면 높이 z) 에 놓기 — perception place_box 칸 (#74)
 // - 결과를 콜백 안에서 기다리지 않는다. 각 단계는 이전 단계의 result 콜백에서 이어진다
 //
 // callback group
@@ -21,12 +32,15 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <set>
+#include <sstream>
+#include <utility>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -36,6 +50,7 @@
 #include "action_msgs/srv/cancel_goal.hpp"
 #include "control_msgs/action/follow_joint_trajectory.hpp"
 #include "control_msgs/action/parallel_gripper_command.hpp"
+#include "geometry_msgs/msg/point_stamped.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/vector3_stamped.hpp"
 #include "rclcpp/rclcpp.hpp"
@@ -57,6 +72,7 @@
 #include "tf2_ros/transform_listener.hpp"
 #include "trajectory_msgs/msg/joint_trajectory.hpp"
 #include "trajectory_msgs/msg/joint_trajectory_point.hpp"
+#include "yaml-cpp/yaml.h"
 
 namespace control
 {
@@ -140,9 +156,9 @@ public:
     skill_server_ = rclcpp_action::create_server<ExecuteSkill>(
       this, "/manipulator/execute_skill",
       [this](const rclcpp_action::GoalUUID &, std::shared_ptr<const ExecuteSkill::Goal> goal) {
-        if (skill_ready_.count(goal->policy) == 0) {
-          RCLCPP_WARN(get_logger(), "execute_skill '%s': policy not loaded (skill.enabled · policies.yaml · "
-            "ONNX Runtime) -> reject", goal->policy.c_str());
+        if (skill_ready_.count(goal->policy) == 0 && !parseTaskSkill(goal->policy)) {
+          RCLCPP_WARN(get_logger(), "execute_skill '%s': not a mission skill and policy not loaded (skill.enabled · "
+            "policies.yaml · ONNX Runtime) -> reject", goal->policy.c_str());
           return rclcpp_action::GoalResponse::REJECT;
         }
         return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
@@ -158,13 +174,31 @@ public:
       this, get_clock(), rclcpp::Duration::from_seconds(0.05), [this]() {onTick();},
       job_cb_group_);
 
-    RCLCPP_INFO(get_logger(), "manipulator_node ready (poses: %zu, gripper %s)",
-      poses_.size(), gripper_enabled_ ? "enabled" : "disabled");
+    RCLCPP_INFO(get_logger(), "manipulator_node ready (poses: %zu, gripper mode: %s, pallet slots: %zu, place cells: %zu)",
+      poses_.size(), gripper_mode_name_.c_str(), pallet_.size(), place_cells_.size());
   }
 
 private:
   enum class Job { NONE, POSE, PICK, SKILL };
-  enum class PickStep { PLAN, PREGRASP, CORRECT_WAIT, CORRECT_MOVE, OPEN, FINAL, CLOSE, LIFT };
+  enum class PickStep { PLAN, PREGRASP, CORRECT_WAIT, CORRECT_MOVE, OPEN, FINAL, CLOSE, CLOSE_WAIT, LIFT, TASK };
+  enum class GripperMode { ARM_JOINT, ACTION, NONE };
+  // 미션 skill 종류 (execute_skill 이름)
+  enum class Task { NONE, TOPPICK, PALLET_LOAD, PALLET_UNLOAD, PLACE };
+  struct TaskSkill
+  {
+    Task kind{Task::NONE};
+    int row{0}, index{0};                 // pallet_*: 열 1~3 · 칸 0~3
+    std::string place, cell;              // place_<L>_<dx>_<dy>: 장소 · "dx,dy" (-1 · 0 · 1)
+    std::string frame;                    // place_at: 칸 좌표 frame
+    double x{0.0}, y{0.0}, z{0.0};        // place_at: 칸 중심 · 윗면 높이
+  };
+  // pallet_place_traj.json 의 칸 하나: 구간 (이름 · 그리퍼 hold/open · 경유 관절각 5개)
+  struct PalletSegment
+  {
+    std::string name;
+    bool hold{true};
+    std::vector<std::vector<double>> q;
+  };
 
   // ------------------------------------------------------------------ 파라미터
   void loadParameters()
@@ -172,9 +206,11 @@ private:
     // 팔 관절: controllers.yaml의 arm_controller joints와 같아야 한다 (joint1~5 + gripper_roll)
     joint_names_ = declare_parameter<std::vector<std::string>>("arm.joint_names",
       {"joint1", "joint2", "joint3", "joint4", "joint5", "gripper_roll"});
-    // TODO(Controller): 관절 한계 (추정) — URDF와 맞출 것
-    lower_ = declare_parameter<std::vector<double>>("arm.lower_limits", std::vector<double>(6, -M_PI));
-    upper_ = declare_parameter<std::vector<double>>("arm.upper_limits", std::vector<double>(6, M_PI));
+    // 관절 한계 = URDF (opencr_hardware/urdf/robot.urdf.xacro) = 펌웨어 config.h ARM_MIN/MAX_RAD (#83). 6 번째 = 그리퍼 개폐
+    lower_ = declare_parameter<std::vector<double>>("arm.lower_limits",
+      {-3.14159, -2.14, -1.6, -1.92, -2.8, -0.7946});
+    upper_ = declare_parameter<std::vector<double>>("arm.upper_limits",
+      {3.14159, 1.6, 1.6, 2.0, 2.8, 0.9541});
     max_joint_vel_ = declare_parameter<double>("arm.max_joint_velocity", 0.5);
     min_duration_ = declare_parameter<double>("arm.min_duration", 1.0);
     joint_state_timeout_ = declare_parameter<double>("arm.joint_state_timeout", 1.0);
@@ -182,12 +218,13 @@ private:
     requireSize("arm.lower_limits", lower_.size(), 6);
     requireSize("arm.upper_limits", upper_.size(), 6);
 
-    // TODO(Controller): 링크 길이 · 관절 기준 (추정) — URDF 확정 후 수정
+    // 기구 치수 = 차체 URDF = 기준 모델 B안 = kinematics.py (arm_ik.hpp 머리말). 값을 바꾸면 URDF 와 같이
     ArmIKParams ik;
-    ik.base_height = declare_parameter<double>("ik.base_height", 0.08);
-    ik.upper_arm = declare_parameter<double>("ik.upper_arm", 0.15);
-    ik.forearm = declare_parameter<double>("ik.forearm", 0.15);
-    ik.wrist_to_tool = declare_parameter<double>("ik.wrist_to_tool", 0.12);
+    ik.shoulder_height = declare_parameter<double>("ik.shoulder_height", ik.shoulder_height);
+    ik.upper_arm_x = declare_parameter<double>("ik.upper_arm_x", ik.upper_arm_x);
+    ik.upper_arm_z = declare_parameter<double>("ik.upper_arm_z", ik.upper_arm_z);
+    ik.forearm = declare_parameter<double>("ik.forearm", ik.forearm);
+    ik.wrist_to_tool = declare_parameter<double>("ik.wrist_to_tool", ik.wrist_to_tool);
     const auto offsets = declare_parameter<std::vector<double>>(
       "ik.joint_offsets", std::vector<double>(5, 0.0));
     const auto signs = declare_parameter<std::vector<double>>(
@@ -197,32 +234,70 @@ private:
     std::copy(offsets.begin(), offsets.end(), ik.joint_offsets.begin());
     std::copy(signs.begin(), signs.end(), ik.joint_signs.begin());
     ik_ = std::make_unique<ArmIK>(ik);
-    // 앞에서부터 순서대로 시도하는 끝단 pitch 후보 (rad, -pi/2 = 위에서 수직으로 집기)
+    // 앞에서부터 순서대로 시도하는 집게 pitch 후보 (rad, 위로 +, -pi/4 = 45° 아래, -pi/2 = 바로 아래)
     approach_pitches_ = declare_parameter<std::vector<double>>(
-      "ik.approach_pitches", {-M_PI_2, -M_PI / 3.0, -M_PI_4, -M_PI / 6.0, 0.0});
+      "ik.approach_pitches", {-M_PI_4, -M_PI_2, -M_PI / 3.0});
     allow_elbow_down_ = declare_parameter<bool>("ik.allow_elbow_down", false);
     use_object_yaw_ = declare_parameter<bool>("ik.use_object_yaw", false);
     wrist_roll_default_ = declare_parameter<double>("ik.wrist_roll_default", 0.0);
+    // gripper.mode 가 action · none 일 때 6 번째 칸에 보낼 값 (예전 손목 롤 가정)
     gripper_roll_default_ = declare_parameter<double>("ik.gripper_roll_default", 0.0);
 
-    // TODO(Controller): STOW · READY · PLACE · TAG_VIEW 관절각 미정 — 주행 중 차체 밖으로 나가지 않는 값
-    //   TAG_VIEW = 팔 끝 Arducam이 태그를 보는 자세 (mission 시작 단계)
+    // 이름 자세 [joint1~5, 6 번째]. gripper.mode=arm_joint 면 6 번째는 쓰지 않고 지금 그리퍼 명령을 유지 (쥔 퍽을 놓치지 않게)
+    //   TAG_VIEW = 팔 끝 Arducam이 태그를 보는 자세, BOX_VIEW = 상자 윗면을 내려다보는 자세 (#74)
     const auto names = declare_parameter<std::vector<std::string>>(
-      "poses.names", {"STOW", "READY", "PLACE", "TAG_VIEW"});
+      "poses.names", {"STOW", "READY", "PLACE", "TAG_VIEW", "BOX_VIEW", "TRANSIT_TILT"});
     for (const auto & name : names) {
       auto q = declare_parameter<std::vector<double>>("poses." + name, std::vector<double>(6, 0.0));
       requireSize("poses." + name, q.size(), 6);
       poses_[name] = q;
     }
 
-    // TODO(Firmware/Controller): 그리퍼 개폐 액추에이터 미정 — 관절 이름 · 열림/닫힘 값
-    gripper_enabled_ = declare_parameter<bool>("gripper.enabled", true);
-    gripper_joint_ = declare_parameter<std::string>("gripper.joint_name", "gripper_joint");
-    gripper_open_ = declare_parameter<double>("gripper.open_position", 0.02);
-    gripper_close_ = declare_parameter<double>("gripper.close_position", 0.0);
-    gripper_effort_ = declare_parameter<double>("gripper.max_effort", 0.0);  // 0 = 지정 안 함
-    // 닫았는데 끝까지 닫힘(reached_goal, stalled 아님) = 빈손 → pick 실패
+    // 그리퍼: arm_joint (실물 — 6 번째 칸 gripper_roll 이 개폐 모터) | action (gripper_controller) | none (팔만 시험)
+    gripper_mode_name_ = declare_parameter<std::string>("gripper.mode", "arm_joint");
+    if (gripper_mode_name_ == "arm_joint") {
+      gripper_mode_ = GripperMode::ARM_JOINT;
+    } else if (gripper_mode_name_ == "action") {
+      gripper_mode_ = GripperMode::ACTION;
+    } else if (gripper_mode_name_ == "none") {
+      gripper_mode_ = GripperMode::NONE;
+    } else {
+      throw std::invalid_argument("gripper.mode must be arm_joint | action | none");
+    }
+    gripper_joint_ = declare_parameter<std::string>("gripper.joint_name", "gripper_joint");   // action 모드
+    // arm_joint: rad (열림 1550 tick · 닫힘 2650 tick, docs/arm_bench_test_2026-10-27.md). action: 컨트롤러 단위
+    gripper_open_ = declare_parameter<double>("gripper.open_position", -0.764);
+    gripper_close_ = declare_parameter<double>("gripper.close_position", 0.923);
+    gripper_effort_ = declare_parameter<double>("gripper.max_effort", 0.0);  // action 모드, 0 = 지정 안 함
+    gripper_move_time_ = declare_parameter<double>("gripper.move_time", 1.0);   // arm_joint: 끝에서 끝 0.9 s (벤치)
+    gripper_settle_ = declare_parameter<double>("gripper.settle_time", 0.4);    // arm_joint: 닫은 뒤 판정까지 (GripGuard 0.3 s)
+    // arm_joint: 닫힘 명령보다 이만큼 넘게 덜 닫혔으면 퍽을 잡음 (퍽 30 mm 에서 약 +0.51 rad 에서 막힘, 벤치)
+    grasp_margin_ = declare_parameter<double>("gripper.grasp_margin", 0.15);
+    // 닫았는데 끝까지 닫힘 = 빈손 → pick 실패
     gripper_fail_on_empty_ = declare_parameter<bool>("gripper.fail_on_empty", true);
+
+    // 미션 skill — toppick_tilt: pick 과 같은 과정, 집게 기울기 · 접근 거리만 다름
+    toppick_pitch_ = declare_parameter<double>("toppick.pitch", -M_PI_4);
+    toppick_approach_ = declare_parameter<double>("toppick.approach_distance", 0.06);
+    // 집게 끝(tool_link) = 퍽 중심 + 위로 grasp_z_offset (팔레트 궤적 grasp_dz 0.015 와 같게)
+    grasp_z_offset_ = declare_parameter<double>("pick.grasp_z_offset", 0.015);
+    // 팔레트 칸 궤적 (빈 문자열 = <control share>/config/pallet_place_traj.json, pallet_traj.py 가 만든 파일 사본)
+    pallet_file_ = declare_parameter<std::string>("pallet.traj_file", "");
+    pallet_speed_ = declare_parameter<double>("pallet.speed", 0.8);              // rad/s (#75)
+    pallet_row3_hold_speed_ = declare_parameter<double>("pallet.row3_hold_speed", 0.4);   // 3 열 쥔 구간 (#75)
+    pallet_require_held_ = declare_parameter<bool>("pallet.require_held", true);
+    // place_<L>_*: 칸 좌표표 (빈 문자열 = <mission_planner share>/config/approach_poses.yaml), 칸 좌표 frame
+    place_cells_file_ = declare_parameter<std::string>("place.cells_file", "");
+    place_cells_frame_ = declare_parameter<std::string>("place.cells_frame", "map");
+    place_pitch_ = declare_parameter<double>("place.pitch", -M_PI_4);
+    place_surface_height_ = declare_parameter<double>("place.surface_height", 0.070);   // 장소 상자 윗면 (발제 Z 70 mm)
+    puck_half_height_ = declare_parameter<double>("place.puck_half_height", 0.030);
+    place_clearance_ = declare_parameter<double>("place.clearance", 0.002);
+    place_approach_ = declare_parameter<double>("place.approach_distance", 0.04);
+    place_retreat_ = declare_parameter<double>("place.retreat_distance", 0.04);
+    // 바닥 frame (z = 바닥). arm_base_link 높이 = 이 frame → arm_base_link TF, 없으면 arm_base_height
+    floor_frame_ = declare_parameter<std::string>("floor_frame", "base_footprint");
+    arm_base_height_ = declare_parameter<double>("arm_base_height", 0.120);   // ★ base_link 바닥 위 0.00675 + 0.1135 (B안)
 
     base_frame_ = declare_parameter<std::string>("arm_base_frame", "arm_base_link");
     // 측정 시각 이후 차체 · 팔이 움직였을 수 있으므로 측정 시각 기준으로 fixed_frame을 거쳐
@@ -295,6 +370,60 @@ private:
 
     validateParameters(signs);
     loadPolicies();
+    loadPallet();
+    loadPlaceCells();
+  }
+
+  // pallet_place_traj.json (JSON = YAML 이라 yaml-cpp 로 읽음). 없으면 pallet_* skill 이 실패를 돌려준다
+  void loadPallet()
+  {
+    std::string file = pallet_file_;
+    try {
+      if (file.empty()) {
+        file = (ament_index_cpp::get_package_share_path("control") / "config" / "pallet_place_traj.json").string();
+      }
+      const YAML::Node doc = YAML::LoadFile(file);
+      if (doc["transit"] && doc["transit"]["q_front_tilt"]) {
+        transit_tilt_ = doc["transit"]["q_front_tilt"].as<std::vector<double>>();
+      }
+      for (const auto & slot : doc["slots"]) {
+        std::vector<PalletSegment> segs;
+        for (const auto & g : slot["segments"]) {
+          PalletSegment seg;
+          seg.name = g["name"].as<std::string>();
+          seg.hold = g["gripper"].as<std::string>() == "hold";
+          seg.q = g["q"].as<std::vector<std::vector<double>>>();
+          segs.push_back(seg);
+        }
+        pallet_[{slot["row"].as<int>(), slot["index"].as<int>()}] = segs;
+      }
+      RCLCPP_INFO(get_logger(), "pallet: %zu slot(s) from %s", pallet_.size(), file.c_str());
+    } catch (const std::exception & e) {
+      RCLCPP_WARN(get_logger(), "pallet trajectories not loaded (%s): %s -> pallet_* skills will fail",
+        file.c_str(), e.what());
+    }
+  }
+
+  // approach_poses.yaml: <L>.cells."dx,dy".x · y (지도 = 발제 좌표). 없으면 place_<L>_* skill 이 실패를 돌려준다
+  void loadPlaceCells()
+  {
+    std::string file = place_cells_file_;
+    try {
+      if (file.empty()) {
+        file = (ament_index_cpp::get_package_share_path("mission_planner") / "config" / "approach_poses.yaml").string();
+      }
+      const YAML::Node doc = YAML::LoadFile(file);
+      for (const char * L : {"L1", "L2", "L3"}) {
+        if (!doc[L] || !doc[L]["cells"]) {continue;}
+        for (const auto & kv : doc[L]["cells"]) {
+          place_cells_[std::string(L) + "/" + kv.first.as<std::string>()] =
+            {kv.second["x"].as<double>(), kv.second["y"].as<double>()};
+        }
+      }
+      RCLCPP_INFO(get_logger(), "place: %zu cell(s) from %s", place_cells_.size(), file.c_str());
+    } catch (const std::exception & e) {
+      RCLCPP_WARN(get_logger(), "place cells not loaded (%s): %s -> place_<L>_* skills will fail", file.c_str(), e.what());
+    }
   }
 
   // 노드 시작 시 정책 전부 로드 (실행 중 로드 없음). 실패한 정책은 없는 것으로 → execute_skill 거절 → mission fallback
@@ -366,9 +495,32 @@ private:
     requirePositive("arm.max_joint_velocity", max_joint_vel_);
     requirePositive("arm.min_duration", min_duration_);
     requirePositive("arm.joint_state_timeout", joint_state_timeout_);
-    requirePositive("ik.upper_arm", get_parameter("ik.upper_arm").as_double());
+    requirePositive("ik.shoulder_height", get_parameter("ik.shoulder_height").as_double());
     requirePositive("ik.forearm", get_parameter("ik.forearm").as_double());
-    requireNonNegative("ik.wrist_to_tool", get_parameter("ik.wrist_to_tool").as_double());
+    requirePositive("ik.wrist_to_tool", get_parameter("ik.wrist_to_tool").as_double());
+    if (gripper_mode_ == GripperMode::ARM_JOINT) {
+      for (double g : {gripper_open_, gripper_close_}) {
+        if (!(g >= lower_[5] && g <= upper_[5])) {
+          throw std::invalid_argument("gripper.open_position / close_position must be within arm limits[5] (gripper_roll)");
+        }
+      }
+      if (!(gripper_close_ > gripper_open_)) {
+        throw std::invalid_argument("gripper.close_position must be > open_position (닫을수록 증가)");
+      }
+    }
+    requirePositive("gripper.move_time", gripper_move_time_);
+    requireNonNegative("gripper.settle_time", gripper_settle_);
+    requirePositive("gripper.grasp_margin", grasp_margin_);
+    requirePositive("toppick.approach_distance", toppick_approach_);
+    requireNonNegative("pick.grasp_z_offset", grasp_z_offset_);
+    requirePositive("pallet.speed", pallet_speed_);
+    requirePositive("pallet.row3_hold_speed", pallet_row3_hold_speed_);
+    requireNonNegative("place.surface_height", place_surface_height_);
+    requirePositive("place.puck_half_height", puck_half_height_);
+    requireNonNegative("place.clearance", place_clearance_);
+    requirePositive("place.approach_distance", place_approach_);
+    requirePositive("place.retreat_distance", place_retreat_);
+    requirePositive("arm_base_height", arm_base_height_);
     requireNonNegative("gripper.max_effort", gripper_effort_);
     requirePositive("tf_cache_time", get_parameter("tf_cache_time").as_double());
     requirePositive("pick.approach_distance", approach_distance_);
@@ -477,7 +629,8 @@ private:
     const std::vector<double> & from, const std::vector<double> & to, double min_duration) const
   {
     double max_delta = 0.0;
-    for (size_t i = 0; i < from.size(); ++i) {
+    // 팔 관절 5개만 (6 번째 그리퍼는 쥐면 명령과 측정이 달라 시간이 늘어남. 그리퍼 이동 0.9 s 는 min_duration 안)
+    for (size_t i = 0; i < std::min<size_t>(5, from.size()); ++i) {
       max_delta = std::max(max_delta, std::abs(to[i] - from[i]));
     }
     return std::max(min_duration, max_delta / max_joint_vel_);
@@ -505,7 +658,7 @@ private:
         continue;
       }
       std::vector<double> q(sol->begin(), sol->end());
-      q.push_back(gripper_roll_default_);
+      q.push_back(sixthValue(seed));
       if (!withinLimits(q)) {
         continue;
       }
@@ -557,6 +710,7 @@ private:
     FollowJT::Goal goal;
     goal.trajectory.joint_names = joint_names_;
     goal.trajectory.points = points;
+    last_sent_ = points.back().positions;   // 그리퍼만 움직일 때 팔 기준
 
     const uint64_t id = job_id_;
     rclcpp_action::Client<FollowJT>::SendGoalOptions opt;
@@ -595,6 +749,45 @@ private:
           (wr.result ? wr.result->error_string : std::string("no result")));
       };
     arm_client_->async_send_goal(goal, opt);
+  }
+
+  // 6 번째 칸에 실을 값: arm_joint 모드면 지금 그리퍼 명령 (아직 없으면 측정값), 아니면 ik.gripper_roll_default
+  double sixthValue(const std::vector<double> & current) const
+  {
+    if (gripper_mode_ == GripperMode::ARM_JOINT) {
+      return gripper_cmd_ ? *gripper_cmd_ : current[5];
+    }
+    return gripper_roll_default_;
+  }
+
+  // 그리퍼 여닫기. arm_joint: 팔은 마지막 명령 자리 그대로 두고 6 번째 값만 바꾼 궤적. action: gripper_cmd Action
+  void moveGripper(double position, Done done)
+  {
+    if (gripper_mode_ == GripperMode::NONE) {
+      done(true, "");
+      return;
+    }
+    if (gripper_mode_ == GripperMode::ACTION) {
+      sendGripper(position, done);
+      return;
+    }
+    const auto current = currentJoints();
+    if (!current) {
+      done(false, "no recent /joint_states for arm joints");
+      return;
+    }
+    std::vector<double> q = last_sent_.size() == joint_names_.size() ? last_sent_ : *current;
+    gripper_cmd_ = position;
+    q[5] = position;
+    sendArm(q, gripper_move_time_, done);
+  }
+
+  // arm_joint 모드: 그리퍼 측정값이 닫힘 명령보다 grasp_margin 넘게 덜 닫혔으면 손가락이 퍽에 막힘 = 쥐고 있음
+  std::optional<bool> gripperHolding()
+  {
+    const auto current = currentJoints();
+    if (!current) {return std::nullopt;}
+    return (*current)[5] < gripper_close_ - grasp_margin_;
   }
 
   void sendGripper(double position, Done done)
@@ -670,6 +863,8 @@ private:
   {
     cancelControllers();
     job_ = Job::NONE;
+    task_ = Task::NONE;
+    gripper_wait_ = nullptr;
     pose_gh_.reset();
     pick_gh_.reset();
     skill_gh_.reset();
@@ -726,9 +921,19 @@ private:
       result->message = "canceled";
       skill_gh_->canceled(result);
       endJob();
-    } else if (job_ == Job::PICK && step_ == PickStep::CORRECT_WAIT) {
+    } else if (pickActive() && step_ == PickStep::CORRECT_WAIT) {
       correctionTick();
+    } else if (gripper_wait_ && (now() - wait_since_).seconds() >= gripper_settle_) {
+      auto next = std::move(gripper_wait_);   // 닫은 뒤 GripGuard 가 막힘을 잡을 시간을 두고 위치로 판정
+      gripper_wait_ = nullptr;
+      next();
     }
+  }
+
+  // /manipulator/pick 또는 toppick_tilt skill 이 집는 중
+  bool pickActive() const
+  {
+    return job_ == Job::PICK || (job_ == Job::SKILL && task_ == Task::TOPPICK);
   }
 
   // ------------------------------------------------------------------ /manipulator/pose
@@ -739,14 +944,17 @@ private:
     pose_gh_ = gh;
     pose_name_ = gh->get_goal()->name;
 
-    const auto & target = poses_.at(pose_name_);
-    if (!withinLimits(target)) {
-      finishPose(false, "pose '" + pose_name_ + "' exceeds joint limits");
-      return;
-    }
     const auto current = currentJoints();
     if (!current) {
       finishPose(false, "no recent /joint_states for arm joints");
+      return;
+    }
+    auto target = poses_.at(pose_name_);
+    if (gripper_mode_ == GripperMode::ARM_JOINT) {
+      target[5] = sixthValue(*current);   // 자세를 바꿔도 그리퍼는 그대로 (쥔 퍽을 놓치지 않게)
+    }
+    if (!withinLimits(target)) {
+      finishPose(false, "pose '" + pose_name_ + "' exceeds joint limits");
       return;
     }
     RCLCPP_INFO(get_logger(), "pose '%s' start", pose_name_.c_str());
@@ -781,6 +989,15 @@ private:
     preemptCurrent();
     job_ = Job::PICK;
     pick_gh_ = gh;
+    beginPick(gh->get_goal()->target, approach_pitches_, approach_distance_);
+  }
+
+  // 집기 과정 (pick · toppick_tilt 공용). target 이 비어 있으면 ① 정밀 정렬 결과 → ② 추적 위치
+  void beginPick(
+    const geometry_msgs::msg::PoseStamped & target, const std::vector<double> & pitches, double approach)
+  {
+    // 보정 중 /arm_range 목표값 = 접근 위치에서 나와야 할 측정값
+    target_range_ = std::max(0.0, approach - range_offset_);
     step_ = PickStep::PLAN;
     correction_iter_ = 0;
     final_grasp_dist_.reset();
@@ -790,10 +1007,12 @@ private:
 
     Eigen::Vector3d grasp;
     std::string err;
-    if (!resolveTarget(gh->get_goal()->target, grasp, err)) {
+    if (!resolveTarget(target, grasp, err)) {
       finishPick(false, err);
       return;
     }
+    // 집게 끝(tool_link) = 퍽 중심 + 위로 grasp_z_offset (팔레트 궤적 TCP 와 같은 잡는 높이)
+    grasp += Eigen::Vector3d::UnitZ() * grasp_z_offset_;
     const auto current = currentJoints();
     if (!current) {
       finishPick(false, "no recent /joint_states for arm joints");
@@ -803,8 +1022,8 @@ private:
     // pitch 후보를 순서대로: 접근 위치 · 파지 위치 · 들어올린 위치가 모두 풀리는 첫 pitch
     const double yaw = std::atan2(grasp.y(), grasp.x());
     std::optional<std::vector<double>> q_pre;
-    for (double pitch : approach_pitches_) {
-      const Eigen::Vector3d pre = grasp - ArmIK::approachDirection(yaw, pitch) * approach_distance_;
+    for (double pitch : pitches) {
+      const Eigen::Vector3d pre = grasp - ArmIK::approachDirection(yaw, pitch) * approach;
       auto q = solveArm(pre, pitch, *current);
       if (q && solveArm(grasp, pitch, *q) &&
         solveArm(grasp + Eigen::Vector3d::UnitZ() * lift_height_, pitch, *q))
@@ -825,6 +1044,10 @@ private:
 
     step_ = PickStep::PREGRASP;
     publishStage(STAGE_APPROACH);
+    if (gripper_mode_ == GripperMode::ARM_JOINT) {
+      gripper_cmd_ = gripper_open_;   // 접근하면서 연다
+      (*q_pre)[5] = gripper_open_;
+    }
     sendArm(*q_pre, trajDuration(*current, *q_pre, min_duration_),
       [this](bool ok, const std::string & msg) {
         if (!ok) {
@@ -1056,11 +1279,13 @@ private:
   void openGripper()
   {
     step_ = PickStep::OPEN;
-    if (!gripper_enabled_) {
-      finalApproach();
+    if (gripper_mode_ == GripperMode::NONE ||
+      (gripper_mode_ == GripperMode::ARM_JOINT && gripper_cmd_ && *gripper_cmd_ == gripper_open_))
+    {
+      finalApproach();   // 이미 열림 (접근하면서 열었음)
       return;
     }
-    sendGripper(gripper_open_, [this](bool ok, const std::string & msg) {
+    moveGripper(gripper_open_, [this](bool ok, const std::string & msg) {
         if (ok) {
           finalApproach();
         } else {
@@ -1098,25 +1323,49 @@ private:
   {
     step_ = PickStep::CLOSE;
     publishStage(STAGE_GRASP);
-    if (!gripper_enabled_) {
+    if (gripper_mode_ == GripperMode::NONE) {
       // 그리퍼 없이 팔만 테스트: 파지 확인 불가 → grasped = true로 보고 (mission require_grasped 통과)
-      RCLCPP_WARN(get_logger(), "gripper disabled -> grasp not verified");
+      RCLCPP_WARN(get_logger(), "gripper.mode none -> grasp not verified");
       grasped_ = true;
       lift();
       return;
     }
-    sendGripper(gripper_close_, [this](bool ok, const std::string & msg) {
+    moveGripper(gripper_close_, [this](bool ok, const std::string & msg) {
         if (!ok) {
           finishPick(false, "grasp failed: " + msg);
           return;
         }
-        grasped_ = gripper_stalled_;
-        if (!grasped_ && gripper_fail_on_empty_) {
-          finishPick(false, "empty grasp: gripper closed fully without contact");
+        if (gripper_mode_ == GripperMode::ACTION) {
+          afterGrasp(gripper_stalled_);
           return;
         }
-        lift();
+        step_ = PickStep::CLOSE_WAIT;
+        waitGripper([this]() {
+            const auto holding = gripperHolding();
+            if (!holding) {
+              finishPick(false, "no recent /joint_states for gripper");
+              return;
+            }
+            afterGrasp(*holding);
+          });
       });
+  }
+
+  // 닫은 뒤 gripper.settle_time 지나서 then (onTick)
+  void waitGripper(std::function<void()> then)
+  {
+    wait_since_ = now();
+    gripper_wait_ = std::move(then);
+  }
+
+  void afterGrasp(bool holding)
+  {
+    grasped_ = holding;
+    if (!grasped_ && gripper_fail_on_empty_) {
+      finishPick(false, "empty grasp: gripper closed fully without contact");
+      return;
+    }
+    lift();
   }
 
   void lift()
@@ -1135,7 +1384,7 @@ private:
   {
     const auto current = currentJoints();
     if (!current) {
-      finishPick(false, "no recent /joint_states for arm joints");
+      failJob("no recent /joint_states for arm joints");
       return;
     }
     const Eigen::Vector3d start = tool_pos_;
@@ -1150,17 +1399,17 @@ private:
       const Eigen::Vector3d p = start + (target - start) * (static_cast<double>(i) / n);
       const auto q = solveArm(p, pitch_, seed);
       if (!q) {
-        finishPick(false, "IK: straight path out of reach at waypoint " +
+        failJob("IK: straight path out of reach at waypoint " +
           std::to_string(i) + "/" + std::to_string(n));
         return;
       }
       double max_delta = 0.0;
-      for (size_t j = 0; j < q->size(); ++j) {
+      for (size_t j = 0; j < 5; ++j) {   // 팔 관절만 (6 번째 = 그리퍼, 쥐면 명령과 측정이 다름)
         max_delta = std::max(max_delta, std::abs((*q)[j] - seed[j]));
       }
       // 경유점 사이 관절이 크게 튀면 특이점 · 해 전환 → 직선 경로가 아님
       if (max_delta > max_waypoint_joint_step_) {
-        finishPick(false, "IK: joint jump " + std::to_string(max_delta) +
+        failJob("IK: joint jump " + std::to_string(max_delta) +
           " rad on straight path at waypoint " + std::to_string(i) + "/" + std::to_string(n));
         return;
       }
@@ -1180,7 +1429,7 @@ private:
     sendTrajectory(points, t,
       [this, target, on_success](bool ok, const std::string & msg) {
         if (!ok) {
-          finishPick(false, msg);
+          failJob(msg);
           return;
         }
         tool_pos_ = target;
@@ -1190,13 +1439,33 @@ private:
 
   void publishStage(uint8_t stage)
   {
+    if (job_ == Job::SKILL) {
+      auto fb = std::make_shared<ExecuteSkill::Feedback>();
+      fb->progress = static_cast<float>(stage) / 4.0f;
+      skill_gh_->publish_feedback(fb);
+      return;
+    }
     auto fb = std::make_shared<Pick::Feedback>();
     fb->stage = stage;
     pick_gh_->publish_feedback(fb);
   }
 
+  // 진행 중인 작업을 실패로 끝냄 (pick · 미션 skill 공용, moveTool · moveGripper 실패)
+  void failJob(const std::string & msg)
+  {
+    if (job_ == Job::SKILL) {
+      finishSkill(false, msg);
+    } else if (job_ == Job::PICK) {
+      finishPick(false, msg);
+    }
+  }
+
   void finishPick(bool ok, const std::string & msg)
   {
+    if (job_ == Job::SKILL) {   // toppick_tilt
+      finishSkill(ok, ok ? "grasped" : msg);
+      return;
+    }
     auto result = std::make_shared<Pick::Result>();
     result->success = ok;
     result->grasped = ok && grasped_;
@@ -1226,6 +1495,11 @@ private:
     skill_timeout_ = (std::isfinite(t) && t > 0.0) ? t : 30.0;
     RCLCPP_INFO(get_logger(), "skill '%s' start (timeout %.1fs)", gh->get_goal()->policy.c_str(),
       skill_timeout_);
+    // 같은 이름 정책이 로드돼 있으면 정책, 아니면 미션 skill 고정 동작 (IK · 팔레트 궤적)
+    if (skill_ready_.count(gh->get_goal()->policy) == 0) {
+      startTaskSkill(*parseTaskSkill(gh->get_goal()->policy));   // accept 때 parseTaskSkill 로 확인함
+      return;
+    }
     active_policy_ = policies_.find(gh->get_goal()->policy);   // accept 때 skill_ready_로 확인함
     skill_rate_ = active_policy_->spec.rate_hz;
     skill_last_cmd_.reset();   // 첫 tick 에 현재 관절각으로 초기화
@@ -1311,6 +1585,288 @@ private:
     endJob();
   }
 
+  // ------------------------------------------------------------------ 미션 skill (execute_skill 이름)
+  // "toppick_tilt" · "pallet_load_3_1_tilt" · "pallet_unload_2_0_tilt" · "place_L1_m1_p1_tilt" · "place_at:odom:x:y:z"
+  static std::optional<TaskSkill> parseTaskSkill(const std::string & name)
+  {
+    TaskSkill t;
+    if (name == "toppick_tilt") {
+      t.kind = Task::TOPPICK;
+      return t;
+    }
+    auto parts = [](const std::string & text, char sep) {
+        std::vector<std::string> out;
+        std::string tok;
+        std::istringstream in(text);
+        while (std::getline(in, tok, sep)) {out.push_back(tok);}
+        return out;
+      };
+    if (name.rfind("place_at:", 0) == 0) {
+      const auto f = parts(name, ':');   // place_at : frame : x : y : z
+      if (f.size() != 5 || f[1].empty()) {return std::nullopt;}
+      try {
+        t.kind = Task::PLACE;
+        t.frame = f[1];
+        t.x = std::stod(f[2]);
+        t.y = std::stod(f[3]);
+        t.z = std::stod(f[4]);
+      } catch (const std::exception &) {
+        return std::nullopt;
+      }
+      return t;
+    }
+    const auto f = parts(name, '_');
+    if (f.size() == 5 && f[0] == "pallet" && (f[1] == "load" || f[1] == "unload") && f[4] == "tilt" &&
+      f[2].size() == 1 && f[3].size() == 1 && f[2][0] >= '1' && f[2][0] <= '3' && f[3][0] >= '0' && f[3][0] <= '3')
+    {
+      t.kind = f[1] == "load" ? Task::PALLET_LOAD : Task::PALLET_UNLOAD;
+      t.row = f[2][0] - '0';
+      t.index = f[3][0] - '0';
+      return t;
+    }
+    // place_<L>_<dx>_<dy>_tilt, dx · dy = m1 · 0 · p1 (지도 +Y 가 위)
+    static const std::map<std::string, std::string> idx = {{"m1", "-1"}, {"0", "0"}, {"p1", "1"}};
+    if (f.size() == 5 && f[0] == "place" && (f[1] == "L1" || f[1] == "L2" || f[1] == "L3") && f[4] == "tilt" &&
+      idx.count(f[2]) && idx.count(f[3]))
+    {
+      t.kind = Task::PLACE;
+      t.place = f[1];
+      t.cell = idx.at(f[2]) + "," + idx.at(f[3]);
+      return t;
+    }
+    return std::nullopt;
+  }
+
+  void startTaskSkill(const TaskSkill & t)
+  {
+    task_ = t.kind;
+    switch (t.kind) {
+      case Task::TOPPICK:
+        beginPick(geometry_msgs::msg::PoseStamped(), {toppick_pitch_}, toppick_approach_);
+        return;
+      case Task::PALLET_LOAD:
+      case Task::PALLET_UNLOAD:
+        runPalletSlot(t.row, t.index, t.kind == Task::PALLET_LOAD);
+        return;
+      case Task::PLACE: {
+          geometry_msgs::msg::PointStamped cell;
+          if (t.place.empty()) {   // place_at
+            cell.header.frame_id = t.frame;
+            cell.point.x = t.x;
+            cell.point.y = t.y;
+            cell.point.z = t.z;
+            placeAt(cell, true);
+            return;
+          }
+          const auto it = place_cells_.find(t.place + "/" + t.cell);
+          if (it == place_cells_.end()) {
+            finishSkill(false, "place: no cell " + t.place + " " + t.cell + " in place.cells_file");
+            return;
+          }
+          cell.header.frame_id = place_cells_frame_;
+          cell.point.x = it->second.first;
+          cell.point.y = it->second.second;
+          placeAt(cell, false);
+          return;
+        }
+      default:
+        finishSkill(false, "unknown mission skill");
+        return;
+    }
+  }
+
+  // 팔레트 칸 궤적 재생. load: 쥔 채 칸으로 → 놓기 → 빠져나옴 / unload: 벌린 채 칸으로 → 집기 → 쥔 채 빠져나옴
+  //   궤적의 rotate · carry · place (칸까지) 와 retract · return · rotate_back (돌아오기) 사이에서 그리퍼를 바꾼다
+  void runPalletSlot(int row, int index, bool load)
+  {
+    step_ = PickStep::TASK;
+    const auto it = pallet_.find({row, index});
+    if (it == pallet_.end()) {
+      finishSkill(false, "pallet: no trajectory for row " + std::to_string(row) + " slot " + std::to_string(index) +
+        " (pallet.traj_file)");
+      return;
+    }
+    if (load && pallet_require_held_ && gripper_mode_ == GripperMode::ARM_JOINT) {
+      const auto holding = gripperHolding();
+      if (!holding || !*holding) {
+        finishSkill(false, "pallet_load: not holding a puck (gripper closed fully or no /joint_states)");
+        return;
+      }
+    }
+    std::vector<const PalletSegment *> in, out;
+    bool released = false;
+    for (const auto & seg : it->second) {
+      if (seg.name == "release") {released = true; continue;}
+      (released ? out : in).push_back(&seg);
+    }
+    // 쥔 구간 속도: 놓기의 3 열만 0.4 rad/s (#75), 나머지 0.8
+    const double in_speed = (load && row == 3) ? pallet_row3_hold_speed_ : pallet_speed_;
+    const double out_speed = (!load && row == 3) ? pallet_row3_hold_speed_ : pallet_speed_;
+    const double in_grip = load ? gripper_close_ : gripper_open_;
+    const double out_grip = load ? gripper_open_ : gripper_close_;
+    if (gripper_mode_ == GripperMode::ARM_JOINT) {gripper_cmd_ = in_grip;}
+    sendSegments(in, in_speed, in_grip, [this, out, out_speed, out_grip, load](bool ok, const std::string & msg) {
+        if (!ok) {
+          finishSkill(false, "pallet approach: " + msg);
+          return;
+        }
+        moveGripper(out_grip, [this, out, out_speed, out_grip, load](bool gok, const std::string & gmsg) {
+            if (!gok) {
+              finishSkill(false, "pallet gripper: " + gmsg);
+              return;
+            }
+            auto leave = [this, out, out_speed, out_grip, load]() {
+                sendSegments(out, out_speed, out_grip, [this, load](bool lok, const std::string & lmsg) {
+                    finishSkill(lok, lok ? (load ? "loaded" : "unloaded") : "pallet leave: " + lmsg);
+                  });
+              };
+            if (load || gripper_mode_ != GripperMode::ARM_JOINT) {
+              leave();
+              return;
+            }
+            waitGripper([this, leave]() {   // unload: 집었는지 확인 후 빠져나옴
+                const auto holding = gripperHolding();
+                if (gripper_fail_on_empty_ && (!holding || !*holding)) {
+                  finishSkill(false, "pallet_unload: empty grasp (no puck in slot?)");
+                  return;
+                }
+                leave();
+              });
+          });
+      });
+  }
+
+  // 구간 경유점을 한 궤적으로. 경유점 사이 시간 = 관절 변화 최대값 / speed, 첫 점은 지금 자세에서 출발
+  void sendSegments(
+    const std::vector<const PalletSegment *> & segs, double speed, double grip, Done done)
+  {
+    const auto current = currentJoints();
+    if (!current) {
+      done(false, "no recent /joint_states for arm joints");
+      return;
+    }
+    std::vector<trajectory_msgs::msg::JointTrajectoryPoint> points;
+    std::vector<double> prev = *current;
+    double t = 0.0;
+    for (const auto * seg : segs) {
+      for (const auto & q5 : seg->q) {
+        if (q5.size() != 5) {
+          done(false, "pallet: waypoint must have 5 joints (" + seg->name + ")");
+          return;
+        }
+        std::vector<double> q(q5.begin(), q5.end());
+        q.push_back(gripper_mode_ == GripperMode::ARM_JOINT ? grip : sixthValue(*current));
+        if (!withinLimits(q)) {
+          done(false, "pallet: waypoint outside joint limits (" + seg->name + ")");
+          return;
+        }
+        double max_delta = 0.0;
+        for (size_t j = 0; j < 5; ++j) {max_delta = std::max(max_delta, std::abs(q[j] - prev[j]));}
+        // 첫 점은 지금 자세에서 오는 거리라 arm.min_duration 이상
+        t += points.empty() ? std::max(min_duration_, max_delta / speed) : std::max(0.02, max_delta / speed);
+        trajectory_msgs::msg::JointTrajectoryPoint point;
+        point.positions = q;
+        point.time_from_start = rclcpp::Duration::from_seconds(t);
+        points.push_back(point);
+        prev = q;
+      }
+    }
+    if (points.empty()) {
+      done(false, "pallet: empty trajectory");
+      return;
+    }
+    points.back().velocities.assign(points.back().positions.size(), 0.0);
+    sendTrajectory(points, t, done);
+  }
+
+  // 쥔 퍽을 칸 (frame 기준 x, y, 윗면 높이 z) 에 놓기. cell.z 를 안 쓰면 (has_z false) place.surface_height (바닥 기준)
+  //   집게 place.pitch (45°) · 집게 끝 = 퍽 중심 + grasp_z_offset → APPROACH (위 · 뒤) → LOWER (직선) → 벌림 → RETREAT → 이동 자세
+  void placeAt(const geometry_msgs::msg::PointStamped & cell, bool has_z)
+  {
+    step_ = PickStep::TASK;
+    if (gripper_mode_ == GripperMode::ARM_JOINT) {
+      const auto holding = gripperHolding();
+      if (!holding || !*holding) {
+        finishSkill(false, "place: not holding a puck (gripper closed fully or no /joint_states)");
+        return;
+      }
+    }
+    // 칸 → arm_base_link (최신 TF)
+    geometry_msgs::msg::PointStamped arm;
+    double floor_z = 0.0;   // arm_base_link 기준 바닥 높이
+    try {
+      geometry_msgs::msg::PointStamped src = cell;
+      src.header.stamp = rclcpp::Time(0, 0, RCL_ROS_TIME);
+      arm = tf_buffer_->transform(src, base_frame_);
+    } catch (const tf2::TransformException & e) {
+      finishSkill(false, std::string("place: TF ") + cell.header.frame_id + " -> " + base_frame_ + ": " + e.what());
+      return;
+    }
+    try {
+      floor_z = -tf_buffer_->lookupTransform(floor_frame_, base_frame_, tf2::TimePointZero).transform.translation.z;
+    } catch (const tf2::TransformException &) {
+      floor_z = -arm_base_height_;
+      RCLCPP_WARN(get_logger(), "place: no TF %s -> %s, arm_base_height %.3f m", floor_frame_.c_str(),
+        base_frame_.c_str(), arm_base_height_);
+    }
+    const double surface = has_z ? arm.point.z : floor_z + place_surface_height_;
+    const Eigen::Vector3d tip(arm.point.x, arm.point.y, surface + puck_half_height_ + grasp_z_offset_ + place_clearance_);
+    const auto current = currentJoints();
+    if (!current) {
+      finishSkill(false, "no recent /joint_states for arm joints");
+      return;
+    }
+    pitch_ = place_pitch_;
+    const Eigen::Vector3d dir = ArmIK::approachDirection(std::atan2(tip.y(), tip.x()), pitch_);
+    const Eigen::Vector3d pre = tip - dir * place_approach_;
+    const Eigen::Vector3d back = tip - dir * place_retreat_;
+    const auto q_pre = solveArm(pre, pitch_, *current);
+    if (!q_pre || !solveArm(tip, pitch_, *q_pre) || !solveArm(back, pitch_, *q_pre)) {
+      char buf[160];
+      std::snprintf(buf, sizeof(buf), "place: IK no solution for cell (%.3f, %.3f, %.3f) in %s, J1 distance %.3f m",
+        tip.x(), tip.y(), tip.z(), base_frame_.c_str(), std::hypot(tip.x(), tip.y()));
+      finishSkill(false, buf);
+      return;
+    }
+    RCLCPP_INFO(get_logger(), "place: tip (%.3f, %.3f, %.3f) in %s", tip.x(), tip.y(), tip.z(), base_frame_.c_str());
+    sendArm(*q_pre, trajDuration(*current, *q_pre, min_duration_),
+      [this, pre, tip, back](bool ok, const std::string & msg) {
+        if (!ok) {
+          finishSkill(false, "place approach: " + msg);
+          return;
+        }
+        tool_pos_ = pre;
+        moveTool(tip, [this, back]() {
+            moveGripper(gripper_open_, [this, back](bool gok, const std::string & gmsg) {
+                if (!gok) {
+                  finishSkill(false, "place release: " + gmsg);
+                  return;
+                }
+                moveTool(back, [this]() {toTransit("placed");});
+              });
+          });
+      });
+  }
+
+  // 다음 팔레트 꺼내기가 같은 자리에서 시작하게 이동 자세 (팔레트 궤적 transit q_front_tilt) 로
+  void toTransit(const std::string & message)
+  {
+    const auto current = currentJoints();
+    if (transit_tilt_.size() != 5 || !current) {
+      finishSkill(true, message);
+      return;
+    }
+    std::vector<double> q(transit_tilt_.begin(), transit_tilt_.end());
+    q.push_back(sixthValue(*current));
+    if (!withinLimits(q)) {
+      finishSkill(true, message);
+      return;
+    }
+    sendArm(q, trajDuration(*current, q, min_duration_), [this, message](bool ok, const std::string & msg) {
+        finishSkill(ok, ok ? message : "transit: " + msg);
+      });
+  }
+
   // ------------------------------------------------------------------ 멤버
   // 파라미터
   std::vector<std::string> joint_names_;
@@ -1321,10 +1877,22 @@ private:
   bool allow_elbow_down_{false}, use_object_yaw_{false};
   double wrist_roll_default_{0.0}, gripper_roll_default_{0.0};
   std::map<std::string, std::vector<double>> poses_;
-  bool gripper_enabled_{true};
+  GripperMode gripper_mode_{GripperMode::ARM_JOINT};
+  std::string gripper_mode_name_{"arm_joint"};
   std::string gripper_joint_;
-  double gripper_open_{0.0}, gripper_close_{0.0}, gripper_effort_{0.0};
+  double gripper_open_{-0.764}, gripper_close_{0.923}, gripper_effort_{0.0};
+  double gripper_move_time_{1.0}, gripper_settle_{0.4}, grasp_margin_{0.15};
   bool gripper_fail_on_empty_{true};
+  double toppick_pitch_{-M_PI_4}, toppick_approach_{0.06}, grasp_z_offset_{0.015};
+  std::string pallet_file_;
+  double pallet_speed_{0.8}, pallet_row3_hold_speed_{0.4};
+  bool pallet_require_held_{true};
+  std::map<std::pair<int, int>, std::vector<PalletSegment>> pallet_;   // (열, 칸) → 구간
+  std::vector<double> transit_tilt_;                                   // 팔레트 궤적 이동 자세 (5 관절)
+  std::string place_cells_file_, place_cells_frame_, floor_frame_;
+  std::map<std::string, std::pair<double, double>> place_cells_;      // "L1/-1,0" → (x, y)
+  double place_pitch_{-M_PI_4}, place_surface_height_{0.070}, puck_half_height_{0.030}, place_clearance_{0.002};
+  double place_approach_{0.04}, place_retreat_{0.04}, arm_base_height_{0.120};
   std::string base_frame_, fixed_frame_, range_frame_;
   double approach_distance_{0.15}, range_offset_{0.015}, max_final_approach_{0.25};
   double range_mismatch_tol_{0.04};
@@ -1369,6 +1937,7 @@ private:
 
   // 작업 상태 (job_cb_group_ 전용)
   Job job_{Job::NONE};
+  Task task_{Task::NONE};
   uint64_t job_id_{0};
   std::shared_ptr<PoseGoalHandle> pose_gh_;
   std::shared_ptr<PickGoalHandle> pick_gh_;
@@ -1377,6 +1946,9 @@ private:
   rclcpp::Time skill_start_{0, 0, RCL_ROS_TIME};
   double skill_timeout_{30.0};
   bool grasped_{false}, gripper_stalled_{false};
+  std::optional<double> gripper_cmd_;                 // arm_joint 모드의 지금 그리퍼 명령 (6 번째 값)
+  std::vector<double> last_sent_;                     // 마지막으로 보낸 6관절 목표
+  std::function<void()> gripper_wait_;                // 그리퍼 판정 대기 (onTick 이 settle_time 뒤 부름)
   std::string pose_name_;
   rclcpp_action::ClientGoalHandle<FollowJT>::SharedPtr arm_goal_;
   rclcpp_action::ClientGoalHandle<GripperCmd>::SharedPtr gripper_goal_;

@@ -48,12 +48,14 @@
 //      READ  : 팔 카메라(cameras.arm.image_topic) 새 영상마다 zbar 로 CODE128 읽기(barcode_reader.hpp, barcode.read_scale 배)
 //      둘 다 일꾼 스레드에서 돌아 다른 모드 처리 주기를 막지 않는다. 일꾼이 도는 동안 온 팔 영상은 건너뛴다
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <deque>
 #include <limits>
 #include <chrono>
 #include <future>
 #include <cmath>
+#include <cstdio>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -162,7 +164,9 @@ struct DepthCamera
 
   std::mutex m;
   Image::ConstSharedPtr color;
+  std::deque<Image::ConstSharedPtr> recent;                     // 최근 컬러 (촬영 시각 TF 가 온 장 고르기, pick_tf_frame)
   int64_t used_ns = -1;                                         // 마지막 결과에 쓴 컬러 stamp
+  std::array<uint64_t, 4> tf_pick{};                            // 고른 장: 가장 새 장 · 한 장 앞 · 기다림 · 최근 TF 로 대신
   NearestCache<Image::ConstSharedPtr> depth{5};
   CameraInfo::ConstSharedPtr info;
   StampGate gate;
@@ -235,6 +239,7 @@ public:
     alc.seed_gate = declare_parameter("arm.lock_seed_gate", alc.seed_gate);
     alc.follow_k = declare_parameter("arm.lock_follow_k", alc.follow_k);
     alc.reacquire_size_ratio = declare_parameter("arm.lock_reacquire_size_ratio", alc.reacquire_size_ratio);
+    alc.bias_margin = declare_parameter("arm.lock_bias_margin", alc.bias_margin);
     arm_lock_ = ArmTargetLock(alc);
     // 팔 카메라 평면 교차 (arm_plane.hpp): 잠근 목표의 박스 중심 시선 ∩ 퍽 중심 높이 수평면 → 퍽 중심 · 거리.
     //   D435 추적 위치의 예비(D435 가 못 볼 때 · 놓쳤을 때)로 쓰고, 둘을 비교해 검증에도 쓴다
@@ -319,6 +324,7 @@ public:
     puck_geom_.min_votes = static_cast<int>(declare_parameter("puck.min_votes", puck_geom_.min_votes));
     merge_dist_ = declare_parameter("puck.merge_dist", 0.04);
     upright_gap_px_ = declare_parameter("puck.upright_gap_px", 1.0);
+    face_hint_tol_ = declare_parameter("puck.face_hint_tol", face_hint_tol_);
 
     LightBlobConfig & lb = light_cfg_;
     lb.v_min = static_cast<int>(declare_parameter("signal.v_min", lb.v_min));
@@ -401,6 +407,7 @@ public:
     base_frame_ = declare_parameter("frames.base", std::string("base_link"));
     odom_frame_ = declare_parameter("frames.odom", std::string("odom"));
     tf_fallback_max_s_ = declare_parameter("tf_fallback_max_s", tf_fallback_max_s_);
+    tf_wait_s_ = declare_parameter("tf_wait_s", tf_wait_s_);
 
     std::string info;
     detector_ = make_detector(dc, info);
@@ -423,9 +430,11 @@ public:
       RCLCPP_FATAL(get_logger(), "%s", cls_err.c_str());
       throw std::runtime_error("detector.class_names");
     }
-    // 팔 카메라(ARM_ALIGN) 검출기: arm.detector = color(기본, 엔진이 있어도 색 검출) | main(주 검출기와 같은 것)
-    //   엔진(YOLO)은 D435 영상으로만 학습 · 평가했으므로 팔 영상에 쓰려면 main 을 명시한다
-    const std::string arm_det = declare_parameter("arm.detector", std::string("color"));
+    // 팔 카메라(ARM_ALIGN) 검출기: arm.detector = main(기본, 주 검출기와 같은 것) | color(엔진이 있어도 색 검출)
+    //   주 검출기가 색 검출기(엔진 없음)면 main 도 아래에서 라벨 인식 색 검출기를 따로 둔다 (color 와 같음)
+    const std::string arm_det = declare_parameter("arm.detector", std::string("main"));
+    arm_lock_log_ = declare_parameter("arm.lock_log", false);   // 진단용: ARM_LOCK 줄을 장마다 남김
+    engine_merge_iou_ = declare_parameter("arm.engine_merge_iou", engine_merge_iou_);
     if (arm_det != "color" && arm_det != "main") {
       RCLCPP_FATAL(get_logger(), "arm.detector 는 color 또는 main: %s", arm_det.c_str());
       throw std::runtime_error("arm.detector");
@@ -618,6 +627,7 @@ private:
       c.info_sub.reset();
       std::lock_guard<std::mutex> lk(c.m);
       c.color.reset();
+      c.recent.clear();
       c.depth.clear();
       c.gate.reset();
       c.used_ns = -1;
@@ -672,8 +682,10 @@ private:
     std::lock_guard<std::mutex> lk(c.m);
     const GateResult g = gate_frame(c, m);
     if (g == GateResult::Duplicate) {return;}
-    if (g == GateResult::Restart) {c.depth.clear(); c.signal_q.clear();}   // 재시작 전 시각의 깊이와 짝짓지 않게
+    if (g == GateResult::Restart) {c.depth.clear(); c.signal_q.clear(); c.recent.clear();}   // 재시작 전 시각의 깊이와 짝짓지 않게
     c.color = m;
+    c.recent.push_back(m);
+    while (c.recent.size() > 4) {c.recent.pop_front();}
     if (signal_on_) {   // 신호등은 점멸이 짧을 수 있어 처리 주기와 상관없이 모든 프레임을 본다
       c.signal_q.push_back(m);
       while (c.signal_q.size() > signal_q_max_) {c.signal_q.pop_front();}
@@ -736,14 +748,46 @@ private:
     CameraInfo::ConstSharedPtr info;
     bool fresh = false;
   };
+  // odom → base 의 가장 최근 TF stamp [ns], 없으면 −1
+  int64_t latest_body_tf_ns()
+  {
+    try {
+      const auto m = tf_->buffer().lookupTransform(odom_frame_, base_frame_, tf2::TimePointZero);
+      return stamp_ns(m.header.stamp);
+    } catch (const tf2::TransformException &) {
+      return -1;
+    }
+  }
+
+  // 처리할 컬러 한 장. 촬영 시각의 odom → base TF 가 이미 온 가장 새 장을 쓴다(pick_tf_frame). 그런 장이 없고
+  // 기다릴 만하면 지난 결과에 쓴 장을 다시 준다(새 결과 아님 → 지난 퍽 · 마커를 다시 씀)
   std::optional<DepthSnapshot> take(DepthCamera & c, const rclcpp::Time & now_t)
   {
+    const int64_t tf_ns = latest_body_tf_ns();
     std::lock_guard<std::mutex> lk(c.m);
     if (!c.color) {return std::nullopt;}
-    const int64_t ns = stamp_ns(c.color->header.stamp);
-    if ((now_t - rclcpp::Time(c.color->header.stamp, now_t.get_clock_type())).seconds() > frame_max_age_) {return std::nullopt;}
+    Image::ConstSharedPtr color = c.color;
+    if (!c.recent.empty()) {   // tf_wait_s 0 이면 늘 가장 새 장(세기만 함)
+      std::vector<int64_t> stamps;
+      for (const auto & m : c.recent) {stamps.push_back(stamp_ns(m->header.stamp));}
+      const auto i = pick_tf_frame(stamps, c.used_ns, now_t.nanoseconds(), tf_ns, static_cast<int64_t>(tf_wait_s_ * 1e9));
+      if (i) {
+        color = c.recent[*i];
+        const bool newest = *i + 1 == stamps.size();
+        ++c.tf_pick[newest ? (tf_ns >= stamps.back() ? 0 : 3) : 1];
+      } else {
+        ++c.tf_pick[2];
+        auto it = std::find_if(c.recent.begin(), c.recent.end(), [&c](const auto & m) {return stamp_ns(m->header.stamp) == c.used_ns;});
+        if (it == c.recent.end()) {return std::nullopt;}
+        color = *it;
+      }
+      RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 30000, "%s 촬영 시각 TF 로 고른 장: 가장 새 장 %lu · 한 장 앞 %lu · 기다림 %lu · 최근 TF 로 대신 %lu",
+        c.name.c_str(), c.tf_pick[0], c.tf_pick[1], c.tf_pick[2], c.tf_pick[3]);
+    }
+    const int64_t ns = stamp_ns(color->header.stamp);
+    if ((now_t - rclcpp::Time(color->header.stamp, now_t.get_clock_type())).seconds() > frame_max_age_) {return std::nullopt;}
     DepthSnapshot s;
-    s.color = c.color;
+    s.color = color;
     s.info = c.info;
     if (auto d = c.depth.nearest(ns, depth_tol_ns_)) {s.depth = d->second;}
     s.fresh = ns != c.used_ns;
@@ -858,7 +902,7 @@ private:
 
   // Arducam 태그 → 퍽. 같은 번호가 여러 면에 보이면 가장 크게 보이는 면 하나
   std::vector<Puck> pucks_from_tags(const std::vector<TagDetection> & tags, const cv::Mat & bgr, const cv::Mat & K,
-    const tf2::Transform & T)
+    const tf2::Transform & T, const std::optional<tf2::Transform> & T_plane)
   {
     std::vector<const TagDetection *> order;
     for (const auto & t : tags) {if (t.pose_valid) {order.push_back(&t);}}
@@ -871,7 +915,17 @@ private:
       // PnP 두 해의 오차가 거의 같으면 법선이 base_link 수직 · 수평에 가까운 해 (tag_upright.hpp)
       const tf2::Matrix3x3 & B = T.getBasis();
       const cv::Matx33d R_base_cam(B[0][0], B[0][1], B[0][2], B[1][0], B[1][1], B[1][2], B[2][0], B[2][1], B[2][2]);
-      const PuckEstimate e = estimate_puck(bgr, K, prefer_upright(*t, R_base_cam, upright_gap_px_), hsv_, puck_geom_);
+      const TagDetection tu = prefer_upright(*t, R_base_cam, upright_gap_px_);
+      FaceHint hint = FaceHint::kNone;   // 받침 위 태그 높이로 서 있는 윗면인지 (puck_estimator.hpp 2-1)
+      if (T_plane) {
+        cv::Matx33d Rt;
+        cv::Rodrigues(tu.rvec, Rt);
+        const tf2::Vector3 c = *T_plane * tf2::Vector3(tu.tvec[0], tu.tvec[1], tu.tvec[2]);
+        const tf2::Vector3 n = T_plane->getBasis() * tf2::Vector3(Rt(0, 2), Rt(1, 2), Rt(2, 2));
+        // 태그 z = 면 바깥 법선 (퍽 중심 = 태그 − z · 깊이, puck_estimator.hpp 3)
+        hint = face_hint_from_height(c.z(), n.z(), plane_.levels, puck_geom_.half_width, puck_geom_.half_length, face_hint_tol_);
+      }
+      const PuckEstimate e = estimate_puck(bgr, K, tu, hsv_, puck_geom_, hint);
       Puck p;
       p.tag_id = t->id;
       p.color = e.color_cls >= 0 ? static_cast<uint8_t>(e.color_cls + 1) : Puck::COLOR_UNKNOWN;
@@ -1542,13 +1596,27 @@ private:
         (arm_detector_ ? *arm_detector_ : *detector_).detect(small);
       std::vector<ArmBox> boxes;
       std::vector<size_t> idx;
+      // 엔진(YOLO) 박스는 lock 에 색 번호와 √(폭 × 높이) 를 넘긴다 (A1 모의 설계 자료 261104):
+      //   클래스(색 + 모양)는 가까이서 모양 판단이 장마다 바뀌어 같은 퍽을 놓치고(16 장 중 10),
+      //   폭만 보면 넓은 화각 가장자리에서 한 장 사이 1.3 배 넘게 변한다(4). 색 검출기는 tracking_size 그대로
+      //   같은 물체에 클래스만 다른 박스가 겹쳐 나오면(색이 같아 lock 이 모호로 봄) IoU arm.engine_merge_iou 이상은 점수 높은 하나만
+      const bool engine_boxes = !arm_color && !class_names_.empty();
       for (size_t i = 0; i < dets.size(); ++i) {
         if (arm_class_filter_ && target_class_ >= 0 && dets[i].class_id != target_class_) {continue;}
         const cv::Vec3d o = image_offset(dets[i].box, small.size());   // 정규화 값이라 해상도와 무관
-        boxes.push_back({o[0], o[1], o[2], dets[i].class_id, dets[i].score,
-                         static_cast<double>(dets[i].box.height) / small.rows,
-                         dets[i].tracking_size / small.cols});
+        const cv::Rect & bx = dets[i].box;
+        const int cls = engine_boxes ? puck_class(dets[i].class_id, class_names_).color : dets[i].class_id;
+        const double size = engine_boxes ? std::sqrt(static_cast<double>(bx.width) * bx.height) : dets[i].tracking_size;
+        boxes.push_back({o[0], o[1], o[2], cls, dets[i].score,
+                         static_cast<double>(bx.height) / small.rows, size / small.cols});
         idx.push_back(i);
+      }
+      if (engine_boxes && engine_merge_iou_ > 0) {
+        std::vector<ArmBox> kb;
+        std::vector<size_t> ki;
+        for (size_t k : drop_overlapping(boxes, engine_merge_iou_)) {kb.push_back(boxes[k]); ki.push_back(idx[k]);}
+        boxes.swap(kb);
+        idx.swap(ki);
       }
       const std::optional<ArmPoint> seed = arm_seed(frame, stamp, u.size());   // 처음 잠글 때 · 놓친 뒤 다시 잡을 때 씀
       int b = -1;
@@ -1556,6 +1624,17 @@ private:
         reset_arm_target();  // D435에서 넘긴 목표 없이 점수만으로 다른 물체를 고르지 않음
       } else {
         b = arm_lock_.update(boxes, seed, static_cast<double>(small.rows) / small.cols);
+        if (arm_lock_log_) {   // 진단: 장마다 고른 박스와 빠진 이유, 박스(클래스 x y w size 점수)
+          const auto & g = arm_lock_.diag();
+          std::string bl;
+          for (const auto & x : boxes) {
+            char t[96];
+            std::snprintf(t, sizeof(t), " [%d %.3f %.3f %.3f %.3f %.2f]", x.cls, x.x, x.y, x.w, x.size, x.score);
+            bl += t;
+          }
+          RCLCPP_INFO(get_logger(), "ARM_LOCK stamp=%.6f pick=%d boxes=%d cls=%d size=%d seed_gate=%d follow=%d ambiguous=%d locked=%d seen=%d seed=%d%s",
+            stamp.seconds(), b, g.boxes, g.cls, g.size, g.seed_gate, g.follow, g.ambiguous, g.was_locked, g.seen_last, seed ? 1 : 0, bl.c_str());
+        }
       }
       if (b >= 0) {
         r.offset_valid = true;
@@ -1602,7 +1681,7 @@ private:
           r.tag_pose.pose.orientation = tf2::toMsg(q);
         }
       }
-      if (T) {arm_.pucks = pucks_from_tags(tags, u, newK_, *T);}
+      if (T) {arm_.pucks = pucks_from_tags(tags, u, newK_, *T, lookup_at(plane_.frame, frame, stamp, false));}
     }
     if (want_marker && T) {
       arm_.marker = best_marker(places, *T, img->header.stamp, Puck::CAMERA_ARM);
@@ -1843,6 +1922,8 @@ private:
 
   std::unique_ptr<Detector> detector_;
   std::unique_ptr<Detector> arm_detector_;   // ARM_ALIGN 전용 (없으면 detector_)
+  bool arm_lock_log_ = false;
+  double engine_merge_iou_ = 0.7;   // 팔 엔진 박스: 같은 색 · 이 IoU 이상이면 점수 높은 하나만 (0 이면 끔)
   bool arm_class_filter_ = true;             // 팔 검출에 target_class 를 쓸지 (번호 뜻이 주 검출기와 같을 때만)
   std::unique_ptr<TagDetector> tag_, marker_;
   std::vector<int> marker_ids_, tag_ids_;
@@ -1854,7 +1935,9 @@ private:
   PuckGeometry puck_geom_;
   double merge_dist_ = 0.04, min_confidence_ = 0.5;
   double upright_gap_px_ = 1.0;
+  double face_hint_tol_ = 0.012;   // [m] 서 있는 윗면 높이 허용 (누운 윗면과 30 mm 차이의 절반 안쪽)
   double tf_fallback_max_s_ = 0.1;   // [s] 촬영 시각 TF 가 없을 때 최근 TF 를 써도 되는 시각 차 (lookup_near)
+  double tf_wait_s_ = 0.05;          // [s] D435 영상: 촬영 시각 TF 를 기다리는 한도 (pick_tf_frame, 0 이면 끔)
   TargetTracker tracker_;
   ArmTargetLock arm_lock_;             // ctl_cbg_ 에서만 쓴다 (on_set_mode · 처리 주기)
   std::optional<Vec3> seed_odom_;      // 가장 최근 D435 추적 목표 (odom) — 팔 정렬 목표 · /arm_range 보유 점

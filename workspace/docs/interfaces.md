@@ -93,6 +93,11 @@
 | CheckDice | /perception/check_dice (선반 3×3 주사위 판정) |
 | Puck · PuckArray | /perception/pucks. Puck = tag_id · color · shape · pose (base_link) · standing · confidence · camera |
 
+- **상자 퍽 면 요** (#81, 메시지는 그대로): 대상은 `shape = SHAPE_CUBOID` · `standing` · `orientation_valid`인 퍽이다.
+  - 값: `pose.orientation`의 x축을 base_link xy 평면에 투영한 각을 90° 주기로 접은 것 [−45°, 45°)이다. 태그가 면 모서리와 나란하므로 이 x축이 옆면 방향이다.
+  - 헬퍼: C++ `perception/face_yaw.hpp`, Python `perception_survey.face_yaw`(`face_yaw(qx, qy, qz, qw)`, `face_yaw_error(면 요, J1 → 퍽 방향각)`).
+  - 팔 카메라 태그 퍽에만 있다. D435 색 검출 퍽은 방향이 없다(orientation_valid false).
+
 ## USB 패킷 (opencr_protocol.hpp = opencr_firmware/opencr_protocol.h)
 
 > **v5 제안 (Firmware 팀, 2026-10-26) — Controller 팀장 승인 대기.** dev 의 승인본은 v3 (OpenCR 1대, CMD 54 B · STATE 191 B).

@@ -4,48 +4,54 @@ manipulator_node:
   ros__parameters:
     arm:
       joint_names: [joint1, joint2, joint3, joint4, joint5, gripper_roll]  # controllers.yaml arm_controller와 동일
-      # ★ B (2026-10-28 검토): 아래 한계가 URDF · 펌웨어 config.h ARM_MIN/MAX_RAD 보다 넓다 (j3 ±2.5 · j4 -2.0 · j5 ±3.14 · gripper_roll ±3.14).
-      #   펌웨어는 범위 밖 CMD 를 통째로 거부하므로 같게 맞출 것:
-      #   lower [-3.14159, -2.14, -1.6, -1.92, -2.8, -0.7946] · upper [3.14159, 1.6, 1.6, 2.0, 2.8, 0.9541]
-      lower_limits: [-3.14, -1.57, -2.5, -2.0, -3.14, -3.14]   # TODO 관절 한계 (rad)
-      upper_limits: [3.14, 1.57, 2.5, 2.0, 3.14, 3.14]
+      # 관절 한계 = URDF robot.urdf.xacro = 펌웨어 config.h ARM_MIN/MAX_RAD (#83, 세 곳 같게 — test_config_limits 가 확인)
+      #   펌웨어는 범위 밖 CMD 를 통째로 거부한다. 6 번째 gripper_roll = 그리퍼 개폐 (열림 -0.764 · 닫힘 0.923)
+      lower_limits: [-3.14159, -2.14, -1.6, -1.92, -2.8, -0.7946]
+      upper_limits: [3.14159, 1.6, 1.6, 2.0, 2.8, 0.9541]
       max_joint_velocity: 0.5    # rad/s, 궤적 시간 계산용
       min_duration: 1.0          # s
       joint_state_timeout: 1.0   # s
 
-    # ArmIK — 기구 가정은 include/control/arm_ik.hpp 주석 참고
+    # ArmIK — 기구 = 차체 URDF (robot.urdf.xacro) = 기준 모델 B안 = kinematics.py. include/control/arm_ik.hpp 머리말 참고
     ik:
-      base_height: 0.08          # TODO 링크 길이 (m)
-      upper_arm: 0.15
-      forearm: 0.15
-      wrist_to_tool: 0.12        # joint4 → 파지점
-      joint_offsets: [0.0, 0.0, 0.0, 0.0, 0.0]   # TODO 관절 0점 보정 (joint1~5)
-      joint_signs: [1.0, 1.0, 1.0, 1.0, 1.0]     # TODO 회전 방향
-      approach_pitches: [-1.5708, -1.0472, -0.7854, -0.5236, 0.0]  # 시도 순서
+      shoulder_height: 0.077     # arm_base_link → joint2 축 (robot.urdf.xacro joint1 z 0.077)
+      upper_arm_x: 0.024         # joint2 → joint3
+      upper_arm_z: 0.128
+      forearm: 0.124             # joint3 → joint4
+      wrist_to_tool: 0.167       # joint4 → tool_link (0.04 + 0.041 + 0.086, 팔레트 궤적 TCP 와 같은 점)
+      joint_offsets: [0.0, 0.0, 0.0, 0.0, 0.0]   # 관절 0점 보정 (joint1~5)
+      joint_signs: [1.0, 1.0, 1.0, 1.0, 1.0]     # 펌웨어 ARM_DIR 모두 +1 (2026-10-26 손으로 확인, URDF 방향과 같음)
+      approach_pitches: [-0.7854, -1.5708, -1.0472]  # pick 시도 순서 (위로 +, -0.7854 = 45° 아래)
       allow_elbow_down: false
       use_object_yaw: false      # true면 object_pose yaw로 joint5 회전
       wrist_roll_default: 0.0
-      gripper_roll_default: 0.0
+      gripper_roll_default: 0.0  # gripper.mode action · none 일 때만 6 번째 값
 
-    # TODO STOW · READY · PLACE · TAG_VIEW 관절각 [joint1~5, gripper_roll] (rad)
-    #   TAG_VIEW: 팔 끝 Arducam이 태그를 보는 자세 (mission 시작 단계)
+    # 이름 자세 [joint1~5, 6 번째] (rad). gripper.mode=arm_joint 면 6 번째는 쓰지 않고 지금 그리퍼 명령을 유지
     poses:
-      names: [STOW, READY, PLACE, TAG_VIEW]
-      # ★ A · 적용 필요 (2026-10-28 검토): STOW joint3 -2.3 이 펌웨어 범위 (-1.6 ~ 1.6) 밖이라 STOW 명령이 거부된다.
-      #   arm_bench 대기 자세 (J1 1008 · J2 691 · J3 3057 · J4 835 · J5 2039 tick, docs/arm_bench_test_2026-10-27.md) 를 관절 부호 확인 후 rad 로 바꿔 넣을 것
-      STOW: [0.0, 1.2, -2.3, 1.1, 0.0, 0.0]
+      names: [STOW, READY, PLACE, TAG_VIEW, BOX_VIEW, TRANSIT_TILT]
+      # STOW = arm_bench 대기 자세 (J1 1008 · J2 691 · J3 3057 · J4 835 · J5 2039 · 그리퍼 2650 tick,
+      #   docs/arm_bench_test_2026-10-27.md) = (tick − 2048) × 2π/4096. 펌웨어 ARM_DIR 모두 +1 이라 부호 그대로 (#83)
+      STOW: [-1.5953, -2.0816, 1.5478, -1.8607, -0.0138, 0.923]
       READY: [0.0, 0.6, -1.2, -0.9, 0.0, 0.0]
       PLACE: [1.57, 0.4, -0.8, -1.1, 0.0, 0.0]
       TAG_VIEW: [0.0, 0.9, -1.4, 0.2, 0.0, 0.0]   # TODO 현장에서 태그가 보이도록 조정
+      # 상자 윗면 내려다보기 (#74, B URDF: 카메라가 윗면 약 0.20 m 위에서 0.5° 기울기). joint4 1.95 는 한계 2.0 가까이 ★ 실물 확인
+      BOX_VIEW: [0.0, -0.65, 0.0, 1.95, 0.0, 0.0]
+      # 팔레트 궤적 이동 자세 (pallet_place_traj.json transit q_front_tilt, 집게 45°). place 뒤 이 자세로 돌아옴
+      TRANSIT_TILT: [0.0, -1.32032, 0.67766, 1.42805, 0.0, 0.0]
 
-    # TODO 그리퍼 개폐 액추에이터 미정
+    # 그리퍼: 실물은 6 번째 칸 gripper_roll 이 개폐 모터 (ID 15) → arm_joint (arm_controller 궤적의 6 번째 값)
     gripper:
-      enabled: true              # false면 그리퍼 단계 건너뜀 (팔만 테스트)
-      joint_name: gripper_joint
-      open_position: 0.02
-      close_position: 0.0
-      max_effort: 0.0            # 0 = 지정 안 함
-      fail_on_empty: true        # 끝까지 닫힘(stalled 아님) = 빈손 → pick 실패
+      mode: arm_joint            # arm_joint | action (gripper_controller) | none (팔만 시험, 파지 확인 없음)
+      open_position: -0.764      # rad, 1550 tick (arm_joint). action 모드면 컨트롤러 단위
+      close_position: 0.923      # rad, 2650 tick. 막히면 펌웨어 GripGuard 가 막힌 자리 + 33 tick 으로 쥠
+      move_time: 1.0             # s, 끝에서 끝 0.9 s (벤치 실측)
+      settle_time: 0.4           # s, 닫은 뒤 위치로 판정할 때까지 (GripGuard 막힘 판정 0.3 s)
+      grasp_margin: 0.15         # rad, 닫힘 명령보다 이만큼 넘게 덜 닫혔으면 잡음 (퍽 30 mm 에서 약 0.51 rad 에서 막힘)
+      fail_on_empty: true        # 끝까지 닫힘 = 빈손 → pick · pallet_unload 실패
+      joint_name: gripper_joint  # action 모드
+      max_effort: 0.0            # action 모드, 0 = 지정 안 함
 
     stale_timeout: 0.3           # 300ms 규칙 (계약): 촬영 시각 기준 이보다 오래된 인식 결과 · 거리는 버림 (예외 없음)
 
@@ -75,6 +81,7 @@ manipulator_node:
       range_mismatch_tolerance: 0.04  # 측정 기반 거리와 계획 거리 차이가 이보다 크면 /arm_range 무시 (이웃 퍽 간격 40 mm) (m)
       max_final_approach: 0.25   # 최종 전진 거리 상한 (m), 넘으면 abort
       lift_height: 0.05
+      grasp_z_offset: 0.015      # 집게 끝(tool_link) = 퍽 중심 + 위로 이만큼 (팔레트 궤적 grasp_dz 와 같게)
       cartesian_step: 0.01       # 최종 접근 · 들어올리기 직선 경로 경유점 간격 (m)
       cartesian_speed: 0.05      # 직선 경로 끝단 속도 (m/s)
       max_waypoint_joint_step: 0.2  # 경유점 사이 관절 변화 상한 (rad), 넘으면 abort (특이점)
@@ -91,3 +98,24 @@ manipulator_node:
       min_duration: 0.3          # s
       settle_time: 0.2           # 이동 후 이 시간 지난 데이터만 사용 (s)
       wait_timeout: 1.0          # 이 시간 안에 arm_offset 없으면 보정 실패 (s, required에 따라 abort/진행)
+
+    # 주사위 미션 skill (/manipulator/execute_skill 이름, #63 #74). 같은 이름 정책이 로드돼 있으면 정책을 쓴다
+    toppick:
+      pitch: -0.7854             # toppick_tilt 집게 기울기 (45° 아래). pick 과 같은 과정 (/arm_range 보정 포함)
+      approach_distance: 0.06    # 접근 위치 = 파지점에서 집게 축 반대로 (m)
+    pallet:
+      traj_file: ""              # 빈 문자열 = <control share>/config/pallet_place_traj.json (urdf_and_usd/policy/manipulator 사본)
+      speed: 0.8                 # rad/s, 경유점 사이 관절 속도 (#75)
+      row3_hold_speed: 0.4       # rad/s, 3 열에 놓을 때 쥔 구간 (#75)
+      require_held: true         # pallet_load 전에 그리퍼가 퍽을 쥐고 있는지 확인
+    place:
+      cells_file: ""             # 빈 문자열 = <mission_planner share>/config/approach_poses.yaml (L1~L3 cells, 지도 좌표)
+      cells_frame: map           # 칸 좌표 frame (발제 원점 지도)
+      pitch: -0.7854             # 놓기 집게 기울기 (45°)
+      surface_height: 0.070      # 장소 상자 윗면 (바닥 기준, 발제 Z 70 mm). place_at 은 받은 z 를 씀
+      puck_half_height: 0.030
+      clearance: 0.002           # 놓을 때 퍽 바닥과 윗면 틈 (m)
+      approach_distance: 0.04    # 놓기 전 집게 축 반대로 (m)
+      retreat_distance: 0.04     # 놓은 뒤 빠지기 (m)
+    floor_frame: base_footprint  # 바닥 frame. arm_base_link 높이 = 이 frame → arm_base_link TF
+    arm_base_height: 0.120       # TF 가 없을 때 arm_base_link 바닥 높이 (B안 base_link 0.00675 + 0.1135) ★
