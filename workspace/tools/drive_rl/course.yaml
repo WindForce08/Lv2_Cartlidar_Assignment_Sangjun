@@ -7,7 +7,7 @@
 #                                                     (물체 면에서 10 cm 앞. 도착 = 5 cm · 10° 안에서 0.5 s 멈춤)
 # 고친 뒤 확인: ./run.sh course  (벽까지 여유 · 구간 검사 + course_map.png)
 route:
-  - {stop: signal, x: 0.6910, y: 0.9500, face: 180}   # A1 출발: 신호등 · 바코드
+  - {stop: signal, x: 0.6936, y: 0.9500, face: 180}   # A1 출발: 신호등 · 바코드
   - A0
   - B0
   - C0

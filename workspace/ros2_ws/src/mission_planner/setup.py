@@ -20,7 +20,7 @@ setup(
     zip_safe=True,
     maintainer="Lv2 Cartlidar",
     maintainer_email="kanichong1@gmail.com",
-    description="주사위 기억 로봇: 할당 · 적재 · 경로 계획기 (GTSP), 문서 좌표 정적 지도 · 접근 자세표, AMCL 위치 추정 설정",
+    description="주사위 기억 로봇: 할당 · 적재 · 경로 계획기 (GTSP), 문서 좌표 정적 지도 · 접근 자세표",
     license="Apache-2.0",
     tests_require=["pytest"],
     entry_points={"console_scripts": [

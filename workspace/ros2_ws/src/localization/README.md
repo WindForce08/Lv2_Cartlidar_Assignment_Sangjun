@@ -13,8 +13,6 @@ ros2 launch localization localization.launch.py localization:=carto      # Carto
 ```
 
 - 먼저 떠 있어야 하는 것: `bringup`(robot_state_publisher, EKF `odom → base_link` · `/odometry/filtered`), 라이다 `/scan_front` · `/scan_rear`.
-- `mission_planner/launch/localization.launch.py`(AMCL + `/map` · `/map_amcl`)와 **함께 띄우지 않는다**. 둘 다 `/map` 과 `map → odom` 을 낸다.
-  그 launch 와 `mission_planner/config/amcl.yaml` 은 그대로 두었고, 이 패키지를 쓰는 실행 경로에서는 띄우지 않는다.
 
 ## 좌표계 · TF
 
@@ -53,10 +51,10 @@ ros2 launch localization localization.launch.py localization:=carto      # Carto
 
 ## 지도 · 값의 출처와 바꿀 곳
 
-- `maps/carto_map.pbstream` · `slam_walls*.yaml` · 지도 맞춤 값 `align_*` · 출발 자세 `start_*` 는 **Isaac 모의 미로**에서 만든 것이다.
+- `maps/carto_map.pbstream` · `slam_walls*.yaml` · 지도 맞춤 값 `align_*` 는 **Isaac 모의 미로**에서 만든 것이다.
   실물에서는 실물 미로로 SLAM 을 다시 해 지도와 맞춤 값을 바꿔 넣는다(launch 인자 `carto_state` · `map` · `loc_map` · `align_*` · `start_*`).
-- `start_x/y/yaw` 는 **base_link** 의 출발 자세다. `mission_planner/config/amcl.yaml` 의 `initial_pose`(x 0.69365)와 기준점이 다르므로
-  실물 출발 자리에서 다시 확인한다.
+- `start_x/y/yaw` 는 **base_link** 의 출발 자세다. 기본값 (0.69365, 0.95, π) = 차체 외곽 가운데를 출발 구역 가운데 (0.734, 0.95) 에 놓을 때의 base_link
+  (B안 외곽 x −0.2135 ~ +0.1328 → base_link 가 외곽 가운데보다 0.04035 m 앞, −X 를 봄). mission_planner HOME · 팀 Isaac 장면(make_maze_scene.py)과 같은 자리. 차체 외곽이 바뀌면 다시 계산한다.
 - `objects.yaml` 은 발제 배치(모의 seed 1)의 고정 물체다.
 - `loc_res_thr` 0.034 m 는 모의 정상 주행 잔차 최대(0.0337 m)에 맞춘 값이라 실물에서 SUSPECT 가 잦을 수 있다. 실물 정상 주행 기록으로 다시 정한다.
 

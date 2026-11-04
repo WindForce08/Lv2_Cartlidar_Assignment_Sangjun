@@ -12,11 +12,11 @@ mission_node:
     # 위치 [x, y, yaw] (m · rad) = 발제 좌표 (map_frame "map", localization 패키지 README: map = 발제 도면 좌표, 출발 상자 중심 (0.734, 0.95))
     #   base_link 자세. 인지 파트 Nav2 Isaac 모의에서 도착 · 충돌 없음을 확인한 목표 (#30 정정 2026-11-02, 배치 seed_1 기준 → 배치가 바뀌면 다시 계산)
     #   ★ Nav2 robot_base_frame 을 rotation_center (base_link 뒤 0.0786 m) 로 쓰면 Nav2 에는 회전 중심 점을 보내야 한다 (#30 표의 오른쪽 열) — Nav2 설정 확정 뒤 확인
-    #   L1 · L3 · home 은 제자리 회전 여유가 좁다 (home 0.031 m, L1 0.055 m, L3 0.064 m) → 이 자리에서 search · read_tag 회전을 하지 않는 순서로 쓸 것
+    #   L1 · L3 · home 은 제자리 회전 여유가 좁다 (home 0.06 m, L1 0.055 m, L3 0.064 m) → 이 자리에서 search · read_tag 회전을 하지 않는 순서로 쓸 것
     #   L1 · L2 · L3 (태그 앞, 앞 카메라 → 태그 약 0.45 m) 에서는 팔 자세를 바꾸지 않는다 (상자 면과 가까움). 팔 동작은 approach 뒤에
     locations:
       names: [home, start_box_1, start_box_3, L1_via, L1, L2, L3]
-      home: [0.724, 0.95, 3.1416]          # 출발 상자 중심에서 x −0.01 m (회전 여유)
+      home: [0.69365, 0.95, 3.14159265]   # 출발 자세 (base_link, 발제 좌표) = localization start_x/y/yaw = mission_planner HOME
       start_box_1: [2.2325, 0.6663, 2.7862]
       start_box_3: [2.5752, 4.6227, 1.1125]
       L1_via: [4.05, 0.39, 1.5708]         # L1 칸 입구 (+y). L1 로 갈 때 꼭 먼저 거칠 것 (없으면 상자 모서리에서 못 꺾음)

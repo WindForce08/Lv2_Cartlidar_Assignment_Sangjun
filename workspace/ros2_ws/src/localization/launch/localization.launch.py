@@ -10,8 +10,7 @@ localization:=carto — Cartographer 순수 위치 추정(기본으로는 안 �
   scan_body_mask(차체 가림 지움 → /scan_*_filtered) → cartographer_node(maps/carto_map.pbstream 고정, map_frame carto_map)
   → carto_start(출발 자세에서 궤적 시작) → /tracked_pose → map_odom_relay(map → odom). 정적 TF map → carto_map(지도 맞춤 값).
 loc_monitor(use_loc_monitor, 기본 true): 위치 잃음 감지 · 다시 찾기. 두 방식 모두 지원(다시 넣기만 다름).
-  gate_in 을 주면 그 속도 명령을 받아 OK · SUSPECT 가 아닐 때 0 으로 바꿔 gate_out 으로 낸다(기본 none = 게이트 끔, /localization/lock 만 냄).
-/map 은 mission_planner/launch/localization.launch.py 도 내므로 둘을 함께 띄우지 않는다(README)."""
+  gate_in 을 주면 그 속도 명령을 받아 OK · SUSPECT 가 아닐 때 0 으로 바꿔 gate_out 으로 낸다(기본 none = 게이트 끔, /localization/lock 만 냄)."""
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
@@ -51,7 +50,8 @@ def generate_launch_description():
         DeclareLaunchArgument('align_x', default_value='0.729', description='map(발제 좌표) ← carto_map 지도 맞춤 값(SLAM 지도 저장 때 잼)'),
         DeclareLaunchArgument('align_y', default_value='0.960'),
         DeclareLaunchArgument('align_yaw', default_value='3.143774'),
-        DeclareLaunchArgument('start_x', default_value='0.734', description='출발 자세(base_link, 발제 좌표) — carto 궤적 시작 · use_amcl_node 때 AMCL 초기 자세'),
+        DeclareLaunchArgument('start_x', default_value='0.69365', description='출발 자세(base_link, 발제 좌표) = 출발 구역 가운데 0.734 − 0.04035 (B안 외곽 가운데를 구역 가운데에, −X 봄). '
+                                          'carto 궤적 시작 · use_amcl_node 때 AMCL 초기 자세'),
         DeclareLaunchArgument('start_y', default_value='0.950'),
         DeclareLaunchArgument('start_yaw', default_value='3.14159265'),
         DeclareLaunchArgument('future_dt', default_value='0.1', description='map_odom_relay 가 map → odom 을 앞당겨 낼 시간[s]'),

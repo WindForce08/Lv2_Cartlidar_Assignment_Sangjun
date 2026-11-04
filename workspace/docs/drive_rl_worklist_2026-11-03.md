@@ -89,7 +89,7 @@ cd workspace/urdf_and_usd/isaac && ./run.sh check         # 약 1 분, results/c
   - `WHEEL_RADIUS` 0.033 · `WHEEL_SEPARATION` 0.317 · `WHEEL_SPEED_MAX` 10.995574
   - `CONTACT_MATERIAL` (= 바닥 재질) · `ROOT_HEIGHT`
 - 이 파일에 둘 상수: diff_drive 한계 `VX_MAX 0.34` · `WZ_MAX 2.0` · `AX_MAX 1.5` (출처는 5 절), 차체 외곽 `BODY_X (-0.226, 0.1403)` · `BODY_Y 0.1676`
-  (팀 `tools/make_maze_scene.py`), 출발 자리 base_link `(0.691, 0.950)` · yaw π (팀 isaac README 7 절).
+  (팀 `tools/make_maze_scene.py`), 출발 자리 base_link `(0.6936, 0.950)` · yaw π (팀 isaac README 7 절).
 - 완료 기준: venv python 에서 `import waffle_drive.robot` 가 된다 (Isaac 앱 없이 import 가 안 되면 env 안에서만 쓰고, 상수는 따로 둔다).
 
 ### 작업 3 — `waffle_drive/base_cmd.py` + `tests/test_base_cmd.py`
@@ -249,7 +249,7 @@ cd workspace/tools/drive_rl
 | 제자리 회전 이상 최대 = 10.996 × 0.033 / 0.1585 = 2.29 rad/s (시뮬 미끄럼으로 실제는 약 70 %) | 계산 · isaac README 6 절 |
 | 질량 3.8613 kg, 주행 자세 무게중심 높이 0.142 m → 앞 들림 약 4.5 m/s², 제동 약 6.5 m/s² | isaac README · 11-02 계산 |
 | 차체 외곽 x −0.226 ~ 0.1403, |y| 0.1676 (팔 빼고), 제자리 회전 반경 0.2814 | `tools/make_maze_scene.py` |
-| 출발 base_link (0.691, 0.950, 0.00975), yaw π | isaac README 7 절 |
+| 출발 base_link (0.6936, 0.950, 0.00975), yaw π | isaac README 7 절 |
 | LDS-03 스캔면 높이 0.0823 m > 상자 0.07 m → 상자는 라이다에 안 보임 | isaac README 5 절, SDF |
 | D1: 64 환경 × 300 반복 3 분 13 초, 50 반복부터 학습 중 도착 100 % (예전 로봇 261027) | `isaac/rl/정책_학습기록.md` 2 절 |
 

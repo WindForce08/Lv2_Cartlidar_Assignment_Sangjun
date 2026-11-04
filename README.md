@@ -15,7 +15,7 @@
 | Perception | `perception_survey` | `puck_survey` (B0 퍽 12칸 측량 → `/perception/puck_survey`, start · reset · finish · revisit) | ⑦ 옆 단독 프로세스 |
 | Controller | `mission` | `mission_node` (미션표 순서 실행 · 재시도 · fallback · PAUSED 재개) | ⑧ control_container |
 | Controller | `control` | `drive_node` (nav2 · 정렬 · skill), `manipulator_node` (IK · 집기 · skill), 공용 `fsm.hpp` | ⑧ control_container |
-| Controller | `mission_planner` | `mission_planner_node` (plan 모드: 신호 · 바코드 → 할당 · 적재 · 경로 계획 → `/mission_planner/plan`), 경기장 지도 `map_nav` · `map_amcl` · AMCL | 단독 (`planner.launch.py` · `localization.launch.py`) |
+| Controller | `mission_planner` | `mission_planner_node` (plan 모드: 신호 · 바코드 → 할당 · 적재 · 경로 계획 → `/mission_planner/plan`), 경기장 지도 `map_nav` · `map_amcl`| 단독 (`planner.launch.py`) |
 | Controller | `robot_policy` | 정책 추론 라이브러리 (ONNX Runtime 선택) | ⑧ (drive · manipulator 안) |
 | Firmware | `opencr_hardware` | ros2_control SystemInterface (잠금식 E-stop · /diagnostics · 펌웨어 버전 확인), URDF · 컨트롤러 설정 | ① ros2_control_node |
 | Firmware | `opencr_firmware` | OpenCR Arduino 스케치 (colcon 제외) | OpenCR |

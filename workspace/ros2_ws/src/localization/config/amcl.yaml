@@ -1,5 +1,5 @@
 # AMCL 설정 — localization.launch.py localization:=amcl 일 때만 씀(기본 carto 에서는 뜨지 않음).
-# mission_planner/config/amcl.yaml(문서 좌표 지도용)에서 출발해 Isaac 모의 녹화 재생으로 맞춘 값. 그 파일과 다른 점:
+# mission_planner/config/amcl.yaml(**삭제됨**)에서 출발해 Isaac 모의 녹화 재생으로 맞춘 값. 그 파일과 다른 점:
 #   robot_model_type OmniMotionModel · alpha5 0.1 — 4 륜 스키드 차체는 회전 중심이 base_link 뒤(모의 x −0.0658 m)라 제자리 회전 때
 #     base_link 가 옆으로 움직이는데, 차동 모델은 이 옆 이동을 표현하지 못해 옆 방향 오차가 커졌다(옴니 모델로 위치 RMSE 약 절반).
 #   update_min_d · update_min_a 0 — 매 스캔 갱신(정밀 정렬 구간에서도 따라오게). Jetson CPU 부하는 측정하지 않았다.
@@ -45,7 +45,7 @@ amcl:
     set_initial_pose: true
     always_reset_initial_pose: false
     initial_pose:
-      x: 0.734
+      x: 0.69365
       y: 0.95
       z: 0.0
       yaw: 3.14159265
