@@ -7,14 +7,16 @@
 접근 자세 (모두 지도 = 발제 좌표 m, yaw = 로봇 앞 방향):
   - 시작 박스: 두 퍽 (박스 중심 X +-40 mm) 을 잇는 선 (X 축) 에 수직인 쪽 = 박스 남쪽 (yaw +90°) 또는 북쪽 (yaw -90°).
     로봇이 박스 중심 X 에 서면 두 퍽이 J1 앞 같은 거리, 옆 +-40 mm -> 한 번 서서 둘 다 집음.
-  - L1 · L2 · L3: 장소 태그가 붙은 면 (접근 방향 수직 면) 쪽. L1 = 서쪽 면 (yaw 0), L2 = 받침대 북쪽 면 (yaw -90°), L3 = 남쪽 면 (yaw +90°).
+  - L1 · L2 · L3: 장소 태그가 붙은 면 (접근 방향 수직 면) 쪽. L1 = 서쪽 면 (yaw 0), L2 = 상자 북쪽 면 (yaw -90°), L3 = 남쪽 면 (yaw +90°).
   - final: 앞 끝 - 면 = gap (집기 · 놓기 자세), stage: 앞 끝 - 면 = standoff (nav2 목표, 그다음 drive align 이 곧게 들어감).
+  - gap = FINE_GAP: drive FINE 정렬이 멈추는 자리 (TFmini 렌즈 -> 면 FINE_DISTANCE 0.13 = 앞 끝 -> 면 0.1272) 를 그대로 집기 · 놓기 자세로 씀
+    (#64 안 A, 2026-11-04). TFmini 는 0.10 m 안을 못 재고 obstacle_stop 이 막으므로 더 붙지 않음. 45° 도달 0.35 m 안에서 모든 칸이 닿음.
 
 집기 · 놓기는 모두 집게 45° (TopPick 기울임 모드 · pallet_traj 12 칸, 2026-11-03):
   - 손가락 닫는 축 = J1 둘레 접선 -> 상자 퍽은 면이 J1→퍽 방향에 맞아야 함 (±3°).
     ±Y 접근은 퍽이 J1 앞 옆 ±40 mm (14°) 라, 로봇 중심 둘레로 turn_deg (±17.1°) 돌아 J1 을 퍽 X 줄 위에 둠 -> J1→퍽 = 박스 축.
-    이 회전 때 앞 모서리가 박스에 닿지 않게 박스 접근 gap = BOX_GAP (여유 15 mm). inline (±X) 은 퍽이 J1 앞 일직선이라 회전 없음.
-  - J1 거리 REACH_TILT_MIN ~ REACH_TILT (윗면 70 mm 높이). L1 · L3 는 가까운 줄이 하한 아래라 gap 을 늘림 (PLACES gap).
+    gap 0.1272 에서 돌아도 앞 모서리와 박스 사이 여유가 넉넉함. inline (±X) 은 퍽이 J1 앞 일직선이라 회전 없음.
+  - J1 거리 REACH_TILT_MIN ~ REACH_TILT (윗면 70 mm 높이). L1 · L2 · L3 (모두 205 상자) 는 가까운 줄 0.206 · 먼 줄 0.326 m.
 """
 from __future__ import annotations
 
@@ -24,6 +26,9 @@ from dataclasses import dataclass, field
 import numpy as np
 
 FRONT, REAR, HALF_W, J1_X = 0.1328, -0.2135, 0.1676, 0.096
+LENS_X = 0.130  # TFmini 렌즈 (opencr_hardware tfmini_link)
+FINE_DISTANCE = 0.13  # [m] drive FINE 정렬 목표 = 렌즈 -> 면 (TFmini 최소 0.10 + 정지 여유, drive align.min_target_distance)
+FINE_GAP = FINE_DISTANCE - (FRONT - LENS_X)  # 0.1272: 그 자리의 앞 끝 -> 면
 CENTER_X = (FRONT + REAR) / 2  # -0.04035
 
 START_BOXES = {  # 발제 07 쪽 시작 박스 중심 (m), 205 x 205 x 70
@@ -33,9 +38,9 @@ START_BOXES = {  # 발제 07 쪽 시작 박스 중심 (m), 205 x 205 x 70
 BOX_HALF = 0.1025
 PUCK_DX = 0.040  # 박스 위 퍽 2 개 = 중심 X +-40 mm, Y 0
 PLACES = {  # 장소 격자 중심, 접근할 면 (바깥 법선 방향), 면까지 거리
-    "L1": dict(center=(3.670, 0.950), face_dir=(-1.0, 0.0), face_dist=0.1025, tag=12, gap=0.06),  # gap: 가까운 줄 J1 0.099 -> 0.139 (45° 하한 위)
-    "L2": dict(center=(2.202, 3.700), face_dir=(0.0, 1.0), face_dist=3.910 - 3.700, tag=13, gap=0.02),  # 820 받침대 (중심 y 3.5) 북쪽 면 y 3.91, 먼 줄 0.332
-    "L3": dict(center=(3.670, 5.354), face_dir=(0.0, -1.0), face_dist=0.1025, tag=14, gap=0.06),
+    "L1": dict(center=(3.670, 0.950), face_dir=(-1.0, 0.0), face_dist=0.1025, tag=12, gap=FINE_GAP),
+    "L2": dict(center=(2.202, 3.700), face_dir=(0.0, 1.0), face_dist=0.1025, tag=13, gap=FINE_GAP),  # 2026-11-04 확정: L1 · L3 과 같은 205 상자 (이전 820 받침대)
+    "L3": dict(center=(3.670, 5.354), face_dir=(0.0, -1.0), face_dist=0.1025, tag=14, gap=FINE_GAP),
 }
 OBSERVE = (0.734, 0.950)  # 출발 · 관측 · 복귀 (로봇 중심), -X 를 봄
 START_ZONE_HALF = 0.30
@@ -51,8 +56,8 @@ DICE = {  # 주사위 눈 -> 격자 칸 (dx, dy) 단위 칸, 지도 +Y 가 위 (
 REACH_VERTICAL = 0.23  # [m] J1 축 - 퍽 수평 거리: 수직 집기 · 놓기 (참고만, 지금은 모두 45°)
 REACH_TILT_MIN = 0.12  # [m] 45° 집기 · 놓기 하한 (윗면 70 mm, 더 가까우면 joint4 하한 -1.9)
 REACH_TILT = 0.35      # 45° 상한 (팀 URDF IK 0.36 m 까지 풂). Isaac 칸 놓기 미검증
-GAP_INLINE = 0.04     # [m] ±X 대안 접근 (두 퍽이 앞뒤) 의 앞 끝 - 박스 면
-BOX_GAP = 0.06        # [m] ±Y 박스 접근 앞 끝 - 박스 면: turn_deg 회전 때 외곽 - 박스 여유 15 mm (0.05 면 10 mm, 0.02 면 닿음)
+GAP_INLINE = FINE_GAP  # [m] ±X 대안 접근 (두 퍽이 앞뒤) 의 앞 끝 - 박스 면 (가까운 퍽 J1 0.226 · 먼 퍽 0.306)
+BOX_GAP = FINE_GAP     # [m] ±Y 박스 접근 앞 끝 - 박스 면 (퍽 J1 0.27, 이전 0.06 은 FINE 뒤 TFmini 측정 불가 구간이라 못 감 #64)
 TURN_DEG = math.degrees(math.asin(PUCK_DX / (J1_X - CENTER_X)))  # 17.06°: 로봇 중심 둘레 회전으로 J1 을 옆 40 mm 옮김
 
 

@@ -636,18 +636,13 @@
       <collision name="box_collision"><pose>0 0 0.035 0 0 0</pose><geometry><box><size>0.205 0.205 0.07</size></box></geometry></collision>
     </link>
   </model>
-  <model name="place_L2_pedestal">
+  <!-- 2026-11-04 확정: L2 = L1 · L3 과 같은 205 x 205 x 70 상자 (이전 820 받침대, 중심 y 3.5) -->
+  <model name="place_L2">
     <static>true</static>
-    <pose>2.202 3.5 0 0 0 0</pose>
+    <pose>2.202 3.7 0 0 0 0</pose>
     <link name="link">
-      <visual name="box_0"><pose>-0.205 -0.205 0.035 0 0 0</pose><geometry><box><size>0.41 0.41 0.07</size></box></geometry><material><ambient>0.8 0.68 0.48 1</ambient><diffuse>0.8 0.68 0.48 1</diffuse><specular>0.1 0.1 0.1 1</specular></material></visual>
-      <collision name="box_0_collision"><pose>-0.205 -0.205 0.035 0 0 0</pose><geometry><box><size>0.41 0.41 0.07</size></box></geometry></collision>
-      <visual name="box_1"><pose>0.205 -0.205 0.035 0 0 0</pose><geometry><box><size>0.41 0.41 0.07</size></box></geometry><material><ambient>0.8 0.68 0.48 1</ambient><diffuse>0.8 0.68 0.48 1</diffuse><specular>0.1 0.1 0.1 1</specular></material></visual>
-      <collision name="box_1_collision"><pose>0.205 -0.205 0.035 0 0 0</pose><geometry><box><size>0.41 0.41 0.07</size></box></geometry></collision>
-      <visual name="box_2"><pose>-0.205 0.205 0.035 0 0 0</pose><geometry><box><size>0.41 0.41 0.07</size></box></geometry><material><ambient>0.8 0.68 0.48 1</ambient><diffuse>0.8 0.68 0.48 1</diffuse><specular>0.1 0.1 0.1 1</specular></material></visual>
-      <collision name="box_2_collision"><pose>-0.205 0.205 0.035 0 0 0</pose><geometry><box><size>0.41 0.41 0.07</size></box></geometry></collision>
-      <visual name="box_3"><pose>0.205 0.205 0.035 0 0 0</pose><geometry><box><size>0.41 0.41 0.07</size></box></geometry><material><ambient>0.8 0.68 0.48 1</ambient><diffuse>0.8 0.68 0.48 1</diffuse><specular>0.1 0.1 0.1 1</specular></material></visual>
-      <collision name="box_3_collision"><pose>0.205 0.205 0.035 0 0 0</pose><geometry><box><size>0.41 0.41 0.07</size></box></geometry></collision>
+      <visual name="box"><pose>0 0 0.035 0 0 0</pose><geometry><box><size>0.205 0.205 0.07</size></box></geometry><material><ambient>0.8 0.68 0.48 1</ambient><diffuse>0.8 0.68 0.48 1</diffuse><specular>0.1 0.1 0.1 1</specular></material></visual>
+      <collision name="box_collision"><pose>0 0 0.035 0 0 0</pose><geometry><box><size>0.205 0.205 0.07</size></box></geometry></collision>
     </link>
   </model>
   <model name="place_tag_12">
@@ -677,22 +672,22 @@
     <static>true</static>
     <pose>0 0 0 0 0 0</pose>
     <link name="link">
-      <visual name="plate_0"><pose>2.202 3.9105 0.035 0 0 0</pose><geometry><box><size>0.06 0.001 0.06</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse><specular>0.1 0.1 0.1 1</specular></material></visual>
-      <visual name="cell_0"><pose>2.202 3.9107 0.056 0 0 0</pose><geometry><box><size>0.048 0.0014 0.006</size></box></geometry><material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse><specular>0.1 0.1 0.1 1</specular></material></visual>
-      <visual name="cell_1"><pose>2.184 3.9107 0.05 0 0 0</pose><geometry><box><size>0.012 0.0014 0.006</size></box></geometry><material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse><specular>0.1 0.1 0.1 1</specular></material></visual>
-      <visual name="cell_2"><pose>2.223 3.9107 0.041 0 0 0</pose><geometry><box><size>0.006 0.0014 0.024</size></box></geometry><material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse><specular>0.1 0.1 0.1 1</specular></material></visual>
-      <visual name="cell_3"><pose>2.202 3.9107 0.044 0 0 0</pose><geometry><box><size>0.024 0.0014 0.006</size></box></geometry><material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse><specular>0.1 0.1 0.1 1</specular></material></visual>
-      <visual name="cell_4"><pose>2.181 3.9107 0.044 0 0 0</pose><geometry><box><size>0.006 0.0014 0.006</size></box></geometry><material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse><specular>0.1 0.1 0.1 1</specular></material></visual>
-      <visual name="cell_5"><pose>2.193 3.9107 0.038 0 0 0</pose><geometry><box><size>0.03 0.0014 0.006</size></box></geometry><material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse><specular>0.1 0.1 0.1 1</specular></material></visual>
-      <visual name="cell_6"><pose>2.211 3.9107 0.032 0 0 0</pose><geometry><box><size>0.006 0.0014 0.006</size></box></geometry><material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse><specular>0.1 0.1 0.1 1</specular></material></visual>
-      <visual name="cell_7"><pose>2.193 3.9107 0.032 0 0 0</pose><geometry><box><size>0.006 0.0014 0.006</size></box></geometry><material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse><specular>0.1 0.1 0.1 1</specular></material></visual>
-      <visual name="cell_8"><pose>2.181 3.9107 0.029 0 0 0</pose><geometry><box><size>0.006 0.0014 0.012</size></box></geometry><material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse><specular>0.1 0.1 0.1 1</specular></material></visual>
-      <visual name="cell_9"><pose>2.217 3.9107 0.026 0 0 0</pose><geometry><box><size>0.018 0.0014 0.006</size></box></geometry><material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse><specular>0.1 0.1 0.1 1</specular></material></visual>
-      <visual name="cell_10"><pose>2.199 3.9107 0.026 0 0 0</pose><geometry><box><size>0.006 0.0014 0.006</size></box></geometry><material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse><specular>0.1 0.1 0.1 1</specular></material></visual>
-      <visual name="cell_11"><pose>2.223 3.9107 0.02 0 0 0</pose><geometry><box><size>0.006 0.0014 0.006</size></box></geometry><material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse><specular>0.1 0.1 0.1 1</specular></material></visual>
-      <visual name="cell_12"><pose>2.205 3.9107 0.02 0 0 0</pose><geometry><box><size>0.018 0.0014 0.006</size></box></geometry><material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse><specular>0.1 0.1 0.1 1</specular></material></visual>
-      <visual name="cell_13"><pose>2.184 3.9107 0.02 0 0 0</pose><geometry><box><size>0.012 0.0014 0.006</size></box></geometry><material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse><specular>0.1 0.1 0.1 1</specular></material></visual>
-      <visual name="cell_14"><pose>2.202 3.9107 0.014 0 0 0</pose><geometry><box><size>0.048 0.0014 0.006</size></box></geometry><material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse><specular>0.1 0.1 0.1 1</specular></material></visual>
+      <visual name="plate_0"><pose>2.202 3.803 0.035 0 0 0</pose><geometry><box><size>0.06 0.001 0.06</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse><specular>0.1 0.1 0.1 1</specular></material></visual>
+      <visual name="cell_0"><pose>2.202 3.8032 0.056 0 0 0</pose><geometry><box><size>0.048 0.0014 0.006</size></box></geometry><material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse><specular>0.1 0.1 0.1 1</specular></material></visual>
+      <visual name="cell_1"><pose>2.184 3.8032 0.05 0 0 0</pose><geometry><box><size>0.012 0.0014 0.006</size></box></geometry><material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse><specular>0.1 0.1 0.1 1</specular></material></visual>
+      <visual name="cell_2"><pose>2.223 3.8032 0.041 0 0 0</pose><geometry><box><size>0.006 0.0014 0.024</size></box></geometry><material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse><specular>0.1 0.1 0.1 1</specular></material></visual>
+      <visual name="cell_3"><pose>2.202 3.8032 0.044 0 0 0</pose><geometry><box><size>0.024 0.0014 0.006</size></box></geometry><material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse><specular>0.1 0.1 0.1 1</specular></material></visual>
+      <visual name="cell_4"><pose>2.181 3.8032 0.044 0 0 0</pose><geometry><box><size>0.006 0.0014 0.006</size></box></geometry><material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse><specular>0.1 0.1 0.1 1</specular></material></visual>
+      <visual name="cell_5"><pose>2.193 3.8032 0.038 0 0 0</pose><geometry><box><size>0.03 0.0014 0.006</size></box></geometry><material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse><specular>0.1 0.1 0.1 1</specular></material></visual>
+      <visual name="cell_6"><pose>2.211 3.8032 0.032 0 0 0</pose><geometry><box><size>0.006 0.0014 0.006</size></box></geometry><material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse><specular>0.1 0.1 0.1 1</specular></material></visual>
+      <visual name="cell_7"><pose>2.193 3.8032 0.032 0 0 0</pose><geometry><box><size>0.006 0.0014 0.006</size></box></geometry><material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse><specular>0.1 0.1 0.1 1</specular></material></visual>
+      <visual name="cell_8"><pose>2.181 3.8032 0.029 0 0 0</pose><geometry><box><size>0.006 0.0014 0.012</size></box></geometry><material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse><specular>0.1 0.1 0.1 1</specular></material></visual>
+      <visual name="cell_9"><pose>2.217 3.8032 0.026 0 0 0</pose><geometry><box><size>0.018 0.0014 0.006</size></box></geometry><material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse><specular>0.1 0.1 0.1 1</specular></material></visual>
+      <visual name="cell_10"><pose>2.199 3.8032 0.026 0 0 0</pose><geometry><box><size>0.006 0.0014 0.006</size></box></geometry><material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse><specular>0.1 0.1 0.1 1</specular></material></visual>
+      <visual name="cell_11"><pose>2.223 3.8032 0.02 0 0 0</pose><geometry><box><size>0.006 0.0014 0.006</size></box></geometry><material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse><specular>0.1 0.1 0.1 1</specular></material></visual>
+      <visual name="cell_12"><pose>2.205 3.8032 0.02 0 0 0</pose><geometry><box><size>0.018 0.0014 0.006</size></box></geometry><material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse><specular>0.1 0.1 0.1 1</specular></material></visual>
+      <visual name="cell_13"><pose>2.184 3.8032 0.02 0 0 0</pose><geometry><box><size>0.012 0.0014 0.006</size></box></geometry><material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse><specular>0.1 0.1 0.1 1</specular></material></visual>
+      <visual name="cell_14"><pose>2.202 3.8032 0.014 0 0 0</pose><geometry><box><size>0.048 0.0014 0.006</size></box></geometry><material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse><specular>0.1 0.1 0.1 1</specular></material></visual>
     </link>
   </model>
   <model name="place_tag_14">

@@ -502,7 +502,7 @@ public:
     pb_.cfg.search = declare_parameter("arm.place_box.search", pb_.cfg.search);
     pb_.frame = declare_parameter("arm.place_box.frame", pb_.frame);
     {
-      const auto pr = declare_parameter("arm.place_box.prior", std::vector<double>{0.2553, 0.0});
+      const auto pr = declare_parameter("arm.place_box.prior", std::vector<double>{0.3625, 0.0});
       if (pr.size() == 2) {pb_.prior = cv::Point2d(pr[0], pr[1]);}
     }
     pb_.prior_yaw = declare_parameter("arm.place_box.prior_yaw", pb_.prior_yaw);

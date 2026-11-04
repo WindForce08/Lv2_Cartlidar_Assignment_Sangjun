@@ -47,6 +47,12 @@
 //   장소 태그 (/perception/task_marker, READ_MARKER, #39) — L1 · L2 · L3 = marker.ids (12 · 13 · 14):
 //     verify 에서 verify.check_marker 면 READ_MARKER 를 같이 켜고, 새로 본 태그 ID · 위치 (base_link · map) 를
 //     check_dice 결과와 같은 줄에 기록 (발제 채점: 새 관측 기반 장소별 ID · 위치). ID 가 다르면 verify.stop_on_fail 에 따름
+//   measure_box <L>               장소 상자 재기 (#73, place_box.enabled): 그 장소 첫 pallet_unload (다음이 place_<L>_*) 앞에 자동으로 붙음.
+//                                 팔 place_box.arm_pose → place_box.mode → settle_s → /perception/place_box/measure →
+//                                 /perception/place_box/status ok + /perception/place_box (odom, 윗면 중심 · 요).
+//                                 잰 장소의 place_<L>_<dx>_<dy>_tilt 는 place_at:<frame>:x:y:z 로, verify 칸도 같은 frame 칸으로 바꿈
+//                                 (칸 = 잰 중심 + 지도 축 칸 오프셋을 상자가 돈 만큼 (±45°) 돌림). 실패 · 지도 칸에서 max_shift 넘게 떨어짐 →
+//                                 place_box.required 면 단계 실패, 아니면 기록하고 지도 좌표 그대로
 //   check_marker <L>              marker.check_before_place 면 그 장소 첫 place_<L>_* skill 앞에 자동으로 붙음:
 //                                 READ_MARKER → 기대 ID 를 보면 성공, 다른 ID 면 실패 (엉뚱한 장소에 놓지 않게)
 //
@@ -94,6 +100,7 @@
 #include "robot_interfaces/srv/check_dice.hpp"
 #include "robot_interfaces/srv/set_perception_mode.hpp"
 #include "std_msgs/msg/bool.hpp"
+#include "std_msgs/msg/string.hpp"
 #include "std_srvs/srv/trigger.hpp"
 #include "tf2/utils.hpp"
 #include "yaml-cpp/yaml.h"
@@ -161,6 +168,21 @@ public:
       marker_sub_ = create_subscription<TaskMarker>(
         "/perception/task_marker", rclcpp::QoS(1).reliable(),
         [this](TaskMarker::ConstSharedPtr msg) {onMarker(msg);}, sub_opt);
+      if (place_box_enabled_) {   // 장소 상자 측정 결과 (perception, latched)
+        const auto latched = rclcpp::QoS(1).reliable().transient_local();
+        pb_pose_sub_ = create_subscription<geometry_msgs::msg::PoseStamped>("/perception/place_box", latched,
+          [this](geometry_msgs::msg::PoseStamped::ConstSharedPtr m) {
+            std::lock_guard<std::mutex> lock(sensor_mutex_);
+            pb_pose_ = m;
+            pb_pose_rx_ = now();
+          }, sub_opt);
+        pb_status_sub_ = create_subscription<std_msgs::msg::String>("/perception/place_box/status", latched,
+          [this](std_msgs::msg::String::ConstSharedPtr m) {
+            std::lock_guard<std::mutex> lock(sensor_mutex_);
+            pb_status_ = m;
+            pb_status_rx_ = now();
+          }, sub_opt);
+      }
     }
 
     // --- 클라이언트 ---
@@ -177,6 +199,9 @@ public:
     if (plan_mode_) {
       plan_client_ = create_client<Trigger>(plan_service_, rclcpp::ServicesQoS(), mission_cb_group_);
       dice_client_ = create_client<CheckDice>("/perception/check_dice", rclcpp::ServicesQoS(), mission_cb_group_);
+      if (place_box_enabled_) {
+        place_box_client_ = create_client<Trigger>("/perception/place_box/measure", rclcpp::ServicesQoS(), mission_cb_group_);
+      }
       if (survey_enabled_) {
         survey_start_client_ = create_client<Trigger>("/perception/survey/start", rclcpp::ServicesQoS(), mission_cb_group_);
         survey_finish_client_ = create_client<Trigger>("/perception/survey/finish", rclcpp::ServicesQoS(), mission_cb_group_);
@@ -361,6 +386,14 @@ private:
     verify_marker_wait_ = declare_parameter<double>("verify.marker_wait_s", 3.0);    // settle 뒤 태그를 더 기다리는 시간
     marker_check_before_place_ = declare_parameter<bool>("marker.check_before_place", false);   // ★ 놓는 자리에서 태그가 보이면 true
     timeout_["check_marker"] = declare_parameter<double>("timeout.check_marker", 10.0);
+    // 놓기 전 장소 상자 재기 (#73): 상자가 돌아가 있거나 밀려 있어도 칸에 놓고 판정하게 /perception/place_box 로 잼
+    place_box_enabled_ = declare_parameter<bool>("place_box.enabled", true);
+    place_box_arm_pose_ = declare_parameter<std::string>("place_box.arm_pose", "BOX_VIEW");
+    place_box_mode_text_ = declare_parameter<std::string>("place_box.mode", "READ_TAG");
+    place_box_settle_ = declare_parameter<double>("place_box.settle_s", 0.5);
+    place_box_max_shift_ = declare_parameter<double>("place_box.max_shift", 0.10);
+    place_box_required_ = declare_parameter<bool>("place_box.required", false);
+    timeout_["measure_box"] = declare_parameter<double>("timeout.measure_box", 15.0);
     timeout_["survey"] = declare_parameter<double>("timeout.survey", 20.0);          // start · finish 서비스
     timeout_["survey_view"] = declare_parameter<double>("timeout.survey_view", 30.0);
   }
@@ -393,6 +426,26 @@ private:
               e.what());
     }
     RCLCPP_INFO(get_logger(), "survey: %zu pose(s) from %s", survey_boxes_.size(), file.c_str());
+  }
+
+  // 계획기 접근 자세표의 L1 ~ L3 칸 "0,0" (지도 격자 중심). 없으면 place_box 를 끄고 경고 (지도 좌표로 놓음)
+  void loadPlaceCenters()
+  {
+    std::string file = survey_poses_file_;
+    try {
+      if (file.empty()) {
+        file = (ament_index_cpp::get_package_share_path("mission_planner") / "config" / "approach_poses.yaml").string();
+      }
+      const YAML::Node doc = YAML::LoadFile(file);
+      for (const char * L : {"L1", "L2", "L3"}) {
+        const YAML::Node c = doc[L] ? doc[L]["cells"]["0,0"] : YAML::Node();
+        if (c && c["x"] && c["y"]) {place_centers_[L] = {c["x"].as<double>(), c["y"].as<double>()};}
+      }
+    } catch (const std::exception & e) {
+      RCLCPP_WARN(get_logger(), "place_box: %s (%s) -> 상자 재기 끔", e.what(), file.c_str());
+    }
+    if (place_centers_.empty()) {place_box_enabled_ = false;}
+    RCLCPP_INFO(get_logger(), "place_box: %s (장소 %zu 곳)", place_box_enabled_ ? "켬" : "끔", place_centers_.size());
   }
 
   void validation()
@@ -460,6 +513,13 @@ private:
       if (!parseModeNames(verify_mode_text_)) {throw std::invalid_argument("verify.mode: names joined by '+'");}
       if (!(verify_settle_ >= 0.0) || !(verify_tolerance_ >= 0.0)) {
         throw std::invalid_argument("verify.settle_s · verify.tolerance must be >= 0");
+      }
+      if (place_box_enabled_) {
+        if (!parseModeNames(place_box_mode_text_)) {throw std::invalid_argument("place_box.mode: names joined by '+'");}
+        if (!(place_box_settle_ >= 0.0) || !(place_box_max_shift_ > 0.0)) {
+          throw std::invalid_argument("place_box.settle_s >= 0, place_box.max_shift > 0");
+        }
+        loadPlaceCenters();
       }
     }
     // 미션표의 위치 이름 · 단계 인자 확인 (현장에서 오타로 멈추지 않게 시작 때 거부)
@@ -550,7 +610,7 @@ private:
         bad("mode= takes names joined by '+' (OFF · SEARCH_FRONT · ARM_ALIGN · READ_TAG · SEARCH_REAR · "
           "READ_MARKER · READ_SIGNAL · READ_BARCODE), no numbers");
       }
-    } else if (s.type == "check_marker") {
+    } else if (s.type == "check_marker" || s.type == "measure_box") {
       if (s.args.size() != 1 || markerIdOf(s.args[0]) < 0) {bad("needs <L1|L2|L3>");}
     } else if (s.type == "survey_view") {
       if (s.args.size() != 2 || !isNumber(s.args[0], v) || v < 1 || v > 6) {bad("needs <box 1-6> <arm_pose>");}
@@ -753,6 +813,8 @@ private:
       if (watching_ && (now() - view_since_).seconds() >= survey_settle_) {stepSucceeded();}
     } else if (s.type == "check_marker") {
       tickCheckMarker();
+    } else if (s.type == "measure_box") {
+      tickMeasureBox();
     } else if (s.type == "wait") {
       if (now() >= wait_until_) {stepSucceeded();}
     }
@@ -809,6 +871,8 @@ private:
     }
     tag_id_ = -1;
     marker_checked_.clear();
+    box_attempted_.clear();
+    box_meas_.clear();
     mismatch_logged_cycles_ = -1;
     retry_count_.clear();
     fallback_used_.clear();
@@ -904,6 +968,18 @@ private:
     } else if (s.type == "check_marker") {
       drive_done_ = true;
       setModeThen(Mode::READ_MARKER, [this]() {beginWatch();});
+    } else if (s.type == "measure_box") {
+      // ① 팔 place_box.arm_pose → ② place_box.mode → ③ tickMeasureBox (settle → measure → 결과)
+      drive_done_ = true;
+      pb_requested_ = false;
+      sendArmPose(place_box_arm_pose_);
+    } else if (s.type == "skill" && needsBoxMeasure(idx)) {
+      // 이 장소 첫 꺼내기 (퍽을 쥐기 전) 앞에서 한 번 상자 재기
+      const std::string L = steps_[idx + 1].args[1].substr(6, 2);
+      box_attempted_.insert(L);
+      steps_.insert(steps_.begin() + static_cast<std::ptrdiff_t>(idx), parseStep("measure_box " + L));
+      enterStep(idx);
+      return;
     } else if (s.type == "skill" && needsMarkerCheck(s)) {
       // 이 장소 첫 놓기 앞에서 한 번 장소 태그 확인 (marker.check_before_place)
       const std::string L = s.args[1].substr(6, 2);
@@ -916,7 +992,8 @@ private:
       (on_drive ? arm_done_ : drive_done_) = true;
       const uint8_t mode = s.mode_text.empty() ?
         static_cast<uint8_t>(Mode::SEARCH_FRONT | Mode::ARM_ALIGN) : *parseModeNames(s.mode_text);
-      const Step step = s;
+      Step step = s;
+      measuredPlace(step);   // 잰 장소면 place_<L>_* -> place_at:<frame>:x:y:z (#73)
       setModeThen(mode, [this, step]() {sendSkill(step);});
     }
   }
@@ -941,6 +1018,8 @@ private:
       setModeThen(mode, [this]() {beginWatch();});
     } else if (s.type == "survey_view" && phase_ == 1) {
       setModeThen(*parseModeNames(survey_mode_text_), [this]() {beginWatch();});
+    } else if (s.type == "measure_box" && phase_ == 1) {
+      setModeThen(*parseModeNames(place_box_mode_text_), [this]() {beginWatch();});
     } else if (s.type == "approach") {
       switch (phase_) {
         case 1:  // STOW 완료 → 전방 탐색만 켜고 먼 거리 정렬 (drive는 ARM_ALIGN 비트가 없으면 먼 거리 모드)
@@ -964,7 +1043,8 @@ private:
   bool isSequenced() const
   {
     const auto & t = steps_[step_idx_].type;
-    return t == "search" || t == "approach" || t == "observe" || t == "verify" || t == "survey_view";
+    return t == "search" || t == "approach" || t == "observe" || t == "verify" || t == "survey_view" ||
+           t == "measure_box";
   }
 
   void stepSucceeded()
@@ -1214,6 +1294,119 @@ private:
     return static_cast<int>(marker_ids_[place[1] - '1']);
   }
 
+  // ------------------------------------------------------------------ 장소 상자 재기 (#73)
+  // pallet_unload_* 이고 다음 단계가 아직 재지 않은 장소의 place_<L>_* 면 true (퍽을 쥐기 전에 잼)
+  bool needsBoxMeasure(size_t idx) const
+  {
+    if (!plan_mode_ || !place_box_enabled_ || idx + 1 >= steps_.size()) {return false;}
+    const Step & s = steps_[idx];
+    const Step & n = steps_[idx + 1];
+    if (s.args.size() < 2 || s.args[0] != "manipulator" || s.args[1].rfind("pallet_unload_", 0) != 0) {return false;}
+    if (n.type != "skill" || n.args.size() < 2 || n.args[0] != "manipulator" || n.args[1].rfind("place_L", 0) != 0 ||
+      n.args[1].size() < 8)
+    {
+      return false;
+    }
+    const std::string L = n.args[1].substr(6, 2);
+    return place_centers_.count(L) > 0 && box_attempted_.count(L) == 0;
+  }
+
+  void tickMeasureBox()
+  {
+    if (!watching_) {return;}
+    if (!pb_requested_) {
+      if ((now() - view_since_).seconds() < place_box_settle_) {return;}
+      pb_requested_ = true;
+      pb_request_t_ = now();
+      callTrigger(place_box_client_, "/perception/place_box/measure", [this](bool ok, const std::string & msg) {
+          if (!ok) {measureBoxFailed("measure: " + msg);}
+        });
+      return;
+    }
+    std::string status;
+    geometry_msgs::msg::PoseStamped::ConstSharedPtr pose;
+    {
+      std::lock_guard<std::mutex> lock(sensor_mutex_);
+      if (pb_status_ && pb_status_rx_ >= pb_request_t_) {status = pb_status_->data;}
+      if (pb_pose_ && pb_pose_rx_ >= pb_request_t_) {pose = pb_pose_;}
+    }
+    if (status.empty()) {return;}
+    if (status.find("\"ok\": true") == std::string::npos) {measureBoxFailed("status " + status); return;}
+    if (!pose) {return;}   // status 가 상자 자세보다 먼저 옴
+    const std::string L = steps_[step_idx_].args[0];
+    const auto & center = place_centers_.at(L);
+    BoxMeas m;
+    m.frame = pose->header.frame_id;
+    m.cx = pose->pose.position.x;
+    m.cy = pose->pose.position.y;
+    m.z = pose->pose.position.z;
+    double map_x = 0.0, map_y = 0.0, map_yaw_in_frame = 0.0;
+    try {   // 잰 frame (odom) <-> 지도: 지도 x 축이 잰 frame 에서 어느 방향인지, 잰 중심이 지도 칸에서 얼마나 떨어졌는지
+      const auto t = tf_buffer_->lookupTransform(map_frame_, m.frame, tf2::TimePointZero);
+      const double yaw = tf2::getYaw(t.transform.rotation);   // 잰 frame -> 지도 회전
+      map_x = t.transform.translation.x + std::cos(yaw) * m.cx - std::sin(yaw) * m.cy;
+      map_y = t.transform.translation.y + std::sin(yaw) * m.cx + std::cos(yaw) * m.cy;
+      map_yaw_in_frame = -yaw;
+    } catch (const tf2::TransformException & e) {
+      measureBoxFailed(std::string("tf ") + map_frame_ + " <- " + m.frame + ": " + e.what());
+      return;
+    }
+    const double shift = std::hypot(map_x - center.first, map_y - center.second);
+    // 상자 요는 90° 마다 같음: 지도 축에서 ±45° 안으로 접은 만큼만 돌림 (주사위 '위' = 지도 +Y 유지)
+    double d = tf2::getYaw(pose->pose.orientation) - map_yaw_in_frame;
+    d -= (M_PI / 2) * std::round(d / (M_PI / 2));
+    m.axis = map_yaw_in_frame + d;
+    std::ostringstream o;
+    o << std::fixed << std::setprecision(4) << "\"place\": \"" << L << "\", \"frame\": \"" << m.frame << "\", \"center\": [" << m.cx
+      << ", " << m.cy << ", " << m.z << "], \"map\": [" << map_x << ", " << map_y << "], \"shift\": " << shift
+      << ", \"rot_deg\": " << d * 180.0 / M_PI << ", \"status\": " << status;
+    if (shift > place_box_max_shift_) {
+      logEvent("measure_box", o.str() + ", \"ok\": false");
+      measureBoxFailed("box " + std::to_string(shift) + " m from map cell (> place_box.max_shift)");
+      return;
+    }
+    box_meas_[L] = m;
+    logEvent("measure_box", o.str() + ", \"ok\": true");
+    RCLCPP_INFO(get_logger(), "measure_box %s: 지도 칸에서 %.3f m, %.1f° 돎", L.c_str(), shift, d * 180.0 / M_PI);
+    stepSucceeded();
+  }
+
+  // 측정 실패: place_box.required 면 단계 실패 (재시도), 아니면 기록하고 지도 좌표로 진행
+  void measureBoxFailed(const std::string & why)
+  {
+    const std::string L = steps_[step_idx_].args[0];
+    box_meas_.erase(L);
+    if (place_box_required_) {failStep("measure_box " + L + ": " + why); return;}
+    RCLCPP_WARN(get_logger(), "measure_box %s 실패 -> 지도 좌표로 놓음: %s", L.c_str(), why.c_str());
+    logEvent("measure_box", "\"place\": \"" + L + "\", \"ok\": false, \"fallback\": \"map\", \"why\": \"" + escape(why) + "\"");
+    stepSucceeded();
+  }
+
+  // 잰 장소의 place_<L>_<dx>_<dy>_tilt -> place_at:<frame>:x:y:z (z = 잰 윗면 높이)
+  void measuredPlace(Step & step) const
+  {
+    if (step.args.size() < 2 || step.args[0] != "manipulator") {return;}
+    std::vector<std::string> f;
+    std::stringstream ss(step.args[1]);
+    for (std::string t; std::getline(ss, t, '_');) {f.push_back(t);}
+    if (f.size() < 4 || f[0] != "place") {return;}
+    const auto m = box_meas_.find(f[1]);
+    if (m == box_meas_.end()) {return;}
+    auto idx = [](const std::string & v) -> std::optional<int> {
+        if (v == "m1") {return -1;}
+        if (v == "0") {return 0;}
+        if (v == "p1") {return 1;}
+        return std::nullopt;
+      };
+    const auto dx = idx(f[2]), dy = idx(f[3]);
+    if (!dx || !dy) {return;}
+    const auto p = m->second.cell(*dx * kGrid, *dy * kGrid);
+    std::ostringstream o;
+    o << std::fixed << std::setprecision(4) << "place_at:" << m->second.frame << ":" << p.first << ":" << p.second << ":" << m->second.z;
+    RCLCPP_INFO(get_logger(), "%s -> %s (잰 상자)", step.args[1].c_str(), o.str().c_str());
+    step.args[1] = o.str();
+  }
+
   // place_<L>_* skill 이고 그 장소를 아직 확인하지 않았으면 true
   bool needsMarkerCheck(const Step & s) const
   {
@@ -1333,11 +1526,20 @@ private:
     auto req = std::make_shared<CheckDice::Request>();
     req->header.frame_id = map_frame_;
     const double cx = std::stod(s.args[1]), cy = std::stod(s.args[2]), z = std::stod(s.args[3]);
+    const auto meas = box_meas_.find(s.args[0]);   // 잰 장소면 그 상자 기준 칸 (#73)
+    if (meas != box_meas_.end()) {req->header.frame_id = meas->second.frame;}
     for (int k = 0; k < 9; ++k) {
       const int r = k / 3, c = k % 3;          // 위 줄 (+Y) 부터, 줄 안은 -X 부터
-      req->cells[k].x = cx + (c - 1) * 0.06;
-      req->cells[k].y = cy + (1 - r) * 0.06;
-      req->cells[k].z = z;
+      if (meas != box_meas_.end()) {
+        const auto p = meas->second.cell((c - 1) * kGrid, (1 - r) * kGrid);
+        req->cells[k].x = p.first;
+        req->cells[k].y = p.second;
+        req->cells[k].z = meas->second.z - (place_top_z_ - z);   // 계획기 z (지도 윗면 아래 0.03) 를 잰 윗면 기준으로
+      } else {
+        req->cells[k].x = cx + (c - 1) * kGrid;
+        req->cells[k].y = cy + (1 - r) * kGrid;
+        req->cells[k].z = z;
+      }
       req->expect[k] = static_cast<uint8_t>(s.args[4][k] - '0');
     }
     req->yellow_shape = static_cast<uint8_t>(std::stoi(s.args[5]));
@@ -1741,6 +1943,33 @@ private:
   bool verify_check_marker_{true}, marker_check_before_place_{false};
   double verify_marker_wait_{3.0};
   std::set<std::string> marker_checked_;   // 놓기 전 태그를 확인한 장소 (미션마다 초기화)
+  // 장소 상자 재기 (#73)
+  struct BoxMeas
+  {
+    std::string frame;                 // 잰 frame (perception odom)
+    double cx{0.0}, cy{0.0}, z{0.0};   // 윗면 중심 · 높이
+    double axis{0.0};                  // 지도 +X 에 해당하는 상자 축 방향 (frame 기준, 상자가 돈 만큼 포함)
+    // 지도 축 칸 오프셋 (ox, oy) -> frame 좌표
+    std::pair<double, double> cell(double ox, double oy) const
+    {
+      const double c = std::cos(axis), s = std::sin(axis);
+      return {cx + c * ox - s * oy, cy + s * ox + c * oy};
+    }
+  };
+  static constexpr double kGrid = 0.06;        // 3 x 3 칸 간격 (발제)
+  static constexpr double place_top_z_ = 0.07; // 계획기 지도 윗면 높이 (verify z 는 이보다 0.03 아래 = 퍽 바닥 위 0.03)
+  bool place_box_enabled_{true}, place_box_required_{false}, pb_requested_{false};
+  std::string place_box_arm_pose_, place_box_mode_text_;
+  double place_box_settle_{0.5}, place_box_max_shift_{0.10};
+  std::map<std::string, std::pair<double, double>> place_centers_;   // L -> 지도 격자 중심
+  std::set<std::string> box_attempted_;                              // 잰 (또는 재려 한) 장소
+  std::map<std::string, BoxMeas> box_meas_;
+  rclcpp::Client<Trigger>::SharedPtr place_box_client_;
+  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pb_pose_sub_;
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr pb_status_sub_;
+  geometry_msgs::msg::PoseStamped::ConstSharedPtr pb_pose_;
+  std_msgs::msg::String::ConstSharedPtr pb_status_;
+  rclcpp::Time pb_pose_rx_{0, 0, RCL_ROS_TIME}, pb_status_rx_{0, 0, RCL_ROS_TIME}, pb_request_t_{0, 0, RCL_ROS_TIME};
   bool survey_enabled_{false};
   std::vector<int64_t> survey_boxes_;
   std::vector<double> survey_poses_;

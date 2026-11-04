@@ -20,7 +20,8 @@
 //   정책이 로드돼 있으면 정책을, 없으면 아래 고정 동작을 쓴다 (강화학습은 IK 대체 경로를 항상 유지)
 //     toppick_tilt                   박스 위 퍽을 집게 45° 로 집기 (pick 과 같은 과정, 기울기만 toppick.pitch)
 //     pallet_load_<열>_<칸>_tilt      쥔 퍽을 팔레트 칸에 놓기 = pallet_place_traj.json 의 칸 궤적 (3 열 쥔 구간 0.4 rad/s, #75)
-//     pallet_unload_<열>_<칸>_tilt    팔레트 칸의 퍽을 집어 들기 = 같은 궤적, 그리퍼만 반대 (0.8 rad/s)
+//     pallet_unload_<열>_<칸>_tilt    팔레트 칸의 퍽을 집어 들기 = 놓기 궤적 거꾸로 (빈 집게로 rotate_back · return · retract 거꾸로
+//                                     → 0.3 s → 쥠 → place · carry · rotate 거꾸로 → q_front, 0.8 rad/s, Isaac pallet_unload 24/24)
 //     place_<L>_<dx>_<dy>_tilt        쥔 퍽을 장소 L 의 3×3 칸 (dx, dy = m1 · 0 · p1) 에 45° 로 놓기.
 //                                    칸 좌표 = mission_planner config/approach_poses.yaml cells (지도) → TF 로 팔 기준
 //     place_at:<frame>:<x>:<y>:<z>   쥔 퍽을 칸 좌표 (frame 기준 x, y, 윗면 높이 z) 에 놓기 — perception place_box 칸 (#74)
@@ -286,6 +287,9 @@ private:
     pallet_speed_ = declare_parameter<double>("pallet.speed", 0.8);              // rad/s (#75)
     pallet_row3_hold_speed_ = declare_parameter<double>("pallet.row3_hold_speed", 0.4);   // 3 열 쥔 구간 (#75)
     pallet_require_held_ = declare_parameter<bool>("pallet.require_held", true);
+    // 칸 안에서 벌리는 폭: 끝까지 열면 손가락이 칸 벽에 닿음 (Isaac FINGER_RELEASED 37.6 mm). 기본 = gripper.open_position
+    pallet_release_ = declare_parameter<double>("pallet.release_position", gripper_open_);
+    pallet_dwell_ = declare_parameter<double>("pallet.place_dwell", 0.3);   // 놓는 자세에서 벌리기 · 쥐기 전 머묾 (처짐 가라앉음)
     // place_<L>_*: 칸 좌표표 (빈 문자열 = <mission_planner share>/config/approach_poses.yaml), 칸 좌표 frame
     place_cells_file_ = declare_parameter<std::string>("place.cells_file", "");
     place_cells_frame_ = declare_parameter<std::string>("place.cells_frame", "map");
@@ -395,7 +399,9 @@ private:
           seg.q = g["q"].as<std::vector<std::vector<double>>>();
           segs.push_back(seg);
         }
-        pallet_[{slot["row"].as<int>(), slot["index"].as<int>()}] = segs;
+        const std::pair<int, int> key{slot["row"].as<int>(), slot["index"].as<int>()};
+        pallet_[key] = segs;
+        if (slot["q_front"]) {pallet_front_[key] = slot["q_front"].as<std::vector<double>>();}   // 꺼내기 끝 자세
       }
       RCLCPP_INFO(get_logger(), "pallet: %zu slot(s) from %s", pallet_.size(), file.c_str());
     } catch (const std::exception & e) {
@@ -515,6 +521,10 @@ private:
     requireNonNegative("pick.grasp_z_offset", grasp_z_offset_);
     requirePositive("pallet.speed", pallet_speed_);
     requirePositive("pallet.row3_hold_speed", pallet_row3_hold_speed_);
+    requireNonNegative("pallet.place_dwell", pallet_dwell_);
+    if (gripper_mode_ == GripperMode::ARM_JOINT && !(pallet_release_ >= gripper_open_ && pallet_release_ < gripper_close_)) {
+      throw std::invalid_argument("pallet.release_position must be in [gripper.open_position, gripper.close_position)");
+    }
     requireNonNegative("place.surface_height", place_surface_height_);
     requirePositive("place.puck_half_height", puck_half_height_);
     requireNonNegative("place.clearance", place_clearance_);
@@ -1693,19 +1703,41 @@ private:
         return;
       }
     }
-    std::vector<const PalletSegment *> in, out;
-    bool released = false;
-    for (const auto & seg : it->second) {
-      if (seg.name == "release") {released = true; continue;}
-      (released ? out : in).push_back(&seg);
+    // 구간 경유점 (Isaac pallet_place_check.py timeline · timeline_unload 와 같은 순서, #75)
+    //   놓기: rotate → carry → place (쥠) → 머묾 → 벌림 → retract → return → rotate_back
+    //   꺼내기: rotate_back · return · retract 거꾸로 → release (벌린 채) → 머묾 → 쥠 → place · carry · rotate 거꾸로 → q_front
+    const auto & segs = it->second;
+    auto find = [&segs](const std::string & n) -> const PalletSegment * {
+        for (const auto & g : segs) {if (g.name == n) {return &g;}}
+        return nullptr;
+      };
+    std::vector<std::vector<double>> in, out;
+    std::string missing;
+    auto add = [&](std::vector<std::vector<double>> & dst, const std::string & n, bool reversed) {
+        const auto * g = find(n);
+        if (!g) {missing += (missing.empty() ? "" : ", ") + n; return;}
+        if (reversed) {dst.insert(dst.end(), g->q.rbegin(), g->q.rend());} else {dst.insert(dst.end(), g->q.begin(), g->q.end());}
+      };
+    if (load) {
+      add(in, "rotate", false); add(in, "carry", false); add(in, "place", false);
+      add(out, "retract", false); add(out, "return", false); add(out, "rotate_back", false);
+    } else {
+      add(in, "rotate_back", true); add(in, "return", true); add(in, "retract", true); add(in, "release", false);
+      add(out, "place", true); add(out, "carry", true); add(out, "rotate", true);
+      const auto f = pallet_front_.find({row, index});
+      if (f != pallet_front_.end()) {out.push_back(f->second);} else if (!transit_tilt_.empty()) {out.push_back(transit_tilt_);}
     }
-    // 쥔 구간 속도: 놓기의 3 열만 0.4 rad/s (#75), 나머지 0.8
+    if (!missing.empty()) {
+      finishSkill(false, "pallet: segment(s) missing in traj_file: " + missing);
+      return;
+    }
+    // 속도: 놓기의 3 열 쥔 구간만 0.4 rad/s, 나머지 (빈 집게 · 꺼내기 전부) 0.8 (#75)
     const double in_speed = (load && row == 3) ? pallet_row3_hold_speed_ : pallet_speed_;
-    const double out_speed = (!load && row == 3) ? pallet_row3_hold_speed_ : pallet_speed_;
-    const double in_grip = load ? gripper_close_ : gripper_open_;
-    const double out_grip = load ? gripper_open_ : gripper_close_;
+    const double out_speed = pallet_speed_;
+    const double in_grip = load ? gripper_close_ : pallet_release_;
+    const double out_grip = load ? pallet_release_ : gripper_close_;
     if (gripper_mode_ == GripperMode::ARM_JOINT) {gripper_cmd_ = in_grip;}
-    sendSegments(in, in_speed, in_grip, [this, out, out_speed, out_grip, load](bool ok, const std::string & msg) {
+    sendWaypoints(in, in_speed, in_grip, pallet_dwell_, [this, out, out_speed, out_grip, load](bool ok, const std::string & msg) {
         if (!ok) {
           finishSkill(false, "pallet approach: " + msg);
           return;
@@ -1716,7 +1748,7 @@ private:
               return;
             }
             auto leave = [this, out, out_speed, out_grip, load]() {
-                sendSegments(out, out_speed, out_grip, [this, load](bool lok, const std::string & lmsg) {
+                sendWaypoints(out, out_speed, out_grip, 0.0, [this, load](bool lok, const std::string & lmsg) {
                     finishSkill(lok, lok ? (load ? "loaded" : "unloaded") : "pallet leave: " + lmsg);
                   });
               };
@@ -1736,9 +1768,9 @@ private:
       });
   }
 
-  // 구간 경유점을 한 궤적으로. 경유점 사이 시간 = 관절 변화 최대값 / speed, 첫 점은 지금 자세에서 출발
-  void sendSegments(
-    const std::vector<const PalletSegment *> & segs, double speed, double grip, Done done)
+  // 경유점을 한 궤적으로. 경유점 사이 시간 = 관절 변화 최대값 / speed, 첫 점은 지금 자세에서 출발, 끝에서 dwell 초 머묾
+  void sendWaypoints(
+    const std::vector<std::vector<double>> & qs, double speed, double grip, double dwell, Done done)
   {
     const auto current = currentJoints();
     if (!current) {
@@ -1748,34 +1780,38 @@ private:
     std::vector<trajectory_msgs::msg::JointTrajectoryPoint> points;
     std::vector<double> prev = *current;
     double t = 0.0;
-    for (const auto * seg : segs) {
-      for (const auto & q5 : seg->q) {
-        if (q5.size() != 5) {
-          done(false, "pallet: waypoint must have 5 joints (" + seg->name + ")");
-          return;
-        }
-        std::vector<double> q(q5.begin(), q5.end());
-        q.push_back(gripper_mode_ == GripperMode::ARM_JOINT ? grip : sixthValue(*current));
-        if (!withinLimits(q)) {
-          done(false, "pallet: waypoint outside joint limits (" + seg->name + ")");
-          return;
-        }
-        double max_delta = 0.0;
-        for (size_t j = 0; j < 5; ++j) {max_delta = std::max(max_delta, std::abs(q[j] - prev[j]));}
-        // 첫 점은 지금 자세에서 오는 거리라 arm.min_duration 이상
-        t += points.empty() ? std::max(min_duration_, max_delta / speed) : std::max(0.02, max_delta / speed);
-        trajectory_msgs::msg::JointTrajectoryPoint point;
-        point.positions = q;
-        point.time_from_start = rclcpp::Duration::from_seconds(t);
-        points.push_back(point);
-        prev = q;
+    for (const auto & q5 : qs) {
+      if (q5.size() != 5) {
+        done(false, "pallet: waypoint must have 5 joints");
+        return;
       }
+      std::vector<double> q(q5.begin(), q5.end());
+      q.push_back(gripper_mode_ == GripperMode::ARM_JOINT ? grip : sixthValue(*current));
+      if (!withinLimits(q)) {
+        done(false, "pallet: waypoint outside joint limits");
+        return;
+      }
+      double max_delta = 0.0;
+      for (size_t j = 0; j < 5; ++j) {max_delta = std::max(max_delta, std::abs(q[j] - prev[j]));}
+      // 첫 점은 지금 자세에서 오는 거리라 arm.min_duration 이상
+      t += points.empty() ? std::max(min_duration_, max_delta / speed) : std::max(0.02, max_delta / speed);
+      trajectory_msgs::msg::JointTrajectoryPoint point;
+      point.positions = q;
+      point.time_from_start = rclcpp::Duration::from_seconds(t);
+      points.push_back(point);
+      prev = q;
     }
     if (points.empty()) {
       done(false, "pallet: empty trajectory");
       return;
     }
     points.back().velocities.assign(points.back().positions.size(), 0.0);
+    if (dwell > 0.0) {   // 같은 자리 한 점 더 = 머묾
+      auto hold = points.back();
+      t += dwell;
+      hold.time_from_start = rclcpp::Duration::from_seconds(t);
+      points.push_back(hold);
+    }
     sendTrajectory(points, t, done);
   }
 
@@ -1888,6 +1924,8 @@ private:
   double pallet_speed_{0.8}, pallet_row3_hold_speed_{0.4};
   bool pallet_require_held_{true};
   std::map<std::pair<int, int>, std::vector<PalletSegment>> pallet_;   // (열, 칸) → 구간
+  std::map<std::pair<int, int>, std::vector<double>> pallet_front_;    // (열, 칸) → 앞 운반 자세 q_front (5 관절)
+  double pallet_release_{-0.764}, pallet_dwell_{0.3};
   std::vector<double> transit_tilt_;                                   // 팔레트 궤적 이동 자세 (5 관절)
   std::string place_cells_file_, place_cells_frame_, floor_frame_;
   std::map<std::string, std::pair<double, double>> place_cells_;      // "L1/-1,0" → (x, y)

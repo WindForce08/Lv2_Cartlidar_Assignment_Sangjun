@@ -31,6 +31,7 @@
 | /perception/rear_obstacle · `/reason` · `/distance` | std_msgs/Bool · String · Float32 | Reliable + TransientLocal (distance 기본) | rear_obstacle (뒤 D435 깊이, perception.launch `use_rear_obstacle`) | (없음 — 후진 판단에 쓸지 결정 필요) |
 | /localization/status | std_msgs/String | Reliable + TransientLocal | loc_monitor (localization 패키지, 10 Hz · 바뀔 때: OK · SUSPECT · LOST · RECOVERING · CONFIRM · FAILED) | perception_survey (OK 일 때만 관측을 받음, 1 s 넘게 못 받으면 그대로 받음) |
 | /localization/lock | std_msgs/Bool | Reliable + TransientLocal | loc_monitor (OK · SUSPECT 가 아니면 true) | (없음 — twist_mux lock 연결 #93) |
+| /perception/place_box · `/cells` · `/status` | geometry_msgs/PoseStamped · PoseArray · std_msgs/String (JSON) | Reliable + TransientLocal | perception_node (`/perception/place_box/measure` Trigger 뒤, 팔 영상, odom) | mission (measure_box, #73: place_at · verify 칸) |
 | /perception/obstacle_stop | std_msgs/Bool | Reliable + TransientLocal, 10 Hz | obstacle_stop (`/tfmini/range` 판정) | twist_mux (lock priority 60, 0.5 s: drive · nav 막음, 조이스틱 통과) |
 | /perception/obstacle_stop/reason | std_msgs/String | Reliable + TransientLocal | obstacle_stop (obstacle · too_close · stale · clear · no_return) | 모니터링 |
 | /tfmini/scan | sensor_msgs/LaserScan | SensorData | Gazebo (gz_bridge) | scan_to_range → /tfmini/range |
