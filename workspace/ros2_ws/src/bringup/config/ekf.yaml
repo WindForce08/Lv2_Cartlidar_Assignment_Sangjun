@@ -7,10 +7,10 @@ ekf_filter_node:
     odom_frame: odom
     base_link_frame: base_link
     world_frame: odom
-    odom0: /odom
+    odom0: /odom_icr             # bringup odom_icr = /odom + 회전 중심 옆 이동 vy = −icr_x·ω (#92, robot_geometry.yaml base.icr_x)
     odom0_config: [false, false, false,  false, false, false,
-                   true,  false, false,  false, false, false,
-                   false, false, false]   # vx 만 — 스키드 회전 때 바퀴가 미끄러져 회전 속도는 부정확
+                   true,  true,  false,  false, false, false,
+                   false, false, false]   # vx · vy — 스키드 회전 때 바퀴가 미끄러져 회전 속도는 부정확 (vy 의 ω 는 IMU)
     imu0: /imu/data
     imu0_config: [false, false, false,  false, false, false,
                   false, false, false,  false, false, true,

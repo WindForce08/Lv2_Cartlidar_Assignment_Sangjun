@@ -36,7 +36,16 @@ def _setup(context):
         raise RuntimeError(f'drive 는 direct 또는 belt: {drive}')
     backend = _backend(context)
     obstacle_lock = LaunchConfiguration('obstacle_lock').perform(context).lower() == 'true'
+    loc_lock = LaunchConfiguration('loc_lock').perform(context).lower() == 'true'
     clock = {'use_sim_time': backend == 'isaac'}   # Isaac 이면 /clock (브리지 발행)
+    # twist_mux 잠금: twist_mux.yaml 은 e_stop 만. 내는 노드가 있을 때만 여기서 붙인다 (끊겨도 잠기는 잠금이라)
+    locks = {}
+    if obstacle_lock:   # TFmini 비상 정지 (perception obstacle_stop): drive · nav 를 막고 조이스틱은 통과
+        locks.update({'locks.obstacle.topic': '/perception/obstacle_stop', 'locks.obstacle.timeout': 0.5,
+                      'locks.obstacle.priority': 60})
+    if loc_lock:        # 위치 잃음 (localization loc_monitor, #93): nav 만 막고 drive · 조이스틱은 통과
+        locks.update({'locks.localization.topic': '/localization/lock', 'locks.localization.timeout': 0.5,
+                      'locks.localization.priority': 20})
     robot_description = ParameterValue(Command([
         'xacro ', PathJoinSubstitution([pkg, 'urdf', 'robot.urdf.xacro']),
         ' wheel_count:=', wheel_count,
@@ -68,8 +77,7 @@ def _setup(context):
         Node(package='robot_state_publisher', executable='robot_state_publisher', output='screen',
              parameters=[{'robot_description': robot_description}, clock]),
         Node(package='twist_mux', executable='twist_mux', output='screen',
-             parameters=[PathJoinSubstitution([pkg, 'config', 'twist_mux.yaml' if obstacle_lock else 'twist_mux_no_obstacle.yaml']),
-                         clock],
+             parameters=[PathJoinSubstitution([pkg, 'config', 'twist_mux.yaml']), locks, clock],
              remappings=[('cmd_vel_out', '/cmd_vel')]),
     ]
     # mock: /e_stop 을 내는 쪽 (실물 OpenCRHardware · Isaac 브리지) 이 없어 twist_mux 가 잠긴 채 → 대신 false 10 Hz.
@@ -113,6 +121,9 @@ def generate_launch_description():
                                           '(e_stop 시험 때 false). 실물에서는 무시'),
         DeclareLaunchArgument('obstacle_lock', default_value='true',
                               description='twist_mux 에 TFmini 비상 정지 lock (/perception/obstacle_stop). TFmini 가 없으면 false — 안 그러면 drive · nav 가 늘 잠김'),
+        DeclareLaunchArgument('loc_lock', default_value='false',
+                              description='twist_mux 에 위치 잃음 lock (/localization/lock, #93). localization (loc_monitor) 을 같이 띄울 때만 true '
+                                          '— 없이 true 면 nav 가 늘 잠김'),
 
         OpaqueFunction(function=_setup),
     ])

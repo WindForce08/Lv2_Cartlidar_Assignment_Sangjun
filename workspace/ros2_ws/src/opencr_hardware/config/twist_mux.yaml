@@ -7,7 +7,9 @@ twist_mux:
       nav:    {topic: cmd_vel_nav,    timeout: 0.5,  priority: 10}    # nav2 체인의 마지막 출력만 (collision_monitor)
     locks:
       e_stop: {topic: e_stop, timeout: 0.5, priority: 255}            # OpenCRHardware 가 10 Hz 로 발행 — 끊겨도 잠김
-      # TFmini 비상 정지 (obstacle_stop, 10 Hz): drive(50) · nav(10) 를 막고 조이스틱(100)은 통과. 끊겨도 잠김.
-      #   drive FINE 정렬 동안은 obstacle_stop 정지 거리가 "목표 − 여유"로 내려가 박스 앞까지 다가갈 수 있다
-      #   TFmini 가 없는 실행(시뮬레이션 · use_tfmini:=false)은 twist_mux_no_obstacle.yaml (base_bringup obstacle_lock:=false)
-      obstacle: {topic: /perception/obstacle_stop, timeout: 0.5, priority: 60}
+      # 아래 두 잠금은 그것을 내는 노드가 있을 때만 base_bringup.launch.py 가 붙인다 (끊겨도 잠기므로, 없는 실행에서 붙이면 늘 잠김)
+      #   obstacle     (obstacle_lock:=true, bringup use_tfmini): /perception/obstacle_stop, priority 60
+      #                TFmini 비상 정지 (obstacle_stop, 10 Hz). drive(50) · nav(10) 를 막고 조이스틱(100)은 통과.
+      #                drive FINE 정렬 동안은 obstacle_stop 정지 거리가 "목표 − 여유"로 내려가 박스 앞까지 다가갈 수 있다
+      #   localization (loc_lock:=true, bringup use_loc_lock): /localization/lock, priority 20 (#93)
+      #                localization loc_monitor (10 Hz) 가 위치를 잃으면 (OK · SUSPECT 아님) true. nav(10)만 막고 drive(50) · 조이스틱은 통과

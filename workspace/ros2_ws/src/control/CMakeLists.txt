@@ -64,7 +64,8 @@ ament_export_include_directories(include/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
-  ament_add_gtest(test_control_logic test/test_fsm.cpp test/test_align.cpp test/test_ik.cpp test/test_turn.cpp)
+  ament_add_gtest(test_control_logic test/test_fsm.cpp test/test_align.cpp test/test_ik.cpp test/test_turn.cpp
+    test/test_target_look_pose.cpp)
   target_link_libraries(test_control_logic arm_ik)
   # manipulator.yaml 한계 · 자세 · 팔레트 궤적 = URDF 한계 (#83)
   ament_add_gtest(test_config_limits test/test_config_limits.cpp)
