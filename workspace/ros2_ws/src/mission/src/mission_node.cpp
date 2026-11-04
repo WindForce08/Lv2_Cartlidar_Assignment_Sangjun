@@ -253,8 +253,8 @@ private:
     base_frame_ = declare_parameter<std::string>("base_frame", "base_link");
     behavior_tree_ = declare_parameter<std::string>("behavior_tree", "");
 
-    // 위치표: locations.names = [home, station_A], locations.<name> = [x, y, yaw(rad)] (map 좌표)
-    // TODO(Mission): 현장에서 지도 작성 후 정할 것. home = slam_toolbox map_start_pose와 같은 값
+    // 위치표: locations.names = [home, L1, ...], locations.<name> = [x, y, yaw(rad)] (map = 발제 좌표, base_link 자세)
+    //   값은 mission_table.yaml (#30: 인지 파트 Nav2 모의로 확인한 목표, 배치가 바뀌면 다시 계산)
     const auto loc_names = declare_parameter<std::vector<std::string>>("locations.names", {"home"});
     for (const auto & n : loc_names) {
       const auto v = declare_parameter<std::vector<double>>("locations." + n, {0.0, 0.0, 0.0});
@@ -264,7 +264,7 @@ private:
       locations_[n] = v;
     }
 
-    // 미션표: missions.tag_ids = [7, 12], missions.tag_<id> = ["navigate station_A", "search", ...]
+    // 미션표: missions.tag_ids = [7, 12], missions.tag_<id> = ["navigate start_box_1", "search", ...]
     const auto tag_ids = declare_parameter<std::vector<int64_t>>("missions.tag_ids", std::vector<int64_t>{});
     for (int64_t id : tag_ids) {
       const auto lines = declare_parameter<std::vector<std::string>>(
