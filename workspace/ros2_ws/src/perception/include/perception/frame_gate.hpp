@@ -4,6 +4,9 @@
 //                  그대로 두면 재시작 뒤의 영상을 모두 버리게 된다.
 //   NearestCache : 컬러 영상과 stamp가 가장 가까운 깊이 영상을 찾는다. 허용 차이를 넘으면 없음.
 //                  컬러를 깊이 도착까지 기다리지 않는다(깊이가 늦거나 빠져도 컬러 처리가 멈추지 않음).
+//   pick_tf_frame: 최근 컬러 몇 장 중 촬영 시각의 차체 TF(odom → base)가 이미 온 가장 새 장을 고른다.
+//                  EKF 가 영상보다 조금(모의 0.008~0.025 s) 늦게 나와, 가장 새 장은 그 시각 TF 가 아직 없는 때가 많다.
+//                  TF 가 없거나 멈췄거나 가장 새 장이 wait 보다 오래되면 가장 새 장(최근 TF 로 대신, lookup_near).
 #pragma once
 
 #include <cstdint>
@@ -11,6 +14,7 @@
 #include <deque>
 #include <optional>
 #include <utility>
+#include <vector>
 
 namespace perception
 {
@@ -82,5 +86,22 @@ private:
   size_t capacity_;
   std::deque<std::pair<int64_t, T>> items_;
 };
+
+// ns: 최근 컬러 stamp, 오래된 → 새 순. used_ns: 지난 결과에 쓴 stamp(그보다 오래된 장은 고르지 않음)
+// tf_latest_ns: odom → base 의 가장 최근 TF stamp(< 0 이면 TF 없음). 돌려준 값이 없으면 이번 주기는 기다린다
+inline std::optional<size_t> pick_tf_frame(
+  const std::vector<int64_t> & ns, int64_t used_ns, int64_t now_ns, int64_t tf_latest_ns, int64_t wait_ns)
+{
+  if (ns.empty()) {return std::nullopt;}
+  const size_t last = ns.size() - 1;
+  if (tf_latest_ns < 0 || tf_latest_ns >= ns[last] || now_ns - ns[last] >= wait_ns || ns[last] - tf_latest_ns >= wait_ns) {
+    return last;
+  }
+  for (size_t i = last; i-- > 0;) {
+    if (ns[i] < used_ns) {break;}
+    if (tf_latest_ns >= ns[i]) {return i;}
+  }
+  return std::nullopt;
+}
 
 }  // namespace perception
