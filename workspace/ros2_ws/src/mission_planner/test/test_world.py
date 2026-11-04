@@ -8,7 +8,8 @@ def test_maps(world):
     assert not nav.blocked(0.734, 0.95) and not amcl.blocked(0.734, 0.95)        # 출발 구역
     for b, (x, y) in START_BOXES.items():                                       # 박스 70 mm: 주행 지도엔 있음, AMCL 지도엔 없음 (스캔면 82 mm 아래)
         assert nav.blocked(x, y) and not amcl.blocked(x, y), b
-    assert nav.blocked(2.202, 3.5) and not amcl.blocked(2.202, 3.5)            # 중앙 받침대
+    assert nav.blocked(2.202, 3.7) and not amcl.blocked(2.202, 3.7)            # L2 상자 (205, 2026-11-04 확정)
+    assert not nav.blocked(2.202, 3.35)                                         # 예전 820 받침대 자리는 이제 빔
     assert nav.blocked(0.08, 0.95) and amcl.blocked(0.08, 0.95)                # 신호등 몸체 (스캔면 지남)
     assert amcl.blocked(1.101, 0.0) and nav.blocked(1.101, 0.0)                 # 남쪽 벽판
 

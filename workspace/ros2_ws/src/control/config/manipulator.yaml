@@ -108,6 +108,8 @@ manipulator_node:
       speed: 0.8                 # rad/s, 경유점 사이 관절 속도 (#75)
       row3_hold_speed: 0.4       # rad/s, 3 열에 놓을 때 쥔 구간 (#75)
       require_held: true         # pallet_load 전에 그리퍼가 퍽을 쥐고 있는지 확인
+      release_position: 0.0798   # rad = 2100 tick, 실측 36.4 mm (Isaac FINGER_RELEASED 37.6). 칸 안에서 놓을 때 · 꺼내러 들어갈 때 이만큼만 벌림 (끝까지 열면 칸 벽에 닿음, #75)
+      place_dwell: 0.3           # s, 놓는 자세에서 벌리기 · 쥐기 전 머묾 (Isaac 0.3)
     place:
       cells_file: ""             # 빈 문자열 = <mission_planner share>/config/approach_poses.yaml (L1~L3 cells, 지도 좌표)
       cells_frame: map           # 칸 좌표 frame (발제 원점 지도)

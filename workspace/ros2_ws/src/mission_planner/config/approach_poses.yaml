@@ -8,45 +8,45 @@ B1:S:
   note: ''
   final:
   - 1.468
-  - 0.6547
+  - 0.5875
   - 1.5708
   stage:
   - 1.468
   - 0.3647
   - 1.5708
   standoff: 0.35
-  gap: 0.06
-  final_clearance: 0.055
+  gap: 0.1272
+  final_clearance: 0.125
   stage_clearance: 0.12
   box: 1
   side: S
   inline: false
   pucks:
     -1:
-      dist: 0.2033
-      fwd: 0.1993
+      dist: 0.2695
+      fwd: 0.2665
       lat: 0.04
       turn_deg: 17.06
     1:
-      dist: 0.2033
-      fwd: 0.1993
+      dist: 0.2695
+      fwd: 0.2665
       lat: -0.04
       turn_deg: -17.06
-  turn_clearance: 0.015
+  turn_clearance: 0.08
 B1:N:
   kind: box
   ok: false
   note: final 외곽이 막힘
   final:
   - 1.468
-  - 1.2453
+  - 1.3125
   - -1.5708
   stage:
   - 1.468
   - 1.6353
   - -1.5708
   standoff: 0.45
-  gap: 0.06
+  gap: 0.1272
   final_clearance: 0.0
   stage_clearance: 0.165
   box: 1
@@ -54,13 +54,13 @@ B1:N:
   inline: false
   pucks:
     -1:
-      dist: 0.2033
-      fwd: 0.1993
+      dist: 0.2695
+      fwd: 0.2665
       lat: -0.04
       turn_deg: -17.06
     1:
-      dist: 0.2033
-      fwd: 0.1993
+      dist: 0.2695
+      fwd: 0.2665
       lat: 0.04
       turn_deg: 17.06
 B2:S:
@@ -69,38 +69,38 @@ B2:S:
   note: ''
   final:
   - 3.67
-  - 2.8567
+  - 2.7895
   - 1.5708
   stage:
   - 3.67
   - 2.4667
   - 1.5708
   standoff: 0.45
-  gap: 0.06
-  final_clearance: 0.055
+  gap: 0.1272
+  final_clearance: 0.125
   stage_clearance: 0.165
   box: 2
   side: S
   inline: false
   pucks:
     -1:
-      dist: 0.2033
-      fwd: 0.1993
+      dist: 0.2695
+      fwd: 0.2665
       lat: 0.04
       turn_deg: 17.06
     1:
-      dist: 0.2033
-      fwd: 0.1993
+      dist: 0.2695
+      fwd: 0.2665
       lat: -0.04
       turn_deg: -17.06
-  turn_clearance: 0.015
+  turn_clearance: 0.08
 B2:N:
   kind: box
   ok: false
   note: stage 외곽이 막힘 (standoff 를 줄여도)
   final:
   - 3.67
-  - 3.4473
+  - 3.5145
   - -1.5708
   stage:
   - 3.67
@@ -112,13 +112,13 @@ B2:N:
   inline: false
   pucks:
     -1:
-      dist: 0.2033
-      fwd: 0.1993
+      dist: 0.2695
+      fwd: 0.2665
       lat: -0.04
       turn_deg: -17.06
     1:
-      dist: 0.2033
-      fwd: 0.1993
+      dist: 0.2695
+      fwd: 0.2665
       lat: 0.04
       turn_deg: 17.06
 B3:S:
@@ -127,138 +127,138 @@ B3:S:
   note: ''
   final:
   - 2.936
-  - 5.0587
+  - 4.9915
   - 1.5708
   stage:
   - 2.936
   - 4.6687
   - 1.5708
   standoff: 0.45
-  gap: 0.06
-  final_clearance: 0.055
+  gap: 0.1272
+  final_clearance: 0.125
   stage_clearance: 0.165
   box: 3
   side: S
   inline: false
   pucks:
     -1:
-      dist: 0.2033
-      fwd: 0.1993
+      dist: 0.2695
+      fwd: 0.2665
       lat: 0.04
       turn_deg: 17.06
     1:
-      dist: 0.2033
-      fwd: 0.1993
+      dist: 0.2695
+      fwd: 0.2665
       lat: -0.04
       turn_deg: -17.06
-  turn_clearance: 0.015
+  turn_clearance: 0.08
 B3:N:
   kind: box
   ok: true
   note: ''
   final:
   - 2.936
-  - 5.6493
+  - 5.7165
   - -1.5708
   stage:
   - 2.936
   - 5.9393
   - -1.5708
   standoff: 0.35
-  gap: 0.06
-  final_clearance: 0.055
+  gap: 0.1272
+  final_clearance: 0.125
   stage_clearance: 0.12
   box: 3
   side: N
   inline: false
   pucks:
     -1:
-      dist: 0.2033
-      fwd: 0.1993
+      dist: 0.2695
+      fwd: 0.2665
       lat: -0.04
       turn_deg: -17.06
     1:
-      dist: 0.2033
-      fwd: 0.1993
+      dist: 0.2695
+      fwd: 0.2665
       lat: 0.04
       turn_deg: 17.06
-  turn_clearance: 0.015
+  turn_clearance: 0.08
 B4:S:
   kind: box
   ok: true
   note: ''
   final:
   - 0.734
-  - 5.0587
+  - 4.9915
   - 1.5708
   stage:
   - 0.734
   - 4.6687
   - 1.5708
   standoff: 0.45
-  gap: 0.06
-  final_clearance: 0.055
+  gap: 0.1272
+  final_clearance: 0.125
   stage_clearance: 0.165
   box: 4
   side: S
   inline: false
   pucks:
     -1:
-      dist: 0.2033
-      fwd: 0.1993
+      dist: 0.2695
+      fwd: 0.2665
       lat: 0.04
       turn_deg: 17.06
     1:
-      dist: 0.2033
-      fwd: 0.1993
+      dist: 0.2695
+      fwd: 0.2665
       lat: -0.04
       turn_deg: -17.06
-  turn_clearance: 0.015
+  turn_clearance: 0.08
 B4:N:
   kind: box
   ok: true
   note: ''
   final:
   - 0.734
-  - 5.6493
+  - 5.7165
   - -1.5708
   stage:
   - 0.734
   - 5.9393
   - -1.5708
   standoff: 0.35
-  gap: 0.06
-  final_clearance: 0.055
+  gap: 0.1272
+  final_clearance: 0.125
   stage_clearance: 0.12
   box: 4
   side: N
   inline: false
   pucks:
     -1:
-      dist: 0.2033
-      fwd: 0.1993
+      dist: 0.2695
+      fwd: 0.2665
       lat: -0.04
       turn_deg: -17.06
     1:
-      dist: 0.2033
-      fwd: 0.1993
+      dist: 0.2695
+      fwd: 0.2665
       lat: 0.04
       turn_deg: 17.06
-  turn_clearance: 0.015
+  turn_clearance: 0.08
 B5:S:
   kind: box
   ok: false
   note: final 외곽이 막힘
   final:
   - 2.202
-  - 5.0587
+  - 4.9915
   - 1.5708
   stage:
   - 2.202
   - 4.6687
   - 1.5708
   standoff: 0.45
-  gap: 0.06
+  gap: 0.1272
   final_clearance: 0.0
   stage_clearance: 0.165
   box: 5
@@ -266,13 +266,13 @@ B5:S:
   inline: false
   pucks:
     -1:
-      dist: 0.2033
-      fwd: 0.1993
+      dist: 0.2695
+      fwd: 0.2665
       lat: 0.04
       turn_deg: 17.06
     1:
-      dist: 0.2033
-      fwd: 0.1993
+      dist: 0.2695
+      fwd: 0.2665
       lat: -0.04
       turn_deg: -17.06
 B5:N:
@@ -281,38 +281,38 @@ B5:N:
   note: ''
   final:
   - 2.202
-  - 5.6493
+  - 5.7165
   - -1.5708
   stage:
   - 2.202
   - 5.9393
   - -1.5708
   standoff: 0.35
-  gap: 0.06
-  final_clearance: 0.055
+  gap: 0.1272
+  final_clearance: 0.125
   stage_clearance: 0.12
   box: 5
   side: N
   inline: false
   pucks:
     -1:
-      dist: 0.2033
-      fwd: 0.1993
+      dist: 0.2695
+      fwd: 0.2665
       lat: -0.04
       turn_deg: -17.06
     1:
-      dist: 0.2033
-      fwd: 0.1993
+      dist: 0.2695
+      fwd: 0.2665
       lat: 0.04
       turn_deg: 17.06
-  turn_clearance: 0.015
+  turn_clearance: 0.08
 B6:S:
   kind: box
   ok: false
   note: stage 외곽이 막힘 (standoff 를 줄여도)
   final:
   - 3.67
-  - 3.5907
+  - 3.5235
   - 1.5708
   stage:
   - 3.67
@@ -324,13 +324,13 @@ B6:S:
   inline: false
   pucks:
     -1:
-      dist: 0.2033
-      fwd: 0.1993
+      dist: 0.2695
+      fwd: 0.2665
       lat: 0.04
       turn_deg: 17.06
     1:
-      dist: 0.2033
-      fwd: 0.1993
+      dist: 0.2695
+      fwd: 0.2665
       lat: -0.04
       turn_deg: -17.06
 B6:N:
@@ -339,14 +339,14 @@ B6:N:
   note: final 외곽이 막힘
   final:
   - 3.67
-  - 4.1813
+  - 4.2485
   - -1.5708
   stage:
   - 3.67
   - 4.5713
   - -1.5708
   standoff: 0.45
-  gap: 0.06
+  gap: 0.1272
   final_clearance: 0.0
   stage_clearance: 0.165
   box: 6
@@ -354,13 +354,13 @@ B6:N:
   inline: false
   pucks:
     -1:
-      dist: 0.2033
-      fwd: 0.1993
+      dist: 0.2695
+      fwd: 0.2665
       lat: -0.04
       turn_deg: -17.06
     1:
-      dist: 0.2033
-      fwd: 0.1993
+      dist: 0.2695
+      fwd: 0.2665
       lat: 0.04
       turn_deg: 17.06
 B6:W:
@@ -368,7 +368,7 @@ B6:W:
   ok: true
   note: ''
   final:
-  - 3.3947
+  - 3.3075
   - 3.886
   - -0.0
   stage:
@@ -376,21 +376,21 @@ B6:W:
   - 3.886
   - -0.0
   standoff: 0.45
-  gap: 0.04
-  final_clearance: 0.035
-  stage_clearance: 0.155
+  gap: 0.1272
+  final_clearance: 0.125
+  stage_clearance: 0.165
   box: 6
   side: W
   inline: true
   pucks:
     -1:
-      dist: 0.1393
-      fwd: 0.1393
+      dist: 0.2265
+      fwd: 0.2265
       lat: 0.0
       turn_deg: 0.0
     1:
-      dist: 0.2193
-      fwd: 0.2193
+      dist: 0.3065
+      fwd: 0.3065
       lat: 0.0
       turn_deg: 0.0
 B6:E:
@@ -398,7 +398,7 @@ B6:E:
   ok: false
   note: stage 외곽이 막힘 (standoff 를 줄여도)
   final:
-  - 3.9453
+  - 4.0325
   - 3.886
   - -3.1416
   stage:
@@ -411,13 +411,13 @@ B6:E:
   inline: true
   pucks:
     -1:
-      dist: 0.2193
-      fwd: 0.2193
+      dist: 0.3065
+      fwd: 0.3065
       lat: -0.0
       turn_deg: 0.0
     1:
-      dist: 0.1393
-      fwd: 0.1393
+      dist: 0.2265
+      fwd: 0.2265
       lat: -0.0
       turn_deg: 0.0
 L1:
@@ -425,7 +425,7 @@ L1:
   ok: true
   note: ''
   final:
-  - 3.3747
+  - 3.3075
   - 0.95
   - -0.0
   stage:
@@ -433,72 +433,72 @@ L1:
   - 0.95
   - -0.0
   standoff: 0.45
-  gap: 0.06
-  final_clearance: 0.055
+  gap: 0.1272
+  final_clearance: 0.125
   stage_clearance: 0.165
   tag: 12
   cells:
     -1,-1:
       x: 3.61
       y: 0.89
-      dist: 0.1517
-      fwd: 0.1393
+      dist: 0.215
+      fwd: 0.2065
       lat: -0.06
       mode: tilt
     -1,0:
       x: 3.61
       y: 0.95
-      dist: 0.1393
-      fwd: 0.1393
+      dist: 0.2065
+      fwd: 0.2065
       lat: 0.0
       mode: tilt
     -1,1:
       x: 3.61
       y: 1.01
-      dist: 0.1517
-      fwd: 0.1393
+      dist: 0.215
+      fwd: 0.2065
       lat: 0.06
       mode: tilt
     0,-1:
       x: 3.67
       y: 0.89
-      dist: 0.2081
-      fwd: 0.1993
+      dist: 0.2732
+      fwd: 0.2665
       lat: -0.06
       mode: tilt
     0,0:
       x: 3.67
       y: 0.95
-      dist: 0.1993
-      fwd: 0.1993
+      dist: 0.2665
+      fwd: 0.2665
       lat: 0.0
       mode: tilt
     0,1:
       x: 3.67
       y: 1.01
-      dist: 0.2081
-      fwd: 0.1993
+      dist: 0.2732
+      fwd: 0.2665
       lat: 0.06
       mode: tilt
     1,-1:
       x: 3.73
       y: 0.89
-      dist: 0.2662
-      fwd: 0.2593
+      dist: 0.332
+      fwd: 0.3265
       lat: -0.06
       mode: tilt
     1,0:
       x: 3.73
       y: 0.95
-      dist: 0.2593
-      fwd: 0.2593
+      dist: 0.3265
+      fwd: 0.3265
       lat: 0.0
       mode: tilt
     1,1:
       x: 3.73
       y: 1.01
-      dist: 0.2662
-      fwd: 0.2593
+      dist: 0.332
+      fwd: 0.3265
       lat: 0.06
       mode: tilt
 L2:
@@ -507,79 +507,79 @@ L2:
   note: ''
   final:
   - 2.202
-  - 4.0628
+  - 4.0625
   - -1.5708
   stage:
   - 2.202
-  - 4.4928
+  - 4.3853
   - -1.5708
   standoff: 0.45
-  gap: 0.02
-  final_clearance: 0.015
+  gap: 0.1272
+  final_clearance: 0.125
   stage_clearance: 0.2
   tag: 13
   cells:
     -1,-1:
       x: 2.142
       y: 3.64
-      dist: 0.3323
-      fwd: 0.3268
+      dist: 0.332
+      fwd: 0.3265
       lat: -0.06
       mode: tilt
     -1,0:
       x: 2.142
       y: 3.7
-      dist: 0.2735
-      fwd: 0.2668
+      dist: 0.2732
+      fwd: 0.2665
       lat: -0.06
       mode: tilt
     -1,1:
       x: 2.142
       y: 3.76
-      dist: 0.2153
-      fwd: 0.2068
+      dist: 0.215
+      fwd: 0.2065
       lat: -0.06
       mode: tilt
     0,-1:
       x: 2.202
       y: 3.64
-      dist: 0.3268
-      fwd: 0.3268
+      dist: 0.3265
+      fwd: 0.3265
       lat: -0.0
       mode: tilt
     0,0:
       x: 2.202
       y: 3.7
-      dist: 0.2668
-      fwd: 0.2668
+      dist: 0.2665
+      fwd: 0.2665
       lat: -0.0
       mode: tilt
     0,1:
       x: 2.202
       y: 3.76
-      dist: 0.2068
-      fwd: 0.2068
+      dist: 0.2065
+      fwd: 0.2065
       lat: -0.0
       mode: tilt
     1,-1:
       x: 2.262
       y: 3.64
-      dist: 0.3323
-      fwd: 0.3268
+      dist: 0.332
+      fwd: 0.3265
       lat: 0.06
       mode: tilt
     1,0:
       x: 2.262
       y: 3.7
-      dist: 0.2735
-      fwd: 0.2668
+      dist: 0.2732
+      fwd: 0.2665
       lat: 0.06
       mode: tilt
     1,1:
       x: 2.262
       y: 3.76
-      dist: 0.2153
-      fwd: 0.2068
+      dist: 0.215
+      fwd: 0.2065
       lat: 0.06
       mode: tilt
 L3:
@@ -588,79 +588,79 @@ L3:
   note: ''
   final:
   - 3.67
-  - 5.0587
+  - 4.9915
   - 1.5708
   stage:
   - 3.67
   - 4.6687
   - 1.5708
   standoff: 0.45
-  gap: 0.06
-  final_clearance: 0.055
+  gap: 0.1272
+  final_clearance: 0.125
   stage_clearance: 0.165
   tag: 14
   cells:
     -1,-1:
       x: 3.61
       y: 5.294
-      dist: 0.1517
-      fwd: 0.1393
+      dist: 0.215
+      fwd: 0.2065
       lat: 0.06
       mode: tilt
     -1,0:
       x: 3.61
       y: 5.354
-      dist: 0.2081
-      fwd: 0.1993
+      dist: 0.2732
+      fwd: 0.2665
       lat: 0.06
       mode: tilt
     -1,1:
       x: 3.61
       y: 5.414
-      dist: 0.2662
-      fwd: 0.2593
+      dist: 0.332
+      fwd: 0.3265
       lat: 0.06
       mode: tilt
     0,-1:
       x: 3.67
       y: 5.294
-      dist: 0.1393
-      fwd: 0.1393
+      dist: 0.2065
+      fwd: 0.2065
       lat: 0.0
       mode: tilt
     0,0:
       x: 3.67
       y: 5.354
-      dist: 0.1993
-      fwd: 0.1993
+      dist: 0.2665
+      fwd: 0.2665
       lat: 0.0
       mode: tilt
     0,1:
       x: 3.67
       y: 5.414
-      dist: 0.2593
-      fwd: 0.2593
+      dist: 0.3265
+      fwd: 0.3265
       lat: 0.0
       mode: tilt
     1,-1:
       x: 3.73
       y: 5.294
-      dist: 0.1517
-      fwd: 0.1393
+      dist: 0.215
+      fwd: 0.2065
       lat: -0.06
       mode: tilt
     1,0:
       x: 3.73
       y: 5.354
-      dist: 0.2081
-      fwd: 0.1993
+      dist: 0.2732
+      fwd: 0.2665
       lat: -0.06
       mode: tilt
     1,1:
       x: 3.73
       y: 5.414
-      dist: 0.2662
-      fwd: 0.2593
+      dist: 0.332
+      fwd: 0.3265
       lat: -0.06
       mode: tilt
 HOME:

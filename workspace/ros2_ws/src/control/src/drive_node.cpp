@@ -89,7 +89,7 @@ public:
     obstacle_stop_node_ = declare_parameter("align.box.obstacle_stop_node", std::string("/obstacle_stop"));
     coarse_min_ = declare_parameter("align.coarse_min", 0.3);
     default_tol_ = declare_parameter("align.default_tolerance", 0.01);
-    front_offset_ = declare_parameter("base.front_offset", 0.20);   // base_link → 범퍼 앞면 ★
+    front_offset_ = declare_parameter("base.front_offset", 0.1328);   // base_link → 차체 앞 끝 (B안) ★
     scan_half_ = declare_parameter("scan.half_angle", 0.349);        // ±20°
     scan_front_margin_ = declare_parameter("scan.front_margin", 0.10);
     scan_rear_stop_ = declare_parameter("scan.rear_stop", 0.30);

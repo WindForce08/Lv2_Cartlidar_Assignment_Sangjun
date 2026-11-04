@@ -4,8 +4,8 @@
 /**:
   ros__parameters:
     base:
-      front_offset: 0.263        # base_link → 전방 범퍼 (m) ★ URDF 261028 외곽, drive.yaml 과 같게 (이슈 #31)
-      rear_offset: 0.155         # base_link → 후방 범퍼 (m) ★ URDF 261028 외곽 (Nav2 footprint 뒤 0.155)
+      front_offset: 0.1328       # base_link → 차체 앞 끝 (m) ★ B안 상판 앞 끝, drive.yaml 과 같게 (#31)
+      rear_offset: 0.2135        # base_link → 차체 뒤 끝 (m) ★ B안 뒤 카메라 기둥 끝 (make_maze_scene BODY_X)
     align:
       # COARSE 기본 거리 (범퍼 → 물체) = max(READY 팔 끝 돌출 + 정밀 목표 + 0.1m, coarse_min)
       #   예: 돌출 0.20 + 정밀 0.15 + 0.1 = 0.45
