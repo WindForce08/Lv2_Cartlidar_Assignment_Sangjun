@@ -7,7 +7,8 @@
 // - Topic 발행 /arm_controller/joint_trajectory (강화학습 정책 스트리밍)
 // - 팔 · 그리퍼 명령은 이 노드만 보낸다. 작업은 한 번에 하나: 새 goal이 오면 이전 goal은 abort
 // - 인식 값은 header.stamp(ROS 시계 촬영 시각) 기준 stale_timeout(300ms)보다 오래되면 버린다 (예외 없음)
-// - 물체 위치는 perception 결과(object_found · object_pose)만 쓴다. 이 노드는 따로 기억하지 않는다
+// - 물체 위치는 perception 결과(object_found · object_pose · /perception/pucks)만 쓴다. 기억하는 것은 target_look 이 잰
+//   퍽 위치 하나뿐 (odom, 바로 다음 toppick_tilt 가 쓰고 지움, #82)
 // - robot_interfaces는 팀 공용 정의를 그대로 쓴다 (이 노드 때문에 바꾸지 않는다)
 // - pick 목표 우선순위: ① 정밀 정렬 결과 (arm_offset · /arm_range → 팔 끝 축 위 지점) ② 추적 위치
 // - /arm_range: perception_node 가 D435 · Arducam 측위로 낸 "팔 끝(range_frame = tool_link) → 정렬 중인 퍽 표면" 거리.
@@ -18,9 +19,16 @@
 //   펌웨어 GripGuard 가 막히면 약하게 쥔다 → 닫은 뒤 위치가 닫힘 명령보다 grasp_margin 넘게 덜 닫혔으면 잡음
 // - 주사위 미션 skill (/manipulator/execute_skill 의 이름, mission_planner mission_lines.py · 이슈 #63 #74). 같은 이름의
 //   정책이 로드돼 있으면 정책을, 없으면 아래 고정 동작을 쓴다 (강화학습은 IK 대체 경로를 항상 유지)
-//     toppick_tilt                   박스 위 퍽을 집게 45° 로 집기 (pick 과 같은 과정, 기울기만 toppick.pitch)
+//     target_look:<frame>:<x>:<y>:<z>  퍽 예상 중심을 팔 카메라로 내려다보는 타겟체크자세 (target_look_pose.hpp 로 계산) → 머문 뒤
+//                                    /perception/pucks 에서 예상 자리 (target_look.match_distance 안) 퍽을 재서 odom 에 붙잡음 (#82).
+//                                    팔 카메라 퍽 우선, target_look.arm_wait 뒤에는 D435 퍽도. 45° 집기 중에는 팔 카메라가 퍽을 못 봄
+//     toppick_tilt                   박스 위 퍽을 집게 45° 로 집기 (pick 과 같은 과정, 기울기만 toppick.pitch).
+//                                    목표 = 직전 target_look 이 잰 위치, 없으면 ② 추적 위치. ① 정밀 정렬 결과 · 미세 보정은
+//                                    toppick.use_alignment 일 때만 (45° 는 집게 축이 퍽을 보지 않아 기본 끔, #82)
 //     pallet_load_<열>_<칸>_tilt      쥔 퍽을 팔레트 칸에 놓기 = pallet_place_traj.json 의 칸 궤적 (3 열 쥔 구간 0.4 rad/s, #75)
-//     pallet_unload_<열>_<칸>_tilt    팔레트 칸의 퍽을 집어 들기 = 같은 궤적, 그리퍼만 반대 (0.8 rad/s)
+//     pallet_unload_<열>_<칸>_tilt    팔레트 칸의 퍽을 집어 들기 = 놓기 궤적 거꾸로 (빈 집게로 rotate_back · return · retract 거꾸로
+//                                     → 0.3 s → 쥠 → place · carry · rotate 거꾸로 → q_front, 0.8 rad/s, Isaac pallet_unload 24/24)
+//                                    pallet_* 은 sag.enabled 면 처짐 보정 스트리밍 (sag_comp.hpp, 시작 자세에서 sag.settle_time 먼저 맞춤)
 //     place_<L>_<dx>_<dy>_tilt        쥔 퍽을 장소 L 의 3×3 칸 (dx, dy = m1 · 0 · p1) 에 45° 로 놓기.
 //                                    칸 좌표 = mission_planner config/approach_poses.yaml cells (지도) → TF 로 팔 기준
 //     place_at:<frame>:<x>:<y>:<z>   쥔 퍽을 칸 좌표 (frame 기준 x, y, 윗면 높이 z) 에 놓기 — perception place_box 칸 (#74)
@@ -58,10 +66,13 @@
 #include "rclcpp_components/register_node_macro.hpp"
 #include "ament_index_cpp/get_package_share_path.hpp"
 #include "control/arm_ik.hpp"
+#include "control/sag_comp.hpp"
+#include "control/target_look_pose.hpp"
 #include "robot_interfaces/action/arm_pose.hpp"
 #include "robot_interfaces/action/execute_skill.hpp"
 #include "robot_interfaces/action/pick.hpp"
 #include "robot_interfaces/msg/perception_result.hpp"
+#include "robot_interfaces/msg/puck_array.hpp"
 #include "robot_interfaces/srv/set_perception_mode.hpp"
 #include "robot_policy/policy.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
@@ -89,6 +100,8 @@ public:
   using FollowJT = control_msgs::action::FollowJointTrajectory;
   using GripperCmd = control_msgs::action::ParallelGripperCommand;
   using PerceptionResult = robot_interfaces::msg::PerceptionResult;
+  using PuckArray = robot_interfaces::msg::PuckArray;
+  using Puck = robot_interfaces::msg::Puck;
   using SetPerceptionMode = robot_interfaces::srv::SetPerceptionMode;
   using Mode = SetPerceptionMode::Request;
   using Done = std::function<void (bool ok, const std::string & message)>;
@@ -124,6 +137,13 @@ public:
     joint_sub_ = create_subscription<sensor_msgs::msg::JointState>(
       "/joint_states", rclcpp::QoS(10),
       [this](sensor_msgs::msg::JointState::ConstSharedPtr msg) {onJointStates(msg);}, sub_opt);
+
+    pucks_sub_ = create_subscription<PuckArray>(   // target_look (#82)
+      "/perception/pucks", rclcpp::QoS(1).reliable(),   // 계약: /perception/result 와 같음
+      [this](PuckArray::ConstSharedPtr msg) {
+        std::lock_guard<std::mutex> lock(sensor_mutex_);
+        last_pucks_ = msg;
+      }, sub_opt);
 
     // --- Action 클라이언트 ---
     arm_client_ = rclcpp_action::create_client<FollowJT>(this, "/arm_controller/follow_joint_trajectory", job_cb_group_);
@@ -180,17 +200,17 @@ public:
 
 private:
   enum class Job { NONE, POSE, PICK, SKILL };
-  enum class PickStep { PLAN, PREGRASP, CORRECT_WAIT, CORRECT_MOVE, OPEN, FINAL, CLOSE, CLOSE_WAIT, LIFT, TASK };
+  enum class PickStep { PLAN, PREGRASP, CORRECT_WAIT, CORRECT_MOVE, OPEN, FINAL, CLOSE, CLOSE_WAIT, LIFT, TASK, TARGET_LOOK_WAIT };
   enum class GripperMode { ARM_JOINT, ACTION, NONE };
   // 미션 skill 종류 (execute_skill 이름)
-  enum class Task { NONE, TOPPICK, PALLET_LOAD, PALLET_UNLOAD, PLACE };
+  enum class Task { NONE, TARGET_LOOK, TOPPICK, PALLET_LOAD, PALLET_UNLOAD, PLACE };
   struct TaskSkill
   {
     Task kind{Task::NONE};
     int row{0}, index{0};                 // pallet_*: 열 1~3 · 칸 0~3
     std::string place, cell;              // place_<L>_<dx>_<dy>: 장소 · "dx,dy" (-1 · 0 · 1)
-    std::string frame;                    // place_at: 칸 좌표 frame
-    double x{0.0}, y{0.0}, z{0.0};        // place_at: 칸 중심 · 윗면 높이
+    std::string frame;                    // place_at · target_look: 좌표 frame
+    double x{0.0}, y{0.0}, z{0.0};        // place_at: 칸 중심 · 윗면 높이 / target_look: 퍽 예상 중심
   };
   // pallet_place_traj.json 의 칸 하나: 구간 (이름 · 그리퍼 hold/open · 경유 관절각 5개)
   struct PalletSegment
@@ -279,6 +299,28 @@ private:
     // 미션 skill — toppick_tilt: pick 과 같은 과정, 집게 기울기 · 접근 거리만 다름
     toppick_pitch_ = declare_parameter<double>("toppick.pitch", -M_PI_4);
     toppick_approach_ = declare_parameter<double>("toppick.approach_distance", 0.06);
+    // ① 정밀 정렬 결과 (/arm_range = 집게 축 위 거리) · 미세 보정을 toppick 에서도 쓸지. 45° 는 집게 축이 퍽을 보지 않고
+    // 접근 위치에서 퍽이 팔 카메라 화면 밖이라 (#82) 기본 끔 → 목표 = target_look 이 잰 위치 (없으면 ② 추적 위치) 그대로
+    toppick_use_alignment_ = declare_parameter<bool>("toppick.use_alignment", false);
+    toppick_latch_max_age_ = declare_parameter<double>("toppick.latch_max_age", 30.0);   // target_look 값 유효 시간 (s)
+    // target_look 타겟체크자세 (#82, target_look_pose.hpp). 카메라 장착 = robot.urdf.xacro arm_camera_link
+    target_look_.camera_x = declare_parameter<double>("target_look.camera_x", target_look_.camera_x);
+    target_look_.camera_z = declare_parameter<double>("target_look.camera_z", target_look_.camera_z);
+    target_look_.camera_tilt = declare_parameter<double>("target_look.camera_tilt", target_look_.camera_tilt);
+    target_look_.wrist_to_tool = get_parameter("ik.wrist_to_tool").as_double();
+    target_look_.view_angles.clear();
+    for (double d : declare_parameter<std::vector<double>>("target_look.view_angles_deg",
+        {70.0, 72.0, 68.0, 75.0, 65.0, 78.0, 80.0, 62.0, 85.0, 60.0}))
+    {
+      target_look_.view_angles.push_back(d * M_PI / 180.0);
+    }
+    target_look_.distances = declare_parameter<std::vector<double>>("target_look.distances",
+      {0.17, 0.16, 0.18, 0.15, 0.19, 0.20, 0.21, 0.22});
+    target_look_.min_clearance = declare_parameter<double>("target_look.min_clearance", target_look_.min_clearance);
+    target_look_settle_ = declare_parameter<double>("target_look.settle_time", 0.3);
+    target_look_arm_wait_ = declare_parameter<double>("target_look.arm_wait", 1.0);
+    target_look_timeout_ = declare_parameter<double>("target_look.timeout", 3.0);
+    target_look_match_ = declare_parameter<double>("target_look.match_distance", 0.04);
     // 집게 끝(tool_link) = 퍽 중심 + 위로 grasp_z_offset (팔레트 궤적 grasp_dz 0.015 와 같게)
     grasp_z_offset_ = declare_parameter<double>("pick.grasp_z_offset", 0.015);
     // 팔레트 칸 궤적 (빈 문자열 = <control share>/config/pallet_place_traj.json, pallet_traj.py 가 만든 파일 사본)
@@ -286,6 +328,17 @@ private:
     pallet_speed_ = declare_parameter<double>("pallet.speed", 0.8);              // rad/s (#75)
     pallet_row3_hold_speed_ = declare_parameter<double>("pallet.row3_hold_speed", 0.4);   // 3 열 쥔 구간 (#75)
     pallet_require_held_ = declare_parameter<bool>("pallet.require_held", true);
+    // 칸 안에서 벌리는 폭: 끝까지 열면 손가락이 칸 벽에 닿음 (Isaac FINGER_RELEASED 37.6 mm). 기본 = gripper.open_position
+    pallet_release_ = declare_parameter<double>("pallet.release_position", gripper_open_);
+    pallet_dwell_ = declare_parameter<double>("pallet.place_dwell", 0.3);
+    // 처짐 보정 (sag_comp.hpp): 팔레트 칸 궤적을 계획 + 적분 bias 로 스트리밍 (Isaac pallet_place_check --ki 4, 24/24)
+    sag_enabled_ = declare_parameter<bool>("sag.enabled", true);
+    sag_ki_ = declare_parameter<double>("sag.ki", 4.0);
+    sag_bias_max_ = declare_parameter<double>("sag.bias_max", 0.15);
+    sag_settle_ = declare_parameter<double>("sag.settle_time", 1.5);
+    sag_rate_ = declare_parameter<double>("sag.rate_hz", 50.0);
+    sag_horizon_ = declare_parameter<double>("sag.horizon", 0.06);
+    sag_max_error_ = declare_parameter<double>("sag.max_error", 0.3);   // 놓는 자세에서 벌리기 · 쥐기 전 머묾 (처짐 가라앉음)
     // place_<L>_*: 칸 좌표표 (빈 문자열 = <mission_planner share>/config/approach_poses.yaml), 칸 좌표 frame
     place_cells_file_ = declare_parameter<std::string>("place.cells_file", "");
     place_cells_frame_ = declare_parameter<std::string>("place.cells_frame", "map");
@@ -395,7 +448,9 @@ private:
           seg.q = g["q"].as<std::vector<std::vector<double>>>();
           segs.push_back(seg);
         }
-        pallet_[{slot["row"].as<int>(), slot["index"].as<int>()}] = segs;
+        const std::pair<int, int> key{slot["row"].as<int>(), slot["index"].as<int>()};
+        pallet_[key] = segs;
+        if (slot["q_front"]) {pallet_front_[key] = slot["q_front"].as<std::vector<double>>();}   // 꺼내기 끝 자세
       }
       RCLCPP_INFO(get_logger(), "pallet: %zu slot(s) from %s", pallet_.size(), file.c_str());
     } catch (const std::exception & e) {
@@ -512,9 +567,28 @@ private:
     requireNonNegative("gripper.settle_time", gripper_settle_);
     requirePositive("gripper.grasp_margin", grasp_margin_);
     requirePositive("toppick.approach_distance", toppick_approach_);
+    requirePositive("toppick.latch_max_age", toppick_latch_max_age_);
+    if (target_look_.view_angles.empty() || target_look_.distances.empty()) {
+      throw std::invalid_argument("target_look.view_angles_deg and target_look.distances must not be empty");
+    }
+    for (double d : target_look_.distances) {requirePositive("target_look.distances", d);}
+    requireNonNegative("target_look.settle_time", target_look_settle_);
+    requireNonNegative("target_look.arm_wait", target_look_arm_wait_);
+    requirePositive("target_look.timeout", target_look_timeout_);
+    requirePositive("target_look.match_distance", target_look_match_);
     requireNonNegative("pick.grasp_z_offset", grasp_z_offset_);
     requirePositive("pallet.speed", pallet_speed_);
     requirePositive("pallet.row3_hold_speed", pallet_row3_hold_speed_);
+    requireNonNegative("pallet.place_dwell", pallet_dwell_);
+    requireNonNegative("sag.ki", sag_ki_);
+    requireNonNegative("sag.bias_max", sag_bias_max_);
+    requireNonNegative("sag.settle_time", sag_settle_);
+    requirePositive("sag.rate_hz", sag_rate_);
+    requirePositive("sag.horizon", sag_horizon_);
+    requirePositive("sag.max_error", sag_max_error_);
+    if (gripper_mode_ == GripperMode::ARM_JOINT && !(pallet_release_ >= gripper_open_ && pallet_release_ < gripper_close_)) {
+      throw std::invalid_argument("pallet.release_position must be in [gripper.open_position, gripper.close_position)");
+    }
     requireNonNegative("place.surface_height", place_surface_height_);
     requirePositive("place.puck_half_height", puck_half_height_);
     requireNonNegative("place.clearance", place_clearance_);
@@ -923,11 +997,19 @@ private:
       endJob();
     } else if (pickActive() && step_ == PickStep::CORRECT_WAIT) {
       correctionTick();
+    } else if (job_ == Job::SKILL && task_ == Task::TARGET_LOOK && step_ == PickStep::TARGET_LOOK_WAIT) {
+      targetLookTick();
     } else if (gripper_wait_ && (now() - wait_since_).seconds() >= gripper_settle_) {
       auto next = std::move(gripper_wait_);   // 닫은 뒤 GripGuard 가 막힘을 잡을 시간을 두고 위치로 판정
       gripper_wait_ = nullptr;
       next();
     }
+  }
+
+  // ① 정밀 정렬 결과 · 미세 보정 (집게 축 기준 측정) 을 쓰는 집기인지: /manipulator/pick 은 늘, toppick_tilt 는 설정 (#82)
+  bool alignmentAllowed() const
+  {
+    return job_ == Job::PICK || toppick_use_alignment_;
   }
 
   // /manipulator/pick 또는 toppick_tilt skill 이 집는 중
@@ -1052,7 +1134,7 @@ private:
       [this](bool ok, const std::string & msg) {
         if (!ok) {
           finishPick(false, msg);
-        } else if (correction_enabled_) {
+        } else if (correction_enabled_ && alignmentAllowed()) {
           beginCorrectionWait();
         } else {
           openGripper();
@@ -1089,7 +1171,7 @@ private:
       const bool offset_ok = result && (result->mode & Mode::ARM_ALIGN) && result->offset_valid &&
         std::hypot(result->arm_offset.x, result->arm_offset.y, result->arm_offset.z) <= offset_tolerance_;
       const bool range_ok = range && rangeValid(*range);
-      if (offset_ok && range_ok) {
+      if (alignmentAllowed() && offset_ok && range_ok) {
         // ① 팔 끝 축(x) 위 퍽 표면 + 물체 반지름 = 파지점 (range_frame 기준, /arm_range stamp 의 팔 자세)
         src.header = range->header;
         src.header.frame_id = range_frame_;
@@ -1586,7 +1668,8 @@ private:
   }
 
   // ------------------------------------------------------------------ 미션 skill (execute_skill 이름)
-  // "toppick_tilt" · "pallet_load_3_1_tilt" · "pallet_unload_2_0_tilt" · "place_L1_m1_p1_tilt" · "place_at:odom:x:y:z"
+  // "toppick_tilt" · "pallet_load_3_1_tilt" · "pallet_unload_2_0_tilt" · "place_L1_m1_p1_tilt" · "place_at:odom:x:y:z" ·
+  // "target_look:base_footprint:x:y:z"
   static std::optional<TaskSkill> parseTaskSkill(const std::string & name)
   {
     TaskSkill t;
@@ -1601,11 +1684,11 @@ private:
         while (std::getline(in, tok, sep)) {out.push_back(tok);}
         return out;
       };
-    if (name.rfind("place_at:", 0) == 0) {
-      const auto f = parts(name, ':');   // place_at : frame : x : y : z
+    if (name.rfind("place_at:", 0) == 0 || name.rfind("target_look:", 0) == 0) {
+      const auto f = parts(name, ':');   // place_at | target_look : frame : x : y : z
       if (f.size() != 5 || f[1].empty()) {return std::nullopt;}
       try {
-        t.kind = Task::PLACE;
+        t.kind = f[0] == "target_look" ? Task::TARGET_LOOK : Task::PLACE;
         t.frame = f[1];
         t.x = std::stod(f[2]);
         t.y = std::stod(f[3]);
@@ -1641,9 +1724,22 @@ private:
   {
     task_ = t.kind;
     switch (t.kind) {
-      case Task::TOPPICK:
-        beginPick(geometry_msgs::msg::PoseStamped(), {toppick_pitch_}, toppick_approach_);
+      case Task::TARGET_LOOK:
+        startTargetLook(t);
         return;
+      case Task::TOPPICK: {
+          geometry_msgs::msg::PoseStamped target;   // 비면 ② 추적 위치 (use_alignment 면 ① 먼저)
+          if (target_look_latch_ && (now() - target_look_latch_time_).seconds() <= toppick_latch_max_age_) {
+            target = *target_look_latch_;
+            RCLCPP_INFO(get_logger(), "pick target: target_look (%.3f, %.3f, %.3f) in %s", target.pose.position.x,
+              target.pose.position.y, target.pose.position.z, target.header.frame_id.c_str());
+          } else if (target_look_latch_) {
+            RCLCPP_WARN(get_logger(), "target_look value older than toppick.latch_max_age -> perception target");
+          }
+          target_look_latch_.reset();   // 한 번만 씀 (실패 후 재시도는 새 추적 위치)
+          beginPick(target, {toppick_pitch_}, toppick_approach_);
+          return;
+        }
       case Task::PALLET_LOAD:
       case Task::PALLET_UNLOAD:
         runPalletSlot(t.row, t.index, t.kind == Task::PALLET_LOAD);
@@ -1693,19 +1789,45 @@ private:
         return;
       }
     }
-    std::vector<const PalletSegment *> in, out;
-    bool released = false;
-    for (const auto & seg : it->second) {
-      if (seg.name == "release") {released = true; continue;}
-      (released ? out : in).push_back(&seg);
+    // 구간 경유점 (Isaac pallet_place_check.py timeline · timeline_unload 와 같은 순서, #75)
+    //   놓기: rotate → carry → place (쥠) → 머묾 → 벌림 → retract → return → rotate_back
+    //   꺼내기: rotate_back · return · retract 거꾸로 → release (벌린 채) → 머묾 → 쥠 → place · carry · rotate 거꾸로 → q_front
+    const auto & segs = it->second;
+    auto find = [&segs](const std::string & n) -> const PalletSegment * {
+        for (const auto & g : segs) {if (g.name == n) {return &g;}}
+        return nullptr;
+      };
+    std::vector<std::vector<double>> in, out;
+    std::string missing;
+    auto add = [&](std::vector<std::vector<double>> & dst, const std::string & n, bool reversed) {
+        const auto * g = find(n);
+        if (!g) {missing += (missing.empty() ? "" : ", ") + n; return;}
+        if (reversed) {dst.insert(dst.end(), g->q.rbegin(), g->q.rend());} else {dst.insert(dst.end(), g->q.begin(), g->q.end());}
+      };
+    if (load) {
+      add(in, "rotate", false); add(in, "carry", false); add(in, "place", false);
+      add(out, "retract", false); add(out, "return", false); add(out, "rotate_back", false);
+    } else {
+      add(in, "rotate_back", true); add(in, "return", true); add(in, "retract", true); add(in, "release", false);
+      add(out, "place", true); add(out, "carry", true); add(out, "rotate", true);
+      const auto f = pallet_front_.find({row, index});
+      if (f != pallet_front_.end()) {out.push_back(f->second);} else if (!transit_tilt_.empty()) {out.push_back(transit_tilt_);}
     }
-    // 쥔 구간 속도: 놓기의 3 열만 0.4 rad/s (#75), 나머지 0.8
+    if (!missing.empty()) {
+      finishSkill(false, "pallet: segment(s) missing in traj_file: " + missing);
+      return;
+    }
+    // 속도: 놓기의 3 열 쥔 구간만 0.4 rad/s, 나머지 (빈 집게 · 꺼내기 전부) 0.8 (#75)
     const double in_speed = (load && row == 3) ? pallet_row3_hold_speed_ : pallet_speed_;
-    const double out_speed = (!load && row == 3) ? pallet_row3_hold_speed_ : pallet_speed_;
-    const double in_grip = load ? gripper_close_ : gripper_open_;
-    const double out_grip = load ? gripper_open_ : gripper_close_;
+    const double out_speed = pallet_speed_;
+    const double in_grip = load ? gripper_close_ : pallet_release_;
+    const double out_grip = load ? pallet_release_ : gripper_close_;
+    if (sag_enabled_ && gripper_mode_ != GripperMode::ACTION) {   // 처짐 보정 스트리밍 (sag.*)
+      runPalletStream(in, out, in_speed, out_speed, in_grip, out_grip, load);
+      return;
+    }
     if (gripper_mode_ == GripperMode::ARM_JOINT) {gripper_cmd_ = in_grip;}
-    sendSegments(in, in_speed, in_grip, [this, out, out_speed, out_grip, load](bool ok, const std::string & msg) {
+    sendWaypoints(in, in_speed, in_grip, pallet_dwell_, [this, out, out_speed, out_grip, load](bool ok, const std::string & msg) {
         if (!ok) {
           finishSkill(false, "pallet approach: " + msg);
           return;
@@ -1716,7 +1838,7 @@ private:
               return;
             }
             auto leave = [this, out, out_speed, out_grip, load]() {
-                sendSegments(out, out_speed, out_grip, [this, load](bool lok, const std::string & lmsg) {
+                sendWaypoints(out, out_speed, out_grip, 0.0, [this, load](bool lok, const std::string & lmsg) {
                     finishSkill(lok, lok ? (load ? "loaded" : "unloaded") : "pallet leave: " + lmsg);
                   });
               };
@@ -1736,9 +1858,118 @@ private:
       });
   }
 
-  // 구간 경유점을 한 궤적으로. 경유점 사이 시간 = 관절 변화 최대값 / speed, 첫 점은 지금 자세에서 출발
-  void sendSegments(
-    const std::vector<const PalletSegment *> & segs, double speed, double grip, Done done)
+  // 팔레트 칸 궤적 + 처짐 보정 (sag_comp.hpp, Isaac pallet_place_check --ki 와 같은 식).
+  //   시간표: 시작 자세 settle → in (in_grip) → 머묾 → 그리퍼 out_grip (gripper.move_time) → [꺼내기: settle_time 뒤 쥠 확인] → out
+  //   sag.rate_hz 로 /arm_controller/joint_trajectory 한 점 (계획 + bias, 6 번째 = 그리퍼). 측정이 계획에서 max_error 넘게 벗어나면 중지
+  void runPalletStream(
+    const std::vector<std::vector<double>> & in, const std::vector<std::vector<double>> & out,
+    double in_speed, double out_speed, double in_grip, double out_grip, bool load)
+  {
+    const auto current = currentJoints();
+    if (!current) {
+      finishSkill(false, "no recent /joint_states for arm joints");
+      return;
+    }
+    auto arm5 = [](const std::vector<double> & q) {Arm5 a{}; for (size_t j = 0; j < 5; ++j) {a[j] = q[j];} return a;};
+    std::vector<Arm5> qin, qout;
+    for (const auto * src : {&in, &out}) {
+      for (const auto & q : *src) {
+        std::vector<double> q6(q.begin(), q.end());
+        q6.push_back(0.0);
+        if (q.size() != 5 || !withinLimits(q6)) {
+          finishSkill(false, "pallet: waypoint outside joint limits or not 5 joints");
+          return;
+        }
+        (src == &in ? qin : qout).push_back(arm5(q));
+      }
+    }
+    const double grip0 = sixthValue(*current);
+    JointTimeline tl(arm5(*current), grip0);
+    tl.hold(sag_settle_, grip0);                          // 지금 자세에서 bias 먼저 맞춤
+    tl.moveThrough(qin, in_speed, in_grip, min_duration_);
+    tl.hold(pallet_dwell_, in_grip);                      // 놓는 · 집는 자세에서 머묾
+    tl.hold(gripper_move_time_, out_grip);                // 그리퍼 바꿈
+    sag_check_t_.reset();
+    if (!load && gripper_mode_ == GripperMode::ARM_JOINT) {
+      tl.hold(gripper_settle_, out_grip);                 // 쥔 뒤 GripGuard 판정 시간
+      sag_check_t_ = tl.duration();
+    }
+    tl.moveThrough(qout, out_speed, out_grip, 0.02);
+    sag_tl_ = tl;
+    sag_int_ = SagIntegrator(sag_ki_, sag_bias_max_);
+    sag_load_ = load;
+    sag_start_ = sag_last_ = now();
+    RCLCPP_INFO(get_logger(), "pallet %s: stream %.1f s (settle %.1f s, ki %.1f, %.0f Hz)", load ? "load" : "unload",
+      tl.duration(), sag_settle_, sag_ki_, sag_rate_);
+    const uint64_t id = job_id_;
+    skill_timer_ = rclcpp::create_timer(
+      this, get_clock(), rclcpp::Duration::from_seconds(1.0 / sag_rate_),
+      [this, id]() {if (id == job_id_) {palletStreamTick();}}, job_cb_group_);
+  }
+
+  void palletStreamTick()
+  {
+    if (job_ != Job::SKILL || skill_gh_->is_canceling() || !sag_tl_) {return;}   // 취소 마무리는 onTick
+    const auto cur = currentJoints();
+    if (!cur) {
+      finishSkill(false, "pallet: no recent /joint_states during stream");
+      return;
+    }
+    const rclcpp::Time t_now = now();
+    const double t = (t_now - sag_start_).seconds();
+    const double dt = std::clamp((t_now - sag_last_).seconds(), 0.0, 0.1);
+    sag_last_ = t_now;
+    const auto p = sag_tl_->at(t);
+    Arm5 meas{};
+    double err = 0.0;
+    size_t err_j = 0;
+    for (size_t j = 0; j < 5; ++j) {
+      meas[j] = (*cur)[j];
+      if (std::abs(p.q[j] - meas[j]) > err) {err = std::abs(p.q[j] - meas[j]); err_j = j;}
+    }
+    if (err > sag_max_error_) {
+      char buf[160];
+      std::snprintf(buf, sizeof(buf), "pallet: joint%zu %.3f rad off plan at %.1f s (blocked?)", err_j + 1, err, t);
+      finishSkill(false, buf);
+      return;
+    }
+    sag_int_.update(p.q, meas, dt);
+    // 컨트롤러는 한 점을 horizon 에 걸쳐 따라가므로 horizon 앞의 계획을 낸다 (안 그러면 움직이는 동안 속도 × horizon 만큼
+    // 늘 뒤처지고, 적분이 그 뒤처짐까지 처짐으로 쌓아 칸 앞에서 지나침. mock 팔: 0.8 rad/s 에서 bias 0.055 rad)
+    const auto ahead = sag_tl_->at(t + sag_horizon_);
+    const Arm5 c = sag_int_.command(ahead.q);
+    std::vector<double> q(c.begin(), c.end());
+    q.push_back(gripper_mode_ == GripperMode::ARM_JOINT ? ahead.grip : gripper_roll_default_);
+    for (size_t i = 0; i < q.size(); ++i) {q[i] = std::clamp(q[i], lower_[i], upper_[i]);}
+    trajectory_msgs::msg::JointTrajectory jt;
+    jt.joint_names = joint_names_;
+    trajectory_msgs::msg::JointTrajectoryPoint point;
+    point.positions = q;
+    point.time_from_start = rclcpp::Duration::from_seconds(sag_horizon_);
+    jt.points.push_back(point);
+    jt_pub_->publish(jt);
+    last_sent_ = q;
+    if (gripper_mode_ == GripperMode::ARM_JOINT) {gripper_cmd_ = ahead.grip;}
+
+    if (sag_check_t_ && t >= *sag_check_t_) {   // 꺼내기: 집었는지
+      sag_check_t_.reset();
+      const auto holding = gripperHolding();
+      if (gripper_fail_on_empty_ && (!holding || !*holding)) {
+        finishSkill(false, "pallet_unload: empty grasp (no puck in slot?)");
+        return;
+      }
+    }
+    if (t >= sag_tl_->duration()) {
+      const auto & b = sag_int_.bias();
+      RCLCPP_INFO(get_logger(), "pallet: sag bias [%.3f %.3f %.3f %.3f %.3f] rad", b[0], b[1], b[2], b[3], b[4]);
+      sag_tl_.reset();
+      finishSkill(true, sag_load_ ? "loaded" : "unloaded");
+    }
+  }
+
+  // 경유점을 한 궤적으로. 경유점 사이 시간 = 관절 변화 최대값 / speed, 첫 점은 지금 자세에서 출발, 끝에서 dwell 초 머묾
+  void sendWaypoints(
+    const std::vector<std::vector<double>> & qs, double speed, double grip, double dwell, Done done)
   {
     const auto current = currentJoints();
     if (!current) {
@@ -1748,34 +1979,38 @@ private:
     std::vector<trajectory_msgs::msg::JointTrajectoryPoint> points;
     std::vector<double> prev = *current;
     double t = 0.0;
-    for (const auto * seg : segs) {
-      for (const auto & q5 : seg->q) {
-        if (q5.size() != 5) {
-          done(false, "pallet: waypoint must have 5 joints (" + seg->name + ")");
-          return;
-        }
-        std::vector<double> q(q5.begin(), q5.end());
-        q.push_back(gripper_mode_ == GripperMode::ARM_JOINT ? grip : sixthValue(*current));
-        if (!withinLimits(q)) {
-          done(false, "pallet: waypoint outside joint limits (" + seg->name + ")");
-          return;
-        }
-        double max_delta = 0.0;
-        for (size_t j = 0; j < 5; ++j) {max_delta = std::max(max_delta, std::abs(q[j] - prev[j]));}
-        // 첫 점은 지금 자세에서 오는 거리라 arm.min_duration 이상
-        t += points.empty() ? std::max(min_duration_, max_delta / speed) : std::max(0.02, max_delta / speed);
-        trajectory_msgs::msg::JointTrajectoryPoint point;
-        point.positions = q;
-        point.time_from_start = rclcpp::Duration::from_seconds(t);
-        points.push_back(point);
-        prev = q;
+    for (const auto & q5 : qs) {
+      if (q5.size() != 5) {
+        done(false, "pallet: waypoint must have 5 joints");
+        return;
       }
+      std::vector<double> q(q5.begin(), q5.end());
+      q.push_back(gripper_mode_ == GripperMode::ARM_JOINT ? grip : sixthValue(*current));
+      if (!withinLimits(q)) {
+        done(false, "pallet: waypoint outside joint limits");
+        return;
+      }
+      double max_delta = 0.0;
+      for (size_t j = 0; j < 5; ++j) {max_delta = std::max(max_delta, std::abs(q[j] - prev[j]));}
+      // 첫 점은 지금 자세에서 오는 거리라 arm.min_duration 이상
+      t += points.empty() ? std::max(min_duration_, max_delta / speed) : std::max(0.02, max_delta / speed);
+      trajectory_msgs::msg::JointTrajectoryPoint point;
+      point.positions = q;
+      point.time_from_start = rclcpp::Duration::from_seconds(t);
+      points.push_back(point);
+      prev = q;
     }
     if (points.empty()) {
       done(false, "pallet: empty trajectory");
       return;
     }
     points.back().velocities.assign(points.back().positions.size(), 0.0);
+    if (dwell > 0.0) {   // 같은 자리 한 점 더 = 머묾
+      auto hold = points.back();
+      t += dwell;
+      hold.time_from_start = rclcpp::Duration::from_seconds(t);
+      points.push_back(hold);
+    }
     sendTrajectory(points, t, done);
   }
 
@@ -1848,6 +2083,134 @@ private:
       });
   }
 
+  // ------------------------------------------------------------------ target_look (#82)
+  // 퍽 예상 중심 → 팔 카메라가 퍽 윗면을 내려다보는 자세 (target_look_pose.hpp) → TARGET_LOOK_WAIT (targetLookTick 이 /perception/pucks 로 잼)
+  void startTargetLook(const TaskSkill & t)
+  {
+    step_ = PickStep::TASK;
+    target_look_latch_.reset();
+    object_yaw_valid_ = false;   // solveArm 손목 roll = 기본값
+    geometry_msgs::msg::PointStamped src, arm;
+    src.header.frame_id = t.frame;
+    src.header.stamp = rclcpp::Time(0, 0, RCL_ROS_TIME);
+    src.point.x = t.x;
+    src.point.y = t.y;
+    src.point.z = t.z;
+    try {
+      arm = tf_buffer_->transform(src, base_frame_);
+    } catch (const tf2::TransformException & e) {
+      finishSkill(false, std::string("target_look: TF ") + t.frame + " -> " + base_frame_ + ": " + e.what());
+      return;
+    }
+    target_look_expected_ = {arm.point.x, arm.point.y, arm.point.z};
+    const Eigen::Vector3d aim = target_look_expected_ + Eigen::Vector3d::UnitZ() * puck_half_height_;   // 퍽 윗면 (태그)
+    const auto current = currentJoints();
+    if (!current) {
+      finishSkill(false, "no recent /joint_states for arm joints");
+      return;
+    }
+    std::optional<std::vector<double>> q;
+    TargetLookCandidate used{};
+    for (const auto & c : targetLookCandidates(aim, target_look_)) {
+      q = solveArm(c.tool, c.pitch, *current);
+      if (q) {
+        used = c;
+        break;
+      }
+    }
+    if (!q) {
+      char buf[160];
+      std::snprintf(buf, sizeof(buf), "target_look: no target check pose within joint limits for puck (%.3f, %.3f, %.3f) in %s, "
+        "J1 distance %.3f m", aim.x(), aim.y(), target_look_expected_.z(), base_frame_.c_str(), std::hypot(aim.x(), aim.y()));
+      finishSkill(false, buf);
+      return;
+    }
+    RCLCPP_INFO(get_logger(), "target_look: puck (%.3f, %.3f, %.3f) in %s, camera %.0f deg down at %.2f m",
+      target_look_expected_.x(), target_look_expected_.y(), target_look_expected_.z(), base_frame_.c_str(), used.view_angle * 180.0 / M_PI,
+      used.distance);
+    sendArm(*q, trajDuration(*current, *q, min_duration_), [this](bool ok, const std::string & msg) {
+        if (!ok) {
+          finishSkill(false, "target_look move: " + msg);
+          return;
+        }
+        step_ = PickStep::TARGET_LOOK_WAIT;
+        wait_since_ = now();
+      });
+  }
+
+  // 타겟체크자세에서 settle_time 뒤 촬영된 /perception/pucks 중 예상 자리 (수평 match_distance 안) 퍽.
+  // 팔 카메라 퍽 우선, arm_wait 지나면 D435 퍽도. 찾으면 fixed_frame 에 붙잡고 성공, timeout 지나면 실패
+  void targetLookTick()
+  {
+    const rclcpp::Time t = now();
+    const double waited = (t - wait_since_).seconds();
+    if (waited < target_look_settle_) {return;}
+    PuckArray::ConstSharedPtr pucks;
+    {
+      std::lock_guard<std::mutex> lock(sensor_mutex_);
+      const rclcpp::Time since = std::max(wait_since_ + rclcpp::Duration::from_seconds(target_look_settle_),
+        t - rclcpp::Duration::from_seconds(stale_timeout_));
+      if (last_pucks_ && measuredAfter(last_pucks_->header.stamp, since)) {pucks = last_pucks_;}
+    }
+    if (pucks && !pucks->pucks.empty()) {
+      // 촬영 시각의 퍽 frame → 지금 팔 기준 · fixed_frame (측정 시각 TF 가 아직 없으면 최신)
+      auto lookup = [this, &pucks](const std::string & target, bool via_fixed) {
+          try {
+            return via_fixed ?
+                   tf_buffer_->lookupTransform(target, tf2::TimePointZero, pucks->header.frame_id,
+                     tf2_ros::fromMsg(pucks->header.stamp), fixed_frame_, tf2::durationFromSec(0.0)) :
+                   tf_buffer_->lookupTransform(target, pucks->header.frame_id, tf2_ros::fromMsg(pucks->header.stamp));
+          } catch (const tf2::TransformException &) {
+            return tf_buffer_->lookupTransform(target, pucks->header.frame_id, tf2::TimePointZero);
+          }
+        };
+      try {
+        const auto to_arm = lookup(base_frame_, true);
+        const auto to_fixed = lookup(fixed_frame_, false);
+        const bool any_camera = waited >= target_look_settle_ + target_look_arm_wait_;
+        const Puck * best = nullptr;
+        double best_d = target_look_match_;
+        for (const auto & pk : pucks->pucks) {
+          if (!any_camera && pk.camera != Puck::CAMERA_ARM) {continue;}
+          geometry_msgs::msg::Pose a;
+          tf2::doTransform(pk.pose, a, to_arm);
+          const double d = std::hypot(a.position.x - target_look_expected_.x(), a.position.y - target_look_expected_.y());
+          const bool better = !best || (pk.camera == Puck::CAMERA_ARM && best->camera != Puck::CAMERA_ARM) ||
+            ((pk.camera == Puck::CAMERA_ARM) == (best->camera == Puck::CAMERA_ARM) && d < best_d);
+          if (d <= target_look_match_ && better) {
+            best = &pk;
+            best_d = d;
+          }
+        }
+        if (best) {
+          geometry_msgs::msg::PoseStamped latch;
+          latch.header.frame_id = fixed_frame_;
+          latch.header.stamp = pucks->header.stamp;
+          tf2::doTransform(best->pose, latch.pose, to_fixed);
+          latch.pose.orientation = geometry_msgs::msg::Quaternion();
+          latch.pose.orientation.w = 0.0;   // 방향 없음 (resolveTarget 이 yaw 를 쓰지 않음)
+          target_look_latch_ = latch;
+          target_look_latch_time_ = t;
+          char buf[200];
+          std::snprintf(buf, sizeof(buf), "puck seen by %s (tag %d) at (%.3f, %.3f, %.3f) %s, %.3f m from expected",
+            best->camera == Puck::CAMERA_ARM ? "arm camera" : "D435", best->tag_id, latch.pose.position.x,
+            latch.pose.position.y, latch.pose.position.z, fixed_frame_.c_str(), best_d);
+          RCLCPP_INFO(get_logger(), "target_look: %s", buf);
+          finishSkill(true, buf);
+          return;
+        }
+      } catch (const tf2::TransformException & e) {
+        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000, "target_look: TF %s", e.what());
+      }
+    }
+    if (waited > target_look_settle_ + target_look_timeout_) {
+      char buf[200];
+      std::snprintf(buf, sizeof(buf), "target_look: no puck within %.3f m of expected (%.3f, %.3f) in %s for %.1f s",
+        target_look_match_, target_look_expected_.x(), target_look_expected_.y(), base_frame_.c_str(), target_look_timeout_);
+      finishSkill(false, buf);
+    }
+  }
+
   // 다음 팔레트 꺼내기가 같은 자리에서 시작하게 이동 자세 (팔레트 궤적 transit q_front_tilt) 로
   void toTransit(const std::string & message)
   {
@@ -1884,10 +2247,23 @@ private:
   double gripper_move_time_{1.0}, gripper_settle_{0.4}, grasp_margin_{0.15};
   bool gripper_fail_on_empty_{true};
   double toppick_pitch_{-M_PI_4}, toppick_approach_{0.06}, grasp_z_offset_{0.015};
+  bool toppick_use_alignment_{false};
+  double toppick_latch_max_age_{30.0};
+  TargetLookParams target_look_;
+  double target_look_settle_{0.3}, target_look_arm_wait_{1.0}, target_look_timeout_{3.0}, target_look_match_{0.04};
   std::string pallet_file_;
   double pallet_speed_{0.8}, pallet_row3_hold_speed_{0.4};
   bool pallet_require_held_{true};
   std::map<std::pair<int, int>, std::vector<PalletSegment>> pallet_;   // (열, 칸) → 구간
+  std::map<std::pair<int, int>, std::vector<double>> pallet_front_;    // (열, 칸) → 앞 운반 자세 q_front (5 관절)
+  double pallet_release_{-0.764}, pallet_dwell_{0.3};
+  bool sag_enabled_{true};
+  double sag_ki_{4.0}, sag_bias_max_{0.15}, sag_settle_{1.5}, sag_rate_{50.0}, sag_horizon_{0.06}, sag_max_error_{0.3};
+  std::optional<JointTimeline> sag_tl_;            // 팔레트 스트리밍 시간표 (job_cb_group_ 전용)
+  SagIntegrator sag_int_{4.0, 0.15};
+  std::optional<double> sag_check_t_;              // 꺼내기 쥠 확인 시각
+  bool sag_load_{true};
+  rclcpp::Time sag_start_{0, 0, RCL_ROS_TIME}, sag_last_{0, 0, RCL_ROS_TIME};
   std::vector<double> transit_tilt_;                                   // 팔레트 궤적 이동 자세 (5 관절)
   std::string place_cells_file_, place_cells_frame_, floor_frame_;
   std::map<std::string, std::pair<double, double>> place_cells_;      // "L1/-1,0" → (x, y)
@@ -1920,6 +2296,7 @@ private:
   rclcpp::Subscription<PerceptionResult>::SharedPtr result_sub_;
   rclcpp::Subscription<sensor_msgs::msg::Range>::SharedPtr range_sub_;
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_sub_;
+  rclcpp::Subscription<PuckArray>::SharedPtr pucks_sub_;
   rclcpp_action::Client<FollowJT>::SharedPtr arm_client_;
   rclcpp_action::Client<GripperCmd>::SharedPtr gripper_client_;
   rclcpp_action::Server<ArmPose>::SharedPtr pose_server_;
@@ -1932,6 +2309,7 @@ private:
   std::mutex sensor_mutex_;
   PerceptionResult::ConstSharedPtr last_result_;
   sensor_msgs::msg::Range::ConstSharedPtr last_range_;
+  PuckArray::ConstSharedPtr last_pucks_;
   std::map<std::string, double> joint_pos_;
   rclcpp::Time joint_rx_{0, 0, RCL_ROS_TIME};
 
@@ -1950,6 +2328,9 @@ private:
   std::vector<double> last_sent_;                     // 마지막으로 보낸 6관절 목표
   std::function<void()> gripper_wait_;                // 그리퍼 판정 대기 (onTick 이 settle_time 뒤 부름)
   std::string pose_name_;
+  Eigen::Vector3d target_look_expected_{Eigen::Vector3d::Zero()};   // target_look 퍽 예상 중심 (base_frame_)
+  std::optional<geometry_msgs::msg::PoseStamped> target_look_latch_;  // target_look 이 잰 퍽 중심 (fixed_frame_)
+  rclcpp::Time target_look_latch_time_{0, 0, RCL_ROS_TIME};
   rclcpp_action::ClientGoalHandle<FollowJT>::SharedPtr arm_goal_;
   rclcpp_action::ClientGoalHandle<GripperCmd>::SharedPtr gripper_goal_;
   PickStep step_{PickStep::PLAN};

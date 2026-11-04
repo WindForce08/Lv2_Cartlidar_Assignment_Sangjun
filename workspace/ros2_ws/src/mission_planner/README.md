@@ -26,18 +26,18 @@ python3 -m pytest test                               # 시험 15 개 (할당 6 �
 ## 지도 (문서 좌표)
 
 - 원본 `worlds/dice_mission.sdf` = `urdf_and_usd/waffle_4wd_description/worlds/dice_mission.sdf` 복사본 (발제 좌표 mm / 1000, 원점 = 왼쪽 아래 기둥 중심, +Y 위).
-- `map_nav`: 바닥 위 0 ~ 0.45 m 와 겹치는 충돌 형상 전부 (벽판 · 기둥 · 박스 70 mm · 중앙 받침대 · 신호등 · 바코드 받침). 0.025 m 칸.
-- `map_amcl`: LiDAR 스캔면 (바닥 위 0.082 m = LDS-03 base_link z 0.0755 + 0.00675) 을 지나는 것만. 박스 · 받침대 (0.07 m) 는 스캔에 안 보여 뺌.
+- `map_nav`: 바닥 위 0 ~ 0.45 m 와 겹치는 충돌 형상 전부 (벽판 · 기둥 · 박스 70 mm · 장소 상자 · 신호등 · 바코드 받침). 0.025 m 칸.
+- `map_amcl`: LiDAR 스캔면 (바닥 위 0.082 m = LDS-03 base_link z 0.0755 + 0.00675) 을 지나는 것만. 박스 · 장소 상자 (0.07 m) 는 스캔에 안 보여 뺌.
 
 ## 접근 자세
 
 - 로봇 외곽 (base_link): 앞 +0.1328 · 뒤 −0.2135 (뒤 카메라 기둥) · 폭 ±0.1676 (바퀴), J1 축 x 0.096. 판정은 격자가 아니라 SDF 원래 형상과 사각형 겹침 (분리축).
-- 시작 박스: **두 퍽 (박스 중심 X ±40 mm) 을 잇는 선에 수직인 ±Y 면** (S = 남쪽에서 북쪽 보고, N = 북쪽에서). 두 퍽이 J1 앞 0.159 m · 옆 ±0.04 m (거리 0.164) 로 같아 한 번 서서 둘 다 집음.
-  ±Y 가 둘 다 막힌 박스만 ±X 면 (inline, 틈 0.04 → 두 퍽 0.139 / 0.219 m).
+- 시작 박스: **두 퍽 (박스 중심 X ±40 mm) 을 잇는 선에 수직인 ±Y 면** (S = 남쪽에서 북쪽 보고, N = 북쪽에서). 두 퍽이 J1 앞 0.266 m · 옆 ±0.04 m (거리 0.270) 로 같아 한 번 서서 둘 다 집음.
+  ±Y 가 둘 다 막힌 박스만 ±X 면 (inline → 두 퍽 0.227 / 0.306 m).
   지금 맵: B1 S · B2 S · B3 S/N · B4 S/N · B5 N · **B6 W (inline)** (B6 북쪽은 벽, 남쪽은 B2 와 0.53 m 라 대기 자세가 안 들어감).
-- L1 · L2 · L3: 장소 태그 면 (L1 서쪽, L2 받침대 북쪽, L3 남쪽). 칸마다 J1 거리 → 수직 (≤ 0.23) / 45° 기울여 (≤ 0.35, 팀 URDF IK).
-  **L2 는 격자 중심이 받침대 북쪽 끝에서 0.21 m 안쪽이라 가운데 줄 (0.27) 과 먼 줄 (0.33) 은 기울여 놓아야 함 (Isaac 미검증)**.
-- final = 집기 · 놓기 자세 (앞 끝 − 면 0.02), stage = nav2 목표 (standoff 0.45 → 막히면 0.35 · 0.30), 출발 구역 = 로봇 중심 (0.734, 0.95), −X.
+- L1 · L2 · L3: 장소 태그 면 (L1 서쪽, L2 북쪽, L3 남쪽). 칸마다 J1 거리 → 수직 (≤ 0.23) / 45° 기울여 (≤ 0.35, 팀 URDF IK).
+  L2 는 2026-11-04 확정으로 L1 · L3 과 같은 205 상자 (이전 820 받침대). 세 장소 모두 칸 J1 거리 0.206 ~ 0.332 m (45°, Isaac 칸 놓기 미검증).
+- final = 집기 · 놓기 자세 = drive FINE 정렬 자리 (렌즈 → 면 0.13 = 앞 끝 − 면 0.1272, #64 안 A: TFmini 는 0.10 m 안을 못 재 더 붙지 않음), stage = nav2 목표 (standoff 0.45 → 막히면 0.35 · 0.30), 출발 구역 = 로봇 중심 (0.734, 0.95), −X.
 
 ## 계획 (planner)
 
@@ -85,8 +85,8 @@ robot_interfaces 는 바꾸지 않음 (동결). 계획 단계 (`mission_planner/
 |---|---|
 | `goto x y yaw` | /drive/navigate (지도 좌표) + 팔 STOW |
 | `approach 0.13` | 기존 approach (COARSE → READY → FINE, TFmini 하한 0.13) |
-| `skill manipulator <이름>` | /manipulator/execute_skill — ★ manipulator 구현 필요. 집기 · 놓기는 모두 집게 45°: `toppick_tilt`, `pallet_load_<열>_<칸>_tilt`, `pallet_unload_<열>_<칸>_tilt` (속도 규칙 #75), `place_<L>_<dx>_<dy>_tilt` (dx, dy = m1 · 0 · p1) |
-| `skill drive turn_<p\|m>17` · `turn_0` | /drive/execute_skill — drive_node (#77, 실제 회전 중심 보정 `turn.icr_x`). 상자 퍽을 집기 전 FINE 정렬 방향에서 로봇 중심 둘레로 ±17° 제자리 회전 (J1→퍽 = 박스 축 = 퍽 면, ±3°), 집고 실은 뒤 `turn_0` 으로 되돌림. inline (박스 6) 은 회전 없음 |
+| `skill manipulator <이름>` | /manipulator/execute_skill (manipulator_node). 집기 · 놓기는 모두 집게 45°: `target_look:base_footprint:x:y:z` (집기 전 팔 카메라로 퍽을 내려다보고 재서 붙잡음, 회전 뒤 예상 위치 `poses.puck_after_turn`, #82) → `toppick_tilt` (그 위치로 45° 집기), `pallet_load_<열>_<칸>_tilt`, `pallet_unload_<열>_<칸>_tilt` (속도 규칙 #75), `place_<L>_<dx>_<dy>_tilt` (dx, dy = m1 · 0 · p1) |
+| `skill drive turn_<p\|m>17` · `turn_0` | /drive/execute_skill — drive_node (#77, 실제 회전 중심 보정 `base.icr_x` = control robot_geometry.yaml). 상자 퍽을 집기 전 FINE 정렬 방향에서 로봇 중심 둘레로 ±17° 제자리 회전 (J1→퍽 = 박스 축 = 퍽 면, ±3°), 집고 실은 뒤 `turn_0` 으로 되돌림. inline (박스 6) 은 회전 없음 |
 | `verify L cx cy z expect9 yshape` | 팔 TAG_VIEW → READ_TAG+SEARCH_FRONT → /perception/check_dice (지도 좌표 칸) → 기록, 틀려도 계속 (stop_on_fail false) |
 | `wait 3` | 복귀 뒤 정지 |
 
@@ -95,15 +95,18 @@ robot_interfaces 는 바꾸지 않음 (동결). 계획 단계 (`mission_planner/
 
 연동 시험 (`test/mock_robot.py` = 가짜 drive · manipulator · perception): Q1 예제로 /mission/start → DONE (단계 93, 주행 18 · 정렬 30 · drive skill 8 (turn) · manipulator skill 48 · check_dice 3, 26 s),
 skill 거절 → 재시도 2 번 뒤 FAILED, 미등록 바코드 → 바로 FAILED.
+장소 상자 재기 (#73, 2026-11-04, mock 이 상자를 2 cm · 5° 밀고 돌려 odom 으로 냄, map -> odom 10°): L1 · L2 · L3 마다 첫 pallet_unload 앞 measure_box 1 번,
+place_<L>_* 12 개 → place_at:odom (손 계산과 같음), check_dice 3 번 odom 칸 → DONE. --box_fail (측정 실패) → 지도 좌표 그대로 DONE.
 
 ## 남은 것 · 주의
 
 - `placement.csv` 가 나오면 문제 파일로 옮겨 계획을 다시 돌릴 것. 경기장 설치 실측이 발제 좌표와 다르면 SDF (generate_world.py) 를 고치고 `mission_make_maps`.
 - 모든 집기 · 놓기 45° (2026-11-03): 팔레트 12 칸은 Isaac 24/24 (#75). 박스 위 집기 · L 칸 놓기 45° 와 상자 퍽 ±17° 회전 집기는 Isaac · 실물 확인 전.
-  J1 거리 범위 0.12 ~ 0.35 m (윗면 70 mm). 박스 ±Y 접근 gap 0.06 (회전 때 외곽-박스 여유 15 mm, 퍽 J1 0.203 m), L1 · L3 gap 0.06 (칸 0.139 ~ 0.266 m), L2 0.02 (0.207 ~ 0.332 m).
-  TopPick 다시 학습 필요 (#78): tilt_prob 1.0, 원기둥 퍽 gap 0.06, 회전 뒤 상자 퍽은 옆 퍽이 접선 방향. 회전 skill 은 drive #77.
+  J1 거리 범위 0.12 ~ 0.35 m (윗면 70 mm). 모든 final = FINE 자리 (앞 끝 - 면 0.1272, #64 안 A): 박스 퍽 J1 0.270 m, inline 0.227 / 0.306, L1 · L2 · L3 칸 0.206 ~ 0.332 m.
+  TopPick 다시 학습 필요 (#78): tilt_prob 1.0, 실제 배치 gap 0.1272, 회전 뒤 상자 퍽은 옆 퍽이 접선 방향. 회전 skill 은 drive #77.
 - per_location 은 팔레트 2 · 1 열 8 칸만 씀 (3 열 놓기는 쥔 구간 0.4 rad/s 라 칸당 약 6 s 더 걸림).
 - 45° 로 놓은 상자 퍽은 칸에서 J1→칸 방향으로 돌아 앉음 (L1 · L3 최대 23°, L2 16°). 칸 판정에 퍽 방향이 들어가는지 확인.
-- manipulator: 위 skill 이름 (팔레트 싣기 · 꺼내기, 칸 놓기, 기울여 집기) 구현 필요. 팔레트 궤적은 `urdf_and_usd/policy/manipulator/pallet_place_traj.json`.
-- approach FINE 은 TFmini 하한 0.13 m 라 범퍼-박스 약 0.13 m 에서 멈춤 → 접근 자세표 final (박스 0.06 · inline 0.04 · L1 L3 0.06 · L2 0.02 m) 까지는 #64 에서 정함.
+- manipulator: 위 skill 이름은 manipulator_node 에 있음 (PR #94, 팔레트 구간 순서는 #75 Isaac 확인본). 팔레트 궤적 원본은 `urdf_and_usd/policy/manipulator/pallet_place_traj.json`.
+- approach FINE 자리를 그대로 집기 · 놓기 자세로 씀 (#64 안 A). TFmini 는 0.10 m 안을 못 재 obstacle_stop 이 막으므로 더 붙지 않음.
+  BOX_VIEW (상자 내려다보기) 가 이 자리 (상자 중심 base x 0.3625) 에서 윗면을 다 보는지 실물 확인 (perception place_box.prior 도 0.3625).
 - observe · verify 팔 자세 (TAG_VIEW) 는 바코드 · 칸을 볼 수 있는지 실물 확인 (mission_plan.yaml observe.arm_pose · verify.arm_pose).

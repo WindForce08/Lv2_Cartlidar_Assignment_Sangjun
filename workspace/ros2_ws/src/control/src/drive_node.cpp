@@ -89,7 +89,7 @@ public:
     obstacle_stop_node_ = declare_parameter("align.box.obstacle_stop_node", std::string("/obstacle_stop"));
     coarse_min_ = declare_parameter("align.coarse_min", 0.3);
     default_tol_ = declare_parameter("align.default_tolerance", 0.01);
-    front_offset_ = declare_parameter("base.front_offset", 0.20);   // base_link → 범퍼 앞면 ★
+    front_offset_ = declare_parameter("base.front_offset", 0.1328);   // base_link → 차체 앞 끝 (B안) ★
     scan_half_ = declare_parameter("scan.half_angle", 0.349);        // ±20°
     scan_front_margin_ = declare_parameter("scan.front_margin", 0.10);
     scan_rear_stop_ = declare_parameter("scan.rear_stop", 0.30);
@@ -117,7 +117,8 @@ public:
     turn_max_deg_ = declare_parameter("turn.max_deg", 30.0);
     turn_geo_.j1_x = declare_parameter("turn.j1_x", turn_geo_.j1_x);
     turn_geo_.center_x = declare_parameter("turn.center_x", turn_geo_.center_x);
-    turn_geo_.icr_x = declare_parameter("turn.icr_x", turn_geo_.center_x);   // 기본 = 보정 없음
+    // 실제 회전 중심 = robot_geometry.yaml base.icr_x (EKF odom_icr 와 같은 값, #92). 기본 = 보정 없음
+    turn_geo_.icr_x = declare_parameter("base.icr_x", turn_geo_.center_x);
 
     if (skill_enabled_) {
       std::vector<std::string> errs;

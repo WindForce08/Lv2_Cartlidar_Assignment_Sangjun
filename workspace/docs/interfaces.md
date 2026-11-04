@@ -23,19 +23,21 @@
 | /arm_range | sensor_msgs/Range | SensorData | perception_node (ARM_ALIGN, 팔 영상마다) — 팔 끝(`tool_link`) → 정렬 중인 퍽 **표면** 거리. ① Arducam 태그 퍽 중심(READ_TAG) ② D435 목표를 odom 에 붙잡아 둔 점(3 s 안) ③ 둘 다 없으면 팔 카메라 평면 교차 퍽 중심(`arm.range.plane_gate`). 못 구하면 +inf. **TFmini 아님** | manipulator (미세 보정 · 최종 전진 · pick ①) |
 | /perception/arm_range | sensor_msgs/Range | SensorData | perception_node (ARM_ALIGN, `arm.plane`) — 팔 끝(`tool_link`) → 잠근 퍽 **중심** 거리 (팔 카메라 평면 교차). 함께 /perception/arm_target (PointStamped). ★ 위 `/arm_range`(퍽 **표면**)와 다른 토픽 — 이름이 비슷하니 헷갈리지 말 것, 두 값 차이 ≈ 퍽 반지름 | (없음 — 예비 · 검증용) |
 | /tfmini/range | sensor_msgs/Range | SensorData, 50 Hz | tfmini_node (실물) · scan_to_range (Gazebo) — 1층 렌즈(`tfmini_link`) → **퍽이 놓인 박스 앞면** 거리, mm 출력 + 실측 보정 | drive (FINE 정렬 전후), obstacle_stop |
-| /perception/pucks | robot_interfaces/PuckArray | Reliable, depth 1 (`qos::result()`, /perception/result 와 같음) | perception_node | perception_survey (mission 은 필요하면) |
+| /perception/pucks | robot_interfaces/PuckArray | Reliable, depth 1 (`qos::result()`, /perception/result 와 같음) | perception_node | perception_survey, manipulator (target_look 타겟체크자세에서 예상 자리 퍽, #82) |
 | /perception/puck_survey | std_msgs/String (JSON) | Reliable + TransientLocal, depth 1 | perception_survey — B0 박스 6 · 칸 12. 필드 `slots[]`(box, side, x_mm, y_mm, color, shape, pose, id, status …) · `complete` · `errors` · `revisit` · `unconfirmed` · `frame`(발제 원점, mm). `complete` false 면 할당에 쓰지 않음. 자세한 것은 perception_survey/README.md | (mission 연동 미구현 — 계획) |
 | /perception/signal | robot_interfaces/SignalSequence | Reliable, depth 1 | perception_node (READ_SIGNAL) | mission (plan 모드), mission_planner |
 | /perception/barcode | robot_interfaces/Barcode | Reliable, depth 1 | perception_node (READ_BARCODE) | mission (plan 모드), mission_planner |
 | /perception/task_marker | robot_interfaces/TaskMarker | Reliable, depth 1 | perception_node (READ_MARKER) | (없음) |
 | /perception/rear_obstacle · `/reason` · `/distance` | std_msgs/Bool · String · Float32 | Reliable + TransientLocal (distance 기본) | rear_obstacle (뒤 D435 깊이, perception.launch `use_rear_obstacle`) | (없음 — 후진 판단에 쓸지 결정 필요) |
 | /localization/status | std_msgs/String | Reliable + TransientLocal | loc_monitor (localization 패키지, 10 Hz · 바뀔 때: OK · SUSPECT · LOST · RECOVERING · CONFIRM · FAILED) | perception_survey (OK 일 때만 관측을 받음, 1 s 넘게 못 받으면 그대로 받음) |
-| /localization/lock | std_msgs/Bool | Reliable + TransientLocal | loc_monitor (OK · SUSPECT 가 아니면 true) | (없음 — twist_mux lock 연결 #93) |
+| /localization/lock | std_msgs/Bool | Reliable + TransientLocal | loc_monitor (OK · SUSPECT 가 아니면 true, 10 Hz) | twist_mux lock `localization` (priority 20 = nav 만 막음, #93) — base_bringup `loc_lock:=true` · bringup `use_loc_lock:=true` 일 때만 (끊겨도 잠김) |
+| /perception/place_box · `/cells` · `/status` | geometry_msgs/PoseStamped · PoseArray · std_msgs/String (JSON) | Reliable + TransientLocal | perception_node (`/perception/place_box/measure` Trigger 뒤, 팔 영상, odom) | mission (measure_box, #73: place_at · verify 칸) |
 | /perception/obstacle_stop | std_msgs/Bool | Reliable + TransientLocal, 10 Hz | obstacle_stop (`/tfmini/range` 판정) | twist_mux (lock priority 60, 0.5 s: drive · nav 막음, 조이스틱 통과) |
 | /perception/obstacle_stop/reason | std_msgs/String | Reliable + TransientLocal | obstacle_stop (obstacle · too_close · stale · clear · no_return) | 모니터링 |
 | /tfmini/scan | sensor_msgs/LaserScan | SensorData | Gazebo (gz_bridge) | scan_to_range → /tfmini/range |
 | /map | nav_msgs/OccupancyGrid | Reliable + TransientLocal | slam_toolbox | nav2 |
-| /odom | nav_msgs/Odometry | 기본 | diff_drive_controller | ekf |
+| /odom | nav_msgs/Odometry | 기본 | diff_drive_controller | odom_icr |
+| /odom_icr | nav_msgs/Odometry | 기본 | bringup odom_icr (/odom + vy = −icr_x·ω, IMU ω, #92) | ekf (odom0 vx · vy) |
 | /imu/data | sensor_msgs/Imu | 기본 | imu_sensor_broadcaster (실물) · Isaac 브리지 (모의) | ekf |
 | /odometry/filtered | nav_msgs/Odometry | 기본 | ekf | nav2, drive_node |
 | /cmd_vel_teleop | TwistStamped | 기본 | teleop_twist_joy | twist_mux (100, 0.5 s) |

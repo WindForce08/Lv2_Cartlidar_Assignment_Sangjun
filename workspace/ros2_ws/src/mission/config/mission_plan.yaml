@@ -12,6 +12,7 @@ mission_node:
       survey: 20.0               # survey start · finish 서비스
       survey_view: 30.0          # 조사 자세 한 곳 (팔 자세 + settle_s)
       check_marker: 10.0         # 놓기 전 장소 태그 확인
+      measure_box: 15.0          # 장소 상자 재기 (팔 자세 + 재기 약 1.5 s)
     observe:
       arm_pose: TAG_VIEW         # ★ 바코드 (80, 650, 450 mm) 를 팔 카메라로 읽을 자세 — manipulator 와 맞출 것
       max_cycles: 4              # 신호 묶음이 반복됨 (12 회 → 3 s 꺼짐 → 다시). 이만큼 보고도 같은 순서 2 번이 안 나오면 안전 정지
@@ -26,6 +27,14 @@ mission_node:
     marker:
       ids: [12, 13, 14]          # L1 · L2 · L3 장소 태그 (tag36h11)
       check_before_place: false  # ★ true = 장소 첫 놓기 앞에서 태그 ID 확인 (놓는 자리에서 태그가 보이는지 실물 확인 뒤)
+    # 놓기 전 장소 상자 재기 (#73): 그 장소 첫 꺼내기 앞에 measure_box <L> 자동. 잰 장소는 place_at (odom) 과 verify 칸을 잰 상자 기준으로
+    place_box:
+      enabled: true
+      arm_pose: BOX_VIEW         # ★ 상자 윗면을 내려다보는 자세 (manipulator). FINE 자리 (앞 끝 - 면 0.1272) 에서 상자가 다 보이는지 실물 확인
+      mode: READ_TAG             # 팔 카메라를 켜는 모드 (perception 은 READ_TAG 또는 ARM_ALIGN 일 때만 잼)
+      settle_s: 0.5              # 팔 자세 · 모드 뒤 재기 전 기다림
+      max_shift: 0.10            # [m] 잰 중심이 지도 칸 중심에서 이보다 멀면 잘못 잰 것으로 봄
+      required: false            # true = 못 재면 단계 실패 (재시도), false = 기록하고 지도 좌표로 놓음
     log_dir: /tmp/mission_log    # mission_log.jsonl (관측 · 계획 · 재검증 · 끝). 비우면 기록 안 함
     # 퍽 측량 (perception_survey, #39 #53): observe 와 plan 사이. 끝나면 survey.pucks_out 에 계획기 퍽 등록표를 쓴다
     #   → mission_planner 를 pucks_file:=<survey.pucks_out> 로 띄울 것 (planner.launch.py pucks_file 인자)
@@ -34,7 +43,7 @@ mission_node:
       boxes: [1, 2, 3, 4, 5, 6]
       # 박스마다 조사 자세 = 계획기 접근 자세표 (mission_planner approach_poses.yaml) 의 B<box>:<side> stage 를 시작할 때 읽음
       #   (좌표를 여기 복사하지 않음 → 자세표만 고치면 됨). 박스와 같은 순서로 면 S · N · W · E
-      sides: [S, S, S, S, N, W]
+      sides: ["S", "S", "S", "S", "N", "W"]   # 따옴표 필수: YAML 은 N 을 bool (no) 로 읽어 rcl 이 섞인 배열로 거부함
       poses_file: ""             # 빈 문자열 = <mission_planner share>/config/approach_poses.yaml
       # poses: [x, y, yaw, ...]  # 자세표 대신 직접 줄 때만 (박스마다 3 개)
       approach_distance: 0.13    # 조사 자세 뒤 정밀 접근 (FINE, TFmini 하한 0.13). 0 = 접근 없이 봄

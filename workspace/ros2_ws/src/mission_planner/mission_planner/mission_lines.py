@@ -4,9 +4,11 @@ mission_node 가 쓰는 단계 (src/mission/src/mission_node.cpp 머리말):
   goto <x> <y> <yaw>                    지도 자세로 주행 + 팔 STOW (navigate 와 같고 위치 이름 대신 좌표)
   approach <d>                          STOW -> COARSE -> READY -> FINE (TFmini 렌즈 -> 박스 앞면 d, >= 0.13)
   pick_target <x> <y> <z>               /manipulator/pick, target = 지도 좌표 퍽 중심 (grasped 확인)
-  skill manipulator <이름> [timeout] [mode=…]   이름 규칙 (manipulator 가 고정 궤적 · 정책으로 구현할 것, ★ 아직 없음).
+  skill manipulator <이름> [timeout] [mode=…]   이름 규칙 (manipulator_node, PR #94).
                                         집기 · 놓기는 모두 집게 45° (_tilt):
-        toppick_tilt                    45° 기울여 위에서 집기 (TopPick 기울임 모드)
+        target_look:base_footprint:<x>:<y>:<z>   집기 전 팔 카메라로 퍽을 내려다보고 재서 붙잡음 (#82, 45° 집는 중에는 못 봄).
+                                        x · y = 회전 뒤 퍽 예상 중심 (poses.puck_after_turn), z = 바닥 위 퍽 중심
+        toppick_tilt                    45° 기울여 위에서 집기 (TopPick 기울임 모드). 목표 = 직전 target_look 이 잰 위치
         pallet_load_<열>_<칸>_tilt       쥔 퍽을 팔레트 칸에 놓기 (pallet_place_traj.json 의 칸 궤적, 속도 규칙 #75)
         pallet_unload_<열>_<칸>_tilt     팔레트 칸의 퍽을 집어 들기 (위 궤적의 반대)
         place_<L>_<dx>_<dy>_tilt         쥔 퍽을 장소 L 의 3 x 3 칸 (dx, dy = m1 · 0 · p1, 지도 +Y 가 위) 에 놓기
@@ -17,7 +19,7 @@ mission_node 가 쓰는 단계 (src/mission/src/mission_node.cpp 머리말):
 """
 from __future__ import annotations
 
-from .poses import DICE
+from .poses import DICE, FINE_DISTANCE, FINE_GAP, puck_after_turn
 
 PUCK_CENTER_Z = 0.07 + 0.03  # [m] 박스 (70) 위 퍽 (60) 중심, 지도 z
 GROUP_CODE = {"R": 1, "G": 2, "Y": 3}  # CheckDice.RED · GREEN · YELLOW
@@ -72,6 +74,10 @@ def to_lines(world, plan, fine_distance=0.13, skill_timeout=40.0, return_wait=3.
             turn = turn_name(s.get("turn_deg", 0.0))
             if turn != "turn_0":
                 lines.append(f"skill drive {turn} {T} mode=OFF")
+            pk = A[s["at"]].extra["pucks"][s["side"]]
+            lx, ly = puck_after_turn(pk["fwd"], pk["lat"], s.get("turn_deg", 0.0))
+            lines.append(f"skill manipulator target_look:base_footprint:{lx:.4f}:{ly:.4f}:{PUCK_CENTER_Z:.3f} {T} "
+                         "mode=SEARCH_FRONT+ARM_ALIGN+READ_TAG")
             lines.append(f"skill manipulator toppick_tilt {T} mode=SEARCH_FRONT+ARM_ALIGN+READ_TAG")
             lines.append(f"skill manipulator pallet_load_{r}_{i}_tilt {T} mode=OFF")
             if turn != "turn_0":
@@ -92,6 +98,7 @@ def to_lines(world, plan, fine_distance=0.13, skill_timeout=40.0, return_wait=3.
             lines.append(f"verify {L} {_n(cx)} {_n(cy)} {_n(PUCK_CENTER_Z - 0.03)} {expect_cells(g['count'], g['group'])} {ys}")
         elif t == "return":
             lines.append(f"wait {_n(float(return_wait))}")
-    notes.append(f"approach FINE {fine_distance} m (TFmini 하한) -> 범퍼-박스 약 {fine_distance - 0.0028:.3f} m. 접근 자세표 final (박스 ±Y 0.06 · inline 0.04 · L1 L3 0.06 · L2 0.02 m) 까지 남은 거리는 #64")
-    notes.append("toppick_tilt · pallet_load/unload_*_tilt · place_*_tilt skill 은 manipulator 구현 필요 (없으면 execute_skill 거절 -> 그 단계 실패)")
+    notes.append(f"approach FINE {fine_distance} m (TFmini 렌즈 -> 면) 자리 = 접근 자세표 final (앞 끝 -> 면 {FINE_GAP:.4f} m, #64 안 A)")
+    if abs(fine_distance - FINE_DISTANCE) > 1e-9:
+        notes.append(f"★ fine_distance {fine_distance} 가 접근 자세표 FINE_DISTANCE {FINE_DISTANCE} 와 다름 -> 집기 · 놓기 칸 거리가 어긋남")
     return lines, notes

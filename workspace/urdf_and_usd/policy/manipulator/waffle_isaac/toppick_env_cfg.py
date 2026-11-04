@@ -21,7 +21,7 @@ gap 0.5 ~ 4 cm (주행이 상자 앞에 바짝 세움), 가로 ±4 cm, 요 무�
   관측 36 = 위 35 + 기울임 모드 (0 / 1). 시작 자세도 기울인 판 (READY_TILT, 잡는 점 자리는 READY_POSE 와 같음).
 
 **다시 학습 (2026-11-04, #71 · #78 · #82)**: 모든 집기 · 놓기 45° (tilt_prob 1.0). 관측 36 · 행동 4 형식은 그대로.
-  실제 배치 (layout_prob): mission_planner 접근 자세표 그대로 A 원기둥 퍽 (박스 ±Y 면, 간격 0.06, 옆 퍽 접선 방향) ·
+  실제 배치 (layout_prob): mission_planner 접근 자세표 그대로 A 원기둥 퍽 (박스 ±Y 면, 간격 = FINE 자리 0.1272 #64, 옆 퍽 접선 방향) ·
   B 상자 퍽 (A 를 drive turn_* 로 돈 뒤, 회전 중심 x = turn_icr_range) · C inline (박스 6, 가까운 퍽 또는 옆 퍽 없는 먼 퍽). 흔들기 간격 · 요 · 가로.
   무작위 배치의 기울임 상자 퍽은 상자 x 축을 반경 또는 접선 (옆 퍽이 뒤 또는 옆).
   인식: 치우침 ±perc_bias, perc_latch_prob 비율은 시작 좌표를 에피소드 내내 고정 (관찰 자세에서 재고, 45° 집는 동안 팔 카메라가 퍽을 못 봄 #82).
@@ -35,14 +35,17 @@ from isaaclab_physx.physics import PhysxCfg
 
 import isaaclab.sim as sim_utils
 from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidObjectCfg
+import isaaclab.envs.mdp as mdp
 from isaaclab.envs import DirectRLEnvCfg, ViewerCfg
+from isaaclab.managers import EventTermCfg as EventTerm
+from isaaclab.managers import SceneEntityCfg
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sensors import ContactSensorCfg
 from isaaclab.sim import SimulationCfg
 from isaaclab.utils import configclass
 
 from .dice2_cfg import box_cfg, puck_cfg
-from .robot_cfg import BODY_LINK, FINGER_CLOSE, FINGER_GRASP_RANGE, FLOOR_MATERIAL, WAFFLE_CFG
+from .robot_cfg import ARM_JOINTS, BODY_LINK, FINGER_CLOSE, FINGER_GRASP_RANGE, FINGER_LINKS_REGEX, FLOOR_MATERIAL, WAFFLE_CFG
 
 READY_POSE = {"joint1": 0.0, "joint2": 0.48, "joint3": -0.76, "joint4": 1.84, "joint5": 0.0}
 """시작 자세 = TCP 가 J1 축 앞 0.20 m (base x 0.296), 상자 위 퍽의 잡는 높이보다 5 cm 위, 집게 아래 (pallet_traj.Arm IK, 2026-11-02). 학습 때 잡음."""
@@ -82,6 +85,60 @@ class TopPickSceneCfg(InteractiveSceneCfg):
     light = AssetBaseCfg(prim_path="/World/Light", spawn=sim_utils.DomeLightCfg(intensity=2000.0, color=(0.85, 0.85, 0.85)))
 
 
+def _friction(asset, **kw):
+    """퍽 · 손가락 마찰 (학습 시작 때 한 번, 환경마다 다른 값 64 통). PhysX 는 두 재질의 평균을 쓰므로 양쪽을 같은 범위로."""
+    return EventTerm(func=mdp.randomize_rigid_body_material, mode="startup", params={
+        "asset_cfg": SceneEntityCfg(asset, **kw), "static_friction_range": DR_FRICTION, "dynamic_friction_range": DR_FRICTION,
+        "restitution_range": (0.0, 0.0), "num_buckets": 64, "make_consistent": True})
+
+
+def _mass(asset):
+    return EventTerm(func=mdp.randomize_rigid_body_mass, mode="startup", params={
+        "asset_cfg": SceneEntityCfg(asset), "mass_distribution_params": DR_PUCK_MASS, "operation": "scale"})
+
+
+DR_FRICTION = (0.3, 1.0)  # ★ 퍽 (PLA) · 손가락 정지 마찰. 실측 (경사판 미끄럼 각) 뒤 중심을 옮길 것. 지금 팀 값 1.0, 놓기 확인 0.5 가정
+DR_GAIN = (0.8, 1.25)     # ★ 팔 강성 · 감쇠 배율 (팀 18.88 = 펌웨어 P 800 환산). 처짐 6 ~ 13 mm 가 약 −20 ~ +25 % 변함. 처짐 실측 뒤 좁힐 것
+DR_PUCK_MASS = (0.8, 1.2)  # 3D 프린팅 채움 편차
+
+
+@configclass
+class TopPickEventCfg:
+    """물리 무작위화 (도메인 랜덤화 자료 6 · 10 ~ 14 쪽, #71 4번). Isaac Lab 6.1 의 재질 · 구동 이득 · 질량 함수는 CPU 텐서라
+    학습 시작 때 한 번 (환경 256 개가 서로 다른 값). 지연 · 관절 관측 잡음은 toppick_env.py (리셋마다 · 스텝마다).
+    끄기: set_dr(cfg, "none" | "all" | "-friction,-gains,-mass,-delay,-obs_noise") — toppick_eval.py --dr, 절제 실험."""
+    friction_puck_cyl = _friction("puckT_cyl")
+    friction_puck_box = _friction("puckT_box")
+    friction_puck_nb = _friction("puckN")
+    friction_fingers = _friction("robot", body_names=FINGER_LINKS_REGEX)
+    arm_gains = EventTerm(func=mdp.randomize_actuator_gains, mode="startup", params={
+        "asset_cfg": SceneEntityCfg("robot", joint_names=ARM_JOINTS), "stiffness_distribution_params": DR_GAIN,
+        "damping_distribution_params": DR_GAIN, "operation": "scale", "distribution": "uniform"})
+    mass_puck_cyl = _mass("puckT_cyl")
+    mass_puck_box = _mass("puckT_box")
+    mass_puck_nb = _mass("puckN")
+
+
+DR_TERMS = {"friction": ("friction_puck_cyl", "friction_puck_box", "friction_puck_nb", "friction_fingers"),
+            "gains": ("arm_gains",), "mass": ("mass_puck_cyl", "mass_puck_box", "mass_puck_nb")}
+
+
+def set_dr(cfg, spec: str = "all"):
+    """무작위화 켜고 끄기. "all" · "none" · 뺄 것만 "-friction,-delay" (friction · gains · mass · delay · obs_noise)."""
+    off = set(DR_TERMS) | {"delay", "obs_noise"} if spec == "none" else {
+        x.strip().lstrip("-") for x in spec.split(",") if x.strip().startswith("-")}
+    bad = off - set(DR_TERMS) - {"delay", "obs_noise"}
+    if bad:
+        raise ValueError(f"모르는 무작위화: {bad}")
+    for k, names in DR_TERMS.items():
+        if k in off:
+            for n in names:
+                setattr(cfg.events, n, None)
+    cfg.dr_delay = "delay" not in off
+    cfg.dr_obs_noise = "obs_noise" not in off
+    return cfg
+
+
 @configclass
 class WaffleTopPickEnvCfg(DirectRLEnvCfg):
     decimation = 4  # 30 Hz
@@ -92,6 +149,14 @@ class WaffleTopPickEnvCfg(DirectRLEnvCfg):
     viewer: ViewerCfg = ViewerCfg(eye=(0.75, -0.6, 0.55), lookat=(0.28, 0.0, 0.12), origin_type="env", env_index=0)
     sim: SimulationCfg = SimulationCfg(dt=1 / 120, render_interval=decimation, physics=PhysxCfg(), physics_material=FLOOR_MATERIAL)
     scene: TopPickSceneCfg = TopPickSceneCfg(num_envs=256, env_spacing=1.5, replicate_physics=True, clone_in_fabric=True)
+    events: TopPickEventCfg = TopPickEventCfg()
+
+    # 무작위화 (events 밖: toppick_env.py). set_dr 로 끔
+    dr_delay = True
+    dr_delay_max_steps = 4  # ★ 물리 스텝 (120 Hz) → 0 ~ 33 ms. 새 팔 목표를 리셋 때 뽑은 스텝 수만큼 늦게 적용. 실기 왕복 지연 실측 뒤
+    dr_obs_noise = True
+    obs_noise_joint_pos = 0.005  # [rad] 가우스 σ, 관절 관측 (Dynamixel 측정). IK 는 참값
+    obs_noise_joint_vel = 0.05   # [rad/s]
 
     cart_scale = 0.005  # [m / 스텝] 잡는 점 변위 최대 (30 Hz -> 15 cm/s)
     rot_hold_weight = 0.3
@@ -102,7 +167,7 @@ class WaffleTopPickEnvCfg(DirectRLEnvCfg):
 
     # 배치 무작위
     robot_front = 0.1328  # B안 판 차체 앞 끝 (상판, isaac/tools/make_maze_scene.py BODY_X)
-    gap_range = (0.005, 0.07)  # 원기둥 퍽 실제 배치 A 가 0.06 (#78, 이전 0.04)
+    gap_range = (0.03, 0.15)  # 무작위 배치. 실제 집기 자세 = FINE 자리 0.1272 (#64 안 A, 이전 0.005 ~ 0.04)
     lat_range = (-0.04, 0.04)
     joint1_x = 0.096
     reach_max = 0.23  # [m] 참고: 집게 수직으로 잡는 높이에 닿는 J1 축 거리 한계 (pallet_traj IK)
@@ -122,8 +187,8 @@ class WaffleTopPickEnvCfg(DirectRLEnvCfg):
     # 실제 배치 (#78 표, mission_planner poses.py · approach_poses.yaml). 나머지 에피소드는 위 무작위 배치
     layout_prob = 0.5
     layout_weights = (0.4, 0.4, 0.2)  # A 원기둥 퍽 · B 상자 퍽 (회전 뒤) · C inline
-    box_gap = 0.06  # [m] 박스 ±Y 면 접근: 앞 끝 - 박스 면 (poses.BOX_GAP)
-    inline_gap = 0.04  # [m] 박스 6 inline
+    box_gap = 0.1272  # [m] 박스 ±Y 면 접근: 앞 끝 - 박스 면 = drive FINE 자리 (poses.BOX_GAP = FINE_GAP, #64)
+    inline_gap = 0.1272  # [m] 박스 6 inline (poses.GAP_INLINE = FINE_GAP)
     puck_dx = 0.04  # [m] 두 퍽 = 상자 중심 ± 이 값
     turn_icr_range = (-0.070, -0.035)  # [m] 상자 퍽 회전 (drive turn_*) 의 실제 회전 중심 x (drive turn.icr_x, 모의 -0.0658 · 계획 -0.04035)
     inline_far_prob = 0.5  # C: 먼 퍽 (가까운 퍽은 이미 집어 없음 -> 옆 퍽 없음)
