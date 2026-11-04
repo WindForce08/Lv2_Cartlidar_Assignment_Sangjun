@@ -17,6 +17,8 @@ inline constexpr const char * PERCEPTION_BARCODE = "/perception/barcode";
 inline constexpr const char * ARM_RANGE = "/arm_range";            // perception_node: 팔 끝 → 정렬 중인 퍽 표면 (D435 · Arducam 측위)
 inline constexpr const char * TFMINI_RANGE = "/tfmini/range";      // tfmini_node: 1층 렌즈 → 퍽이 놓인 박스 앞면
 inline constexpr const char * OBSTACLE_STOP = "/perception/obstacle_stop";
+inline constexpr const char * PERCEPTION_REAR_OBSTACLE = "/perception/rear_obstacle";                // rear_obstacle: 뒤 D435 깊이, true = 뒤 통로 막힘 (#84)
+inline constexpr const char * PERCEPTION_REAR_OBSTACLE_REASON = "/perception/rear_obstacle/reason";
 inline constexpr const char * SCAN = "/scan";
 inline constexpr const char * ODOM_FILTERED = "/odometry/filtered";
 inline constexpr const char * CMD_VEL_DRIVE = "/cmd_vel_drive";

@@ -28,7 +28,7 @@
 | /perception/signal | robot_interfaces/SignalSequence | Reliable, depth 1 | perception_node (READ_SIGNAL) | mission (plan 모드), mission_planner |
 | /perception/barcode | robot_interfaces/Barcode | Reliable, depth 1 | perception_node (READ_BARCODE) | mission (plan 모드), mission_planner |
 | /perception/task_marker | robot_interfaces/TaskMarker | Reliable, depth 1 | perception_node (READ_MARKER) | (없음) |
-| /perception/rear_obstacle · `/reason` · `/distance` | std_msgs/Bool · String · Float32 | Reliable + TransientLocal (distance 기본) | rear_obstacle (뒤 D435 깊이, perception.launch `use_rear_obstacle`) | (없음 — 후진 판단에 쓸지 결정 필요) |
+| /perception/rear_obstacle · `/reason` · `/distance` | std_msgs/Bool · String · Float32 | Reliable + TransientLocal (distance 기본) | rear_obstacle (뒤 D435 깊이, perception.launch `use_rear_obstacle`) | drive_node (후진 v < 0 확인, `scan.rear_camera`, 값 없음 = 막힘 · #84) |
 | /localization/status | std_msgs/String | Reliable + TransientLocal | loc_monitor (localization 패키지, 10 Hz · 바뀔 때: OK · SUSPECT · LOST · RECOVERING · CONFIRM · FAILED) | perception_survey (OK 일 때만 관측을 받음, 1 s 넘게 못 받으면 그대로 받음) |
 | /localization/lock | std_msgs/Bool | Reliable + TransientLocal | loc_monitor (OK · SUSPECT 가 아니면 true, 10 Hz) | twist_mux lock `localization` (priority 20 = nav 만 막음, #93) — base_bringup `loc_lock:=true` · bringup `use_loc_lock:=true` 일 때만 (끊겨도 잠김) |
 | /perception/place_box · `/cells` · `/status` | geometry_msgs/PoseStamped · PoseArray · std_msgs/String (JSON) | Reliable + TransientLocal | perception_node (`/perception/place_box/measure` Trigger 뒤, 팔 영상, odom) | mission (measure_box, #73: place_at · verify 칸) |

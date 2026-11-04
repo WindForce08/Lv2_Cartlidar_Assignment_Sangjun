@@ -39,6 +39,7 @@ drive_node:
       half_angle: 0.349            # ±20°
       front_margin: 0.10           # 물체보다 0.1 m 이상 가까운 점 → 정지
       rear_stop: 0.30
+      rear_camera: true            # 후진 때 /perception/rear_obstacle (뒤 D435) 도 확인, 값 없음 = 막힘 (#84). bringup use_perception:=false 면 끔
     skill:
       enabled: false               # robot_policy(ONNX Runtime) 연결 전까지 false → goal 거절 → mission fallback
       policies_file: ""            # 예: /home/jetson/robot_ws/install/robot_policy/share/robot_policy/config/policies.yaml

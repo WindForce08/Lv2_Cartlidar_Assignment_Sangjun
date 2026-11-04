@@ -174,4 +174,11 @@ inline bool scan_blocked(const std::vector<float> & ranges, double angle_min, do
   return false;
 }
 
+// 뒤 D435 (/perception/rear_obstacle) 로 후진을 막을지 (#84). 스캔면 (82 mm) 아래 퍽 · 박스는 /scan 에 안 보임
+//   blocked = 최신 값, 없음 · 오래됨 = nullopt → 막음 (rear_obstacle 도 입력이 끊기면 true 를 냄)
+inline bool rear_camera_blocks(double v, bool enabled, std::optional<bool> blocked)
+{
+  return enabled && v < -1e-3 && (!blocked || *blocked);
+}
+
 }  // namespace control

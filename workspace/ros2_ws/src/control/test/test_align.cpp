@@ -117,3 +117,13 @@ TEST(BoxRange, ApproachStopDistance)
   EXPECT_NEAR(box_approach_stop(0.15, 0.03, 0.10), 0.12, 1e-9);
   EXPECT_NEAR(box_approach_stop(0.11, 0.03, 0.10), 0.10, 1e-9);   // TFmini 최소 거리 아래로는 안 내림
 }
+
+TEST(RearCamera, BlocksOnlyReverseWhenBlockedOrMissing)
+{
+  EXPECT_TRUE(rear_camera_blocks(-0.05, true, true));            // 후진 + 막힘
+  EXPECT_TRUE(rear_camera_blocks(-0.05, true, std::nullopt));    // 후진 + 값 없음 · 오래됨 → 안전 쪽
+  EXPECT_FALSE(rear_camera_blocks(-0.05, true, false));          // 후진 + 비어 있음
+  EXPECT_FALSE(rear_camera_blocks(0.05, true, true));            // 전진은 안 막음
+  EXPECT_FALSE(rear_camera_blocks(0.0, true, true));             // 제자리 (회전) 는 안 막음
+  EXPECT_FALSE(rear_camera_blocks(-0.05, false, true));          // 꺼져 있으면 안 봄
+}

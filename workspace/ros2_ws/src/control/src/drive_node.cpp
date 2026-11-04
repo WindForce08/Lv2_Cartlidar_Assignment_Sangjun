@@ -8,6 +8,8 @@
 //   /drive/execute_skill 강화학습 정책 (robot_policy, CPU) → 속도
 //                        turn_p<deg> · turn_m<deg> · turn_0 = 직전 FINE 정렬 방향 기준 제자리 회전 (#77, 정책 · skill.enabled 와 상관없음)
 //   result · /tfmini/range · /scan · odom 은 header.stamp 300 ms 지나면 버림. 바퀴 goal 은 한 번에 하나.
+//   후진 (v < 0) 은 scan.rear_camera 면 /perception/rear_obstacle (뒤 D435, 받은 지 stale_s 안) 도 확인 (#84):
+//   COARSE = 실패로 끝냄, FINE · skill = 전후 속도만 0 (회전 허용)
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -33,6 +35,8 @@
 #include "robot_policy/policy.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
 #include "sensor_msgs/msg/range.hpp"
+#include "std_msgs/msg/bool.hpp"
+#include "std_msgs/msg/string.hpp"
 #include "tf2/utils.hpp"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 #include "tf2_ros/buffer.hpp"
@@ -94,6 +98,7 @@ public:
     scan_front_margin_ = declare_parameter("scan.front_margin", 0.10);
     scan_rear_stop_ = declare_parameter("scan.rear_stop", 0.30);
     require_scan_ = declare_parameter("scan.required", true);
+    rear_camera_ = declare_parameter("scan.rear_camera", false);   // 뒤 D435 후진 확인 (카메라 없는 실행 · 시뮬은 false)
     stale_s_ = declare_parameter("stale_s", 0.3);
     xy_tol_ = declare_parameter("navigate.xy_goal_tolerance", 0.25);
     spin_time_ = declare_parameter("navigate.spin_time_allowance", 15.0);
@@ -146,6 +151,12 @@ public:
         [this](sensor_msgs::msg::LaserScan::ConstSharedPtr m) {scan_ = m;}, so);
     odom_sub_ = create_subscription<nav_msgs::msg::Odometry>(names::ODOM_FILTERED, 10,
         [this](nav_msgs::msg::Odometry::ConstSharedPtr m) {odom_ = m;}, so);
+    if (rear_camera_) {
+      rear_sub_ = create_subscription<std_msgs::msg::Bool>(names::PERCEPTION_REAR_OBSTACLE, qos::latched_state(),
+          [this](std_msgs::msg::Bool::ConstSharedPtr m) {rear_ = m->data; rear_rx_ = now();}, so);
+      rear_reason_sub_ = create_subscription<std_msgs::msg::String>(names::PERCEPTION_REAR_OBSTACLE_REASON, qos::latched_state(),
+          [this](std_msgs::msg::String::ConstSharedPtr m) {rear_reason_ = m->data;}, so);
+    }
 
     nav_client_ = rclcpp_action::create_client<Nav>(this, nav_action_name_, cbg_);
     spin_client_ = rclcpp_action::create_client<Spin>(this, spin_action_name_, cbg_);
@@ -433,6 +444,10 @@ private:
       c = fine_.step(result_->arm_offset.x, *box, align_target_, align_tol_);
       fb->lateral_error = static_cast<float>(result_->arm_offset.x);
       fb->distance = static_cast<float>(*box);
+      if (rear_camera_blocks(c.v, rear_camera_, rear_state())) {
+        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000, "정밀 정렬: 후방 장애물 (뒤 카메라: %s) — 후진 0", rear_why().c_str());
+        c.v = 0.0;
+      }
     } else {
       const bool obj_ok = result_ && fresh(result_->header.stamp) && result_->object_found;
       if (!obj_ok) {
@@ -456,6 +471,10 @@ private:
             finish_align(false, fwd ? "전방 장애물 (물체보다 가까운 점)" : "후방 장애물 0.3 m");
             return;
           }
+        }
+        if (rear_camera_blocks(c.v, rear_camera_, rear_state())) {
+          finish_align(false, "후방 장애물 (뒤 카메라: " + rear_why() + ")");
+          return;
         }
       }
     }
@@ -572,6 +591,10 @@ private:
           cmd_v = 0.0;
         }
       }
+      if (rear_camera_blocks(cmd_v, rear_camera_, rear_state())) {
+        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000, "skill: 후방 장애물 (뒤 카메라: %s) — 전후 속도 0", rear_why().c_str());
+        cmd_v = 0.0;
+      }
     }
     publish_cmd(cmd_v, cmd_w);
     auto fb = std::make_shared<Skill::Feedback>();
@@ -604,6 +627,19 @@ private:
     skill_gh_->publish_feedback(fb);
   }
 
+  // 뒤 카메라 최신 값 (받은 지 stale_s 넘으면 없음 = nullopt)
+  std::optional<bool> rear_state()
+  {
+    if (!rear_ || (now() - rear_rx_).seconds() > stale_s_) {return std::nullopt;}
+    return rear_;
+  }
+
+  std::string rear_why()
+  {
+    if (!rear_state()) {return "값 없음 · 오래됨";}
+    return rear_reason_.empty() ? "막힘" : rear_reason_;
+  }
+
   void tick()
   {
     if (nav_gh_ && nav_gh_->is_canceling()) {
@@ -616,7 +652,7 @@ private:
   // 파라미터
   double rate_hz_, lost_s_, mode_wait_s_, align_timeout_s_, min_fine_target_, coarse_min_, default_tol_, front_offset_;
   double scan_half_, scan_front_margin_, scan_rear_stop_, stale_s_, xy_tol_, spin_time_, max_v_, max_w_, skill_front_margin_;
-  bool require_scan_, skill_enabled_;
+  bool require_scan_, skill_enabled_, rear_camera_;
   int scan_bins_;
   std::string map_frame_, base_frame_, nav_action_name_, spin_action_name_;
   AlignController fine_;
@@ -633,6 +669,9 @@ private:
   std::shared_ptr<rclcpp::AsyncParametersClient> obstacle_params_;
   sensor_msgs::msg::LaserScan::ConstSharedPtr scan_;
   nav_msgs::msg::Odometry::ConstSharedPtr odom_;
+  std::optional<bool> rear_;   // /perception/rear_obstacle (#84)
+  rclcpp::Time rear_rx_{0, 0, RCL_ROS_TIME};
+  std::string rear_reason_;
 
   // goal
   std::shared_ptr<NavGH> nav_gh_;
@@ -661,6 +700,8 @@ private:
   rclcpp::Subscription<sensor_msgs::msg::Range>::SharedPtr box_sub_;
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr rear_sub_;
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr rear_reason_sub_;
   rclcpp_action::Client<Nav>::SharedPtr nav_client_;
   rclcpp_action::Client<Spin>::SharedPtr spin_client_;
   rclcpp_action::Server<Nav>::SharedPtr nav_server_;

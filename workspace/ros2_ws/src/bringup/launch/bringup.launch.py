@@ -43,6 +43,8 @@ def generate_launch_description():
     geometry = PathJoinSubstitution([ctl, 'config', 'robot_geometry.yaml'])   # drive · odom_icr 공용 (base.icr_x 한 곳)
     skill = {'skill.enabled':ParameterValue(LaunchConfiguration('skill_enabled'), value_type=bool),
              'skill.policies_file': LaunchConfiguration('policies_file')}
+    # 카메라 없이 (use_perception:=false) 띄우면 뒤 D435 도 없음 → drive_node 후진 확인 끔 (켜 두면 값 없음 = 후진 막힘, #84)
+    rear_camera = {'scan.rear_camera': ParameterValue(LaunchConfiguration('use_perception'), value_type=bool)}
 
     control_container = ComposableNodeContainer(
         name='control_container', namespace='', package='rclcpp_components',
@@ -52,7 +54,7 @@ def generate_launch_description():
                            parameters=[PathJoinSubstitution([mis, 'config', 'mission.yaml']),
                                        PathJoinSubstitution([mis, 'config', 'mission_table.yaml']), sim], extra_arguments=ipc),
             ComposableNode(package='control', plugin='control::DriveNode', name='drive_node',
-                           parameters=[geometry, PathJoinSubstitution([ctl, 'config', 'drive.yaml']), skill, sim], extra_arguments=ipc),
+                           parameters=[geometry, PathJoinSubstitution([ctl, 'config', 'drive.yaml']), skill, rear_camera, sim], extra_arguments=ipc),
             ComposableNode(package='control', plugin='control::ManipulatorNode', name='manipulator_node',
                            parameters=[PathJoinSubstitution([ctl, 'config', 'manipulator.yaml']), skill, sim], extra_arguments=ipc),
             ComposableNode(package='perception', plugin='perception::TFminiNode', name='tfmini_node',
