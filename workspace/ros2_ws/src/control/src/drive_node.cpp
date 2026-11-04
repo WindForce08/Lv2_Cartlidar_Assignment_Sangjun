@@ -6,9 +6,11 @@
 //                        끝나면(성공 · 실패 · 취소 · 선점) 0 으로 되돌린다
 //                        먼 거리: object_pose(D435, base_link) → 회전 + 전진/후진, 범퍼 기준 거리, /scan 장애물 감시
 //   /drive/execute_skill 강화학습 정책 (robot_policy, CPU) → 속도
+//                        turn_p<deg> · turn_m<deg> · turn_0 = 직전 FINE 정렬 방향 기준 제자리 회전 (#77, 정책 · skill.enabled 와 상관없음)
 //   result · /tfmini/range · /scan · odom 은 header.stamp 300 ms 지나면 버림. 바퀴 goal 은 한 번에 하나.
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <memory>
 #include <optional>
 #include <string>
@@ -23,6 +25,7 @@
 #include "rclcpp_action/rclcpp_action.hpp"
 #include "rclcpp_components/register_node_macro.hpp"
 #include "control/align_controller.hpp"
+#include "control/turn_skill.hpp"
 #include "robot_interfaces/srv/set_perception_mode.hpp"
 #include "robot_interfaces/action/align_base.hpp"
 #include "robot_interfaces/action/execute_skill.hpp"
@@ -104,6 +107,17 @@ public:
     max_w_ = declare_parameter("skill.max_angular", 1.5);
     scan_bins_ = declare_parameter("skill.scan_bins", 360);
     skill_front_margin_ = declare_parameter("skill.front_margin", 0.10);   // 범퍼 앞면에서 이 거리 안에 점 → 전진 0
+    TurnGains tg;
+    tg.kp = declare_parameter("turn.kp", tg.kp);
+    tg.max_ang = declare_parameter("turn.max_angular", tg.max_ang);
+    tg.min_ang = declare_parameter("turn.min_angular", tg.min_ang);
+    tg.tol = declare_parameter("turn.tolerance_deg", 1.0) * M_PI / 180.0;
+    tg.settle_cycles = declare_parameter("turn.settle_cycles", tg.settle_cycles);
+    turn_ctl_ = TurnController(tg);
+    turn_max_deg_ = declare_parameter("turn.max_deg", 30.0);
+    turn_geo_.j1_x = declare_parameter("turn.j1_x", turn_geo_.j1_x);
+    turn_geo_.center_x = declare_parameter("turn.center_x", turn_geo_.center_x);
+    turn_geo_.icr_x = declare_parameter("turn.icr_x", turn_geo_.center_x);   // 기본 = 보정 없음
 
     if (skill_enabled_) {
       std::vector<std::string> errs;
@@ -155,6 +169,13 @@ public:
         rcl_action_server_get_default_options(), cbg_);
     skill_server_ = rclcpp_action::create_server<Skill>(this, names::DRIVE_SKILL,
         [this](const rclcpp_action::GoalUUID &, std::shared_ptr<const Skill::Goal> g) {
+          if (const auto deg = parse_turn_deg(g->policy)) {   // 정해진 회전 — 정책 · skill.enabled 와 상관없음 (#77)
+            if (std::fabs(*deg) > turn_max_deg_) {
+              RCLCPP_WARN(get_logger(), "execute_skill 거부: %s 는 turn.max_deg %.0f° 초과", g->policy.c_str(), turn_max_deg_);
+              return rclcpp_action::GoalResponse::REJECT;
+            }
+            return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+          }
           std::string why;
           if (!skill_enabled_) {why = "skill.enabled=false";}
           else if (!policies_.find(g->policy)) {why = "정책 '" + g->policy + "' 없음";}
@@ -244,6 +265,7 @@ private:
   void start_navigate(std::shared_ptr<NavGH> gh)
   {
     preempt_all("새 /drive/navigate goal 로 대체");
+    ref_yaw_.reset();   // turn_* 기준 방향은 다음 FINE 정렬 성공으로 다시 정함
     nav_gh_ = gh;
     const uint64_t gen = ++nav_gen_;
     const auto & goal = *gh->get_goal();
@@ -314,6 +336,7 @@ private:
   void start_align(std::shared_ptr<AlignGH> gh)
   {
     preempt_all("새 /drive/align goal 로 대체");
+    ref_yaw_.reset();
     align_gh_ = gh;
     fine_.reset();
     coarse_.reset();
@@ -345,6 +368,13 @@ private:
 
   void finish_align(bool ok, const std::string & msg)
   {
+    if (ok && align_mode_ == AlignMode::FINE) {   // turn_* 기준 yaw₀ (#77)
+      if (odom_ && fresh(odom_->header.stamp)) {
+        ref_yaw_ = tf2::getYaw(odom_->pose.pose.orientation);
+      } else {
+        RCLCPP_WARN(get_logger(), "정밀 정렬 끝 yaw 를 /odometry/filtered 에서 못 읽음 — turn_* 를 쓸 수 없음");
+      }
+    }
     set_box_approach(0.0);
     publish_cmd(0, 0);
     auto r = std::make_shared<Align::Result>();
@@ -438,9 +468,28 @@ private:
   {
     preempt_all("새 execute_skill goal 로 대체");
     skill_gh_ = gh;
-    skill_ = policies_.find(gh->get_goal()->policy);
     skill_start_ = now();
     skill_timeout_ = gh->get_goal()->timeout > 0 ? gh->get_goal()->timeout : 30.0;
+    turn_active_ = false;
+    if (const auto deg = parse_turn_deg(gh->get_goal()->policy)) {
+      skill_ = nullptr;
+      if (!ref_yaw_) {
+        finish_skill(false, "turn: 정렬 방향(yaw₀) 없음 — 직전 FINE 정렬 성공이 필요");
+        return;
+      }
+      const double ang = turn_angle_rad(*deg, turn_geo_);
+      turn_target_ = wrap_pi(*ref_yaw_ + ang);
+      turn_total_ = 0.0;
+      turn_last_odom_ = skill_start_;
+      turn_ctl_.reset();
+      turn_active_ = true;
+      skill_timer_ = rclcpp::create_timer(this, get_clock(), rclcpp::Duration::from_seconds(1.0 / rate_hz_),
+          [this]() {tick_skill();}, cbg_);
+      RCLCPP_INFO(get_logger(), "skill %s 시작: yaw₀ %.2f° %+.2f° (이름 %+.2f°, icr_x %.4f), %.1f s",
+        gh->get_goal()->policy.c_str(), *ref_yaw_ * 180 / M_PI, ang * 180 / M_PI, *deg, turn_geo_.icr_x, skill_timeout_);
+      return;
+    }
+    skill_ = policies_.find(gh->get_goal()->policy);
     skill_timer_ = rclcpp::create_timer(this, get_clock(), rclcpp::Duration::from_seconds(1.0 / skill_->spec.rate_hz),
         [this]() {tick_skill();}, cbg_);
     RCLCPP_INFO(get_logger(), "skill %s 시작 (%.0f Hz, %.1f s)", skill_->spec.name.c_str(), skill_->spec.rate_hz, skill_timeout_);
@@ -483,6 +532,7 @@ private:
     if (!skill_gh_) {stop_skill_timer(); return;}
     if (skill_gh_->is_canceling()) {finish_skill(false, "취소됨", true); return;}
     const double el = (now() - skill_start_).seconds();
+    if (turn_active_) {tick_turn(el); return;}
     if (el >= skill_timeout_) {
       if (skill_->spec.finish_on_timeout) {finish_skill(true, "정해진 시간 완료");} else {finish_skill(false, "시간 초과");}
       return;
@@ -528,6 +578,31 @@ private:
     skill_gh_->publish_feedback(fb);
   }
 
+  // 제자리 회전 (v 0). 회전 여유는 계획기 BOX_GAP 이 보장 — 스캔면(82 mm)은 박스(70 mm)를 못 보므로 /scan 확인 없음
+  void tick_turn(double el)
+  {
+    if (el >= skill_timeout_) {finish_skill(false, "turn: 시간 초과"); return;}
+    if (!odom_ || !fresh(odom_->header.stamp)) {
+      publish_cmd(0, 0);
+      if ((now() - turn_last_odom_).seconds() > lost_s_) {finish_skill(false, "turn: /odometry/filtered 끊김");}
+      return;
+    }
+    turn_last_odom_ = now();
+    const double err = wrap_pi(turn_target_ - tf2::getYaw(odom_->pose.pose.orientation));
+    if (turn_total_ <= 0.0) {turn_total_ = std::max(std::fabs(err), 1e-3);}
+    const auto c = turn_ctl_.step(err);
+    if (c.done) {
+      char buf[64];
+      std::snprintf(buf, sizeof(buf), "turn: 끝 yaw 오차 %.2f°", err * 180 / M_PI);
+      finish_skill(true, buf);
+      return;
+    }
+    publish_cmd(0.0, c.w);
+    auto fb = std::make_shared<Skill::Feedback>();
+    fb->progress = static_cast<float>(std::clamp(1.0 - std::fabs(err) / turn_total_, 0.0, 1.0));
+    skill_gh_->publish_feedback(fb);
+  }
+
   void tick()
   {
     if (nav_gh_ && nav_gh_->is_canceling()) {
@@ -569,6 +644,13 @@ private:
   rclcpp::Time align_start_{0, 0, RCL_ROS_TIME}, last_valid_{0, 0, RCL_ROS_TIME}, skill_start_{0, 0, RCL_ROS_TIME};
   double align_target_ = 0.15, align_tol_ = 0.01, skill_timeout_ = 30.0;
   robot_policy::LoadedPolicy * skill_ = nullptr;
+  // turn_* (#77)
+  TurnController turn_ctl_;
+  TurnGeometry turn_geo_;
+  std::optional<double> ref_yaw_;   // 직전 FINE 정렬 성공 때 yaw (odom frame)
+  bool turn_active_ = false;
+  double turn_target_ = 0.0, turn_total_ = 0.0, turn_max_deg_ = 30.0;
+  rclcpp::Time turn_last_odom_{0, 0, RCL_ROS_TIME};
 
   rclcpp::CallbackGroup::SharedPtr cbg_;
   std::unique_ptr<tf2_ros::Buffer> tf_buffer_;

@@ -41,6 +41,12 @@ def launch_setup(context):
         actions.append(LogInfo(msg=f'[sensors] {pkg} 패키지가 없어 {what} 를 띄우지 않습니다 (설치 후 다시 실행)'))
 
     if as_bool(lc['use_d435']):
+        # RGB 노출 (#89): 자동이면 어두울 때 노출이 길어져 흐림 -> 기본 수동 고정. 깊이 (depth_module) 는 그대로
+        if as_bool(lc['rgb_auto_exposure']):
+            rgb = {'rgb_camera.enable_auto_exposure': True}
+        else:
+            rgb = {'rgb_camera.enable_auto_exposure': False,
+                   'rgb_camera.exposure': int(lc['rgb_exposure']), 'rgb_camera.gain': int(lc['rgb_gain'])}
         if installed('realsense2_camera'):
             for name, serial in (('top_camera_front', lc['front_serial']), ('top_camera_rear', lc['rear_serial'])):
                 if not serial:
@@ -55,6 +61,7 @@ def launch_setup(context):
                         'enable_color': True, 'enable_depth': True,
                         'enable_infra1': False, 'enable_infra2': False, 'enable_gyro': False, 'enable_accel': False,
                         'rgb_camera.color_profile': D435_PROFILE,
+                        **rgb,
                         'depth_module.depth_profile': D435_PROFILE,
                         'align_depth.enable': True,           # aligned_depth_to_color (컬러와 같은 크기)
                         'pointcloud.enable': False,
@@ -106,6 +113,11 @@ def generate_launch_description():
         DeclareLaunchArgument('use_d435', default_value='true', description='앞 · 뒤 D435 (realsense2_camera)'),
         DeclareLaunchArgument('front_serial', default_value='', description='★ 앞 D435 시리얼 (rs-enumerate-devices -s)'),
         DeclareLaunchArgument('rear_serial', default_value='', description='★ 뒤 D435 시리얼'),
+        DeclareLaunchArgument('rgb_auto_exposure', default_value='false',
+                              description='D435 RGB 자동 노출 (#89: 어두우면 노출이 길어져 흐림 -> 수동 고정)'),
+        DeclareLaunchArgument('rgb_exposure', default_value='80',
+                              description='★ D435 RGB 노출 (0.1 ms 단위, 80 = 8 ms ≈ 조명 120 Hz 한 주기). 경기장 조명에서 다시 고름'),
+        DeclareLaunchArgument('rgb_gain', default_value='128', description='★ D435 RGB gain'),
         DeclareLaunchArgument('use_arm_camera', default_value='true', description='팔 Arducam (usb_cam)'),
         DeclareLaunchArgument('arm_device', default_value='/dev/arm_cam', description='perception/udev/99-sensors.rules 이름'),
         DeclareLaunchArgument('arm_camera_info_url', default_value='',

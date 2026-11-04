@@ -10,7 +10,7 @@ mission_node 가 쓰는 단계 (src/mission/src/mission_node.cpp 머리말):
         pallet_load_<열>_<칸>_tilt       쥔 퍽을 팔레트 칸에 놓기 (pallet_place_traj.json 의 칸 궤적, 속도 규칙 #75)
         pallet_unload_<열>_<칸>_tilt     팔레트 칸의 퍽을 집어 들기 (위 궤적의 반대)
         place_<L>_<dx>_<dy>_tilt         쥔 퍽을 장소 L 의 3 x 3 칸 (dx, dy = m1 · 0 · p1, 지도 +Y 가 위) 에 놓기
-  skill drive turn_<p|m><deg>          ★ drive 구현 필요: FINE 정렬 방향에서 로봇 중심 둘레로 deg 제자리 회전 (p = 왼쪽 +, m = 오른쪽).
+  skill drive turn_<p|m><deg>          drive_node (#77): FINE 정렬 방향에서 로봇 중심 둘레로 deg 제자리 회전 (p = 왼쪽 +, m = 오른쪽).
         turn_0                          정렬 방향으로 되돌림. 상자 퍽을 45° 로 집기 전 · 후 (퍽 면을 J1→퍽 방향에 맞춤)
   verify <L> <cx> <cy> <z> <expect9> <yellow_shape>   /perception/check_dice (칸 번호 = 위 줄부터 행 우선, 왼쪽 -X 부터)
   wait <s>                              제자리 대기 (복귀 후 3 s 정지)
@@ -94,6 +94,4 @@ def to_lines(world, plan, fine_distance=0.13, skill_timeout=40.0, return_wait=3.
             lines.append(f"wait {_n(float(return_wait))}")
     notes.append(f"approach FINE {fine_distance} m (TFmini 하한) -> 범퍼-박스 약 {fine_distance - 0.0028:.3f} m. 접근 자세표 final (박스 ±Y 0.06 · inline 0.04 · L1 L3 0.06 · L2 0.02 m) 까지 남은 거리는 #64")
     notes.append("toppick_tilt · pallet_load/unload_*_tilt · place_*_tilt skill 은 manipulator 구현 필요 (없으면 execute_skill 거절 -> 그 단계 실패)")
-    if any(ln.startswith("skill drive turn_") for ln in lines):
-        notes.append("skill drive turn_* (상자 퍽 맞추기 제자리 회전) 은 drive 구현 필요")
     return lines, notes

@@ -1,6 +1,6 @@
 # mission_planner — 주사위 기억 로봇 할당 · 적재 · 경로 계획기
 
-발제 v5 (2026-11-04) 미션용. ROS 없이도 돌아가는 Python 모듈 + 명령 + AMCL 위치 추정 설정.
+발제 v5 (2026-11-04) 미션용. ROS 없이도 돌아가는 Python 모듈 + 명령. 위치 추정 (AMCL · loc_monitor) 은 `localization` 패키지.
 
 | 하는 일 | 파일 |
 |---|---|
@@ -9,7 +9,6 @@
 | 신호 · 바코드 → 그룹, 퍽 → 그룹 할당 (전체 탐색, 비교용 순차 선택) | `mission_planner/allocation.py` |
 | 팔레트 적재 · 방문 순서 (일반화 TSP, Held-Karp) | `mission_planner/gtsp.py`, `planner.py` |
 | 주행 비용 (A* + 시야선 당기기 + 회전) | `mission_planner/pathcost.py` |
-| AMCL (map_server x 2 + amcl + lifecycle) | `config/amcl.yaml`, `launch/localization.launch.py` |
 
 ## 쓰는 법
 
@@ -18,7 +17,6 @@ colcon build --packages-select mission_planner && source install/setup.bash
 mission_make_maps                                   # worlds/dice_mission.sdf 가 바뀌면 (지도 · 자세표 다시)
 mission_plan --problem config/problem_q1_example.yaml --mode per_location --out /tmp/plan   # plan.json · signal.json · allocation.json
 mission_plan --problem <문제>.yaml --mode compare   # 두 운영 방식 비용 비교
-ros2 launch mission_planner localization.launch.py  # /map (주행) · /map_amcl (AMCL) · amcl
 python3 -m pytest test                               # 시험 15 개 (할당 6 건 = 도전 B 형식, GTSP 최적성, 지도 · 자세, 계획)
 ```
 
@@ -59,7 +57,8 @@ Q1 예제 (설명용 색 · 모양): per_location 비용 66.5 (주행 44.5 m), s
 
 ## AMCL
 
-`config/amcl.yaml` 주석 참고. 시험 (`test/amcl_sim.py`: SDF 형상 광선 추적 스캔 + 지도에 없는 박스 위 퍽 12 개 + 오도메트리 눈금 오차 직진 2 % · 회전 6 %, Q1 경로 44 m, 4 배속):
+실행 · 설정은 `localization` 패키지 (`ros2 launch localization localization.launch.py`, `config/amcl.yaml`, 2026-11-04 이 패키지의 AMCL launch · 설정은 지움 — 둘 다 `/map` 을 내서 함께 띄우면 안 되므로).
+아래는 이 패키지가 처음 정한 값의 비교 기록 (지금 팀 설정은 Omni 모델 등 5 개 값이 다름, #91). 시험 (`test/amcl_sim.py`: SDF 형상 광선 추적 스캔 + 지도에 없는 박스 위 퍽 12 개 + 오도메트리 눈금 오차 직진 2 % · 회전 6 %, Q1 경로 44 m, 4 배속):
 
 | 설정 | 위치 오차 평균 / 95 % / 최대 | 방향 오차 최대 | 갱신 |
 |---|---|---|---|
@@ -87,7 +86,7 @@ robot_interfaces 는 바꾸지 않음 (동결). 계획 단계 (`mission_planner/
 | `goto x y yaw` | /drive/navigate (지도 좌표) + 팔 STOW |
 | `approach 0.13` | 기존 approach (COARSE → READY → FINE, TFmini 하한 0.13) |
 | `skill manipulator <이름>` | /manipulator/execute_skill — ★ manipulator 구현 필요. 집기 · 놓기는 모두 집게 45°: `toppick_tilt`, `pallet_load_<열>_<칸>_tilt`, `pallet_unload_<열>_<칸>_tilt` (속도 규칙 #75), `place_<L>_<dx>_<dy>_tilt` (dx, dy = m1 · 0 · p1) |
-| `skill drive turn_<p\|m>17` · `turn_0` | /drive/execute_skill — ★ drive 구현 필요. 상자 퍽을 집기 전 FINE 정렬 방향에서 로봇 중심 둘레로 ±17° 제자리 회전 (J1→퍽 = 박스 축 = 퍽 면, ±3°), 집고 실은 뒤 `turn_0` 으로 되돌림. inline (박스 6) 은 회전 없음 |
+| `skill drive turn_<p\|m>17` · `turn_0` | /drive/execute_skill — drive_node (#77, 실제 회전 중심 보정 `turn.icr_x`). 상자 퍽을 집기 전 FINE 정렬 방향에서 로봇 중심 둘레로 ±17° 제자리 회전 (J1→퍽 = 박스 축 = 퍽 면, ±3°), 집고 실은 뒤 `turn_0` 으로 되돌림. inline (박스 6) 은 회전 없음 |
 | `verify L cx cy z expect9 yshape` | 팔 TAG_VIEW → READ_TAG+SEARCH_FRONT → /perception/check_dice (지도 좌표 칸) → 기록, 틀려도 계속 (stop_on_fail false) |
 | `wait 3` | 복귀 뒤 정지 |
 
