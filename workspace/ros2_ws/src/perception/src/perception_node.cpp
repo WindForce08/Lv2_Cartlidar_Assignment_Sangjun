@@ -54,6 +54,7 @@
 #include <chrono>
 #include <future>
 #include <cmath>
+#include <cstdio>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -235,6 +236,7 @@ public:
     alc.seed_gate = declare_parameter("arm.lock_seed_gate", alc.seed_gate);
     alc.follow_k = declare_parameter("arm.lock_follow_k", alc.follow_k);
     alc.reacquire_size_ratio = declare_parameter("arm.lock_reacquire_size_ratio", alc.reacquire_size_ratio);
+    alc.bias_margin = declare_parameter("arm.lock_bias_margin", alc.bias_margin);
     arm_lock_ = ArmTargetLock(alc);
     // 팔 카메라 평면 교차 (arm_plane.hpp): 잠근 목표의 박스 중심 시선 ∩ 퍽 중심 높이 수평면 → 퍽 중심 · 거리.
     //   D435 추적 위치의 예비(D435 가 못 볼 때 · 놓쳤을 때)로 쓰고, 둘을 비교해 검증에도 쓴다
@@ -424,9 +426,11 @@ public:
       RCLCPP_FATAL(get_logger(), "%s", cls_err.c_str());
       throw std::runtime_error("detector.class_names");
     }
-    // 팔 카메라(ARM_ALIGN) 검출기: arm.detector = color(기본, 엔진이 있어도 색 검출) | main(주 검출기와 같은 것)
-    //   엔진(YOLO)은 D435 영상으로만 학습 · 평가했으므로 팔 영상에 쓰려면 main 을 명시한다
-    const std::string arm_det = declare_parameter("arm.detector", std::string("color"));
+    // 팔 카메라(ARM_ALIGN) 검출기: arm.detector = main(기본, 주 검출기와 같은 것) | color(엔진이 있어도 색 검출)
+    //   주 검출기가 색 검출기(엔진 없음)면 main 도 아래에서 라벨 인식 색 검출기를 따로 둔다 (color 와 같음)
+    const std::string arm_det = declare_parameter("arm.detector", std::string("main"));
+    arm_lock_log_ = declare_parameter("arm.lock_log", false);   // 진단용: ARM_LOCK 줄을 장마다 남김
+    engine_merge_iou_ = declare_parameter("arm.engine_merge_iou", engine_merge_iou_);
     if (arm_det != "color" && arm_det != "main") {
       RCLCPP_FATAL(get_logger(), "arm.detector 는 color 또는 main: %s", arm_det.c_str());
       throw std::runtime_error("arm.detector");
@@ -1553,13 +1557,27 @@ private:
         (arm_detector_ ? *arm_detector_ : *detector_).detect(small);
       std::vector<ArmBox> boxes;
       std::vector<size_t> idx;
+      // 엔진(YOLO) 박스는 lock 에 색 번호와 √(폭 × 높이) 를 넘긴다 (A1 모의 설계 자료 261104):
+      //   클래스(색 + 모양)는 가까이서 모양 판단이 장마다 바뀌어 같은 퍽을 놓치고(16 장 중 10),
+      //   폭만 보면 넓은 화각 가장자리에서 한 장 사이 1.3 배 넘게 변한다(4). 색 검출기는 tracking_size 그대로
+      //   같은 물체에 클래스만 다른 박스가 겹쳐 나오면(색이 같아 lock 이 모호로 봄) IoU arm.engine_merge_iou 이상은 점수 높은 하나만
+      const bool engine_boxes = !arm_color && !class_names_.empty();
       for (size_t i = 0; i < dets.size(); ++i) {
         if (arm_class_filter_ && target_class_ >= 0 && dets[i].class_id != target_class_) {continue;}
         const cv::Vec3d o = image_offset(dets[i].box, small.size());   // 정규화 값이라 해상도와 무관
-        boxes.push_back({o[0], o[1], o[2], dets[i].class_id, dets[i].score,
-                         static_cast<double>(dets[i].box.height) / small.rows,
-                         dets[i].tracking_size / small.cols});
+        const cv::Rect & bx = dets[i].box;
+        const int cls = engine_boxes ? puck_class(dets[i].class_id, class_names_).color : dets[i].class_id;
+        const double size = engine_boxes ? std::sqrt(static_cast<double>(bx.width) * bx.height) : dets[i].tracking_size;
+        boxes.push_back({o[0], o[1], o[2], cls, dets[i].score,
+                         static_cast<double>(bx.height) / small.rows, size / small.cols});
         idx.push_back(i);
+      }
+      if (engine_boxes && engine_merge_iou_ > 0) {
+        std::vector<ArmBox> kb;
+        std::vector<size_t> ki;
+        for (size_t k : drop_overlapping(boxes, engine_merge_iou_)) {kb.push_back(boxes[k]); ki.push_back(idx[k]);}
+        boxes.swap(kb);
+        idx.swap(ki);
       }
       const std::optional<ArmPoint> seed = arm_seed(frame, stamp, u.size());   // 처음 잠글 때 · 놓친 뒤 다시 잡을 때 씀
       int b = -1;
@@ -1567,6 +1585,17 @@ private:
         reset_arm_target();  // D435에서 넘긴 목표 없이 점수만으로 다른 물체를 고르지 않음
       } else {
         b = arm_lock_.update(boxes, seed, static_cast<double>(small.rows) / small.cols);
+        if (arm_lock_log_) {   // 진단: 장마다 고른 박스와 빠진 이유, 박스(클래스 x y w size 점수)
+          const auto & g = arm_lock_.diag();
+          std::string bl;
+          for (const auto & x : boxes) {
+            char t[96];
+            std::snprintf(t, sizeof(t), " [%d %.3f %.3f %.3f %.3f %.2f]", x.cls, x.x, x.y, x.w, x.size, x.score);
+            bl += t;
+          }
+          RCLCPP_INFO(get_logger(), "ARM_LOCK stamp=%.6f pick=%d boxes=%d cls=%d size=%d seed_gate=%d follow=%d ambiguous=%d locked=%d seen=%d seed=%d%s",
+            stamp.seconds(), b, g.boxes, g.cls, g.size, g.seed_gate, g.follow, g.ambiguous, g.was_locked, g.seen_last, seed ? 1 : 0, bl.c_str());
+        }
       }
       if (b >= 0) {
         r.offset_valid = true;
@@ -1854,6 +1883,8 @@ private:
 
   std::unique_ptr<Detector> detector_;
   std::unique_ptr<Detector> arm_detector_;   // ARM_ALIGN 전용 (없으면 detector_)
+  bool arm_lock_log_ = false;
+  double engine_merge_iou_ = 0.7;   // 팔 엔진 박스: 같은 색 · 이 IoU 이상이면 점수 높은 하나만 (0 이면 끔)
   bool arm_class_filter_ = true;             // 팔 검출에 target_class 를 쓸지 (번호 뜻이 주 검출기와 같을 때만)
   std::unique_ptr<TagDetector> tag_, marker_;
   std::vector<int> marker_ids_, tag_ids_;
