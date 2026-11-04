@@ -1,0 +1,298 @@
+# Nav2 설정 (navigation 패키지) — launch/navigation.launch.py 가 읽는다
+#   경로 계획 Smac 2D · 경로 추종 MPPI · costmap (지도 2 장 + /scan_merged) · behavior (spin · backup · wait) ·
+#   velocity_smoother · collision_monitor. AMCL 은 localization/config/amcl.yaml (localization launch 가 띄움)
+#   속도 명령 토픽 이름 (중간 · 최종 /cmd_vel_nav) 은 launch 가 정한다
+#   ★ = 임시값 (실측 · 실물 튜닝으로 바꿈). 차체 외곽 = B안 (mission_planner poses.py: 앞 0.1328 · 뒤 -0.2135 · 반폭 0.1676)
+#   odom_topic 은 실물 EKF (/odometry/filtered) 기준. Gazebo 는 launch 인자 odom_topic:=/odom 으로 덮어씀
+
+bt_navigator:
+  ros__parameters:
+    global_frame: map
+    robot_base_frame: base_link
+    odom_topic: /odometry/filtered
+    bt_loop_duration: 10
+    default_server_timeout: 20
+    wait_for_service_timeout: 1000
+    navigators: ["navigate_to_pose", "navigate_through_poses"]
+    navigate_to_pose:
+      plugin: "nav2_bt_navigator::NavigateToPoseNavigator"
+    navigate_through_poses:
+      plugin: "nav2_bt_navigator::NavigateThroughPosesNavigator"
+    bt_search_directories:
+      - $(find-pkg-share nav2_bt_navigator)/behavior_trees
+    # BT = 기본 navigate_to_pose_w_replanning_and_recovery.xml. 플러그인 이름 GridBased · FollowPath · general_goal_checker ·
+    #   progress_checker · PathHandler 를 그 이름으로 찾으므로 아래 이름을 바꾸지 말 것. 복구: 지도 지우기 → spin 1.57 · wait 5 s · backup 0.30 m
+
+controller_server:
+  ros__parameters:
+    controller_frequency: 20.0
+    odom_topic: /odometry/filtered
+    min_x_velocity_threshold: 0.001
+    min_y_velocity_threshold: 0.5
+    min_theta_velocity_threshold: 0.001
+    failure_tolerance: 0.3
+    progress_checker_plugins: ["progress_checker"]
+    goal_checker_plugins: ["general_goal_checker"]
+    controller_plugins: ["FollowPath"]
+    path_handler_plugins: ["PathHandler"]
+    progress_checker:
+      plugin: "nav2_controller::SimpleProgressChecker"
+      required_movement_radius: 0.1      # ★ 기본 0.5 — 좁은 미로 · 저속이라 줄임
+      movement_time_allowance: 10.0
+    general_goal_checker:
+      plugin: "nav2_controller::SimpleGoalChecker"
+      stateful: true
+      xy_goal_tolerance: 0.05            # ★ Gazebo 2026-11-04: 0.025 면 마지막 옆 2 ~ 3 cm 를 못 메워 실패 (최근접 2.9 cm). 정밀 위치는 drive align. drive.yaml 은 0.025 (Controller 알림)
+      yaw_goal_tolerance: 0.1            # ★ 약 6°. 정밀 방향은 도착 뒤 drive align · spin
+    PathHandler:
+      plugin: "nav2_controller::FeasiblePathHandler"
+      prune_distance: 1.0
+    FollowPath:
+      # RotationShim: 경로 방향 · 목표 방향과 차이가 크면 제자리 회전을 먼저 하고, 나머지는 MPPI (아래 값) 에 맡김
+      plugin: "nav2_rotation_shim_controller::RotationShimController"
+      angular_dist_threshold: 0.785        # 경로 방향과 45° 넘게 다르면 먼저 제자리 회전
+      forward_sampling_distance: 0.3       # ★ 경로 방향을 볼 앞 거리 (기본 0.5, 좁은 미로라 줄임)
+      rotate_to_heading_angular_vel: 0.8   # ★ 제자리 회전 속도 (≤ MPPI wz_max)
+      max_angular_accel: 2.0
+      simulate_ahead_time: 1.0             # 회전 중 충돌 검사 시간
+      rotate_to_goal_heading: true         # 도착 (xy 안) 뒤 목표 방향 회전은 shim 이 함 — MPPI 가 도착 근처에서 돌다 밀려나는 것 막음 (Gazebo 2026-11-04)      
+      primary_controller:                  # Nav2 1.4 (Kilted) 부터 주 컨트롤러 값은 이 이름 아래 (migration/Kilted)
+        plugin: "nav2_mppi_controller::MPPIController"
+        time_steps: 56
+        model_dt: 0.05
+        batch_size: 2000
+        iteration_count: 1
+        temperature: 0.3
+        gamma: 0.015
+        motion_model: "diff_drive"
+        diff_drive:
+          plugin: "mppi::DiffDriveMotionModel"
+        vx_max: 0.2                        # ★ 처음은 낮게 (diff_drive 0.34 · drive skill 0.3 m/s)
+        vx_min: -0.1                       # ★ 좁은 곳에서 조금 후진 허용
+        wz_max: 1.0                        # ★ (diff_drive 2.0 rad/s)
+        ax_max: 1.5                        # diff_drive linear.x.max_acceleration 과 같게
+        ax_min: -1.5
+        az_max: 2.0
+        vx_std: 0.2
+        wz_std: 0.4
+        visualize: true
+        TrajectoryValidator:
+          plugin: "mppi::DefaultOptimalTrajectoryValidator"
+          collision_lookahead_time: 2.0
+          consider_footprint: true         # 사각 차체로 충돌 판정 (기본 false = 원)
+        critics: ["ConstraintCritic", "CostCritic", "GoalCritic", "GoalAngleCritic", "PathAlignCritic", "PathFollowCritic", "PathAngleCritic", "PreferForwardCritic"]
+        ConstraintCritic:
+          enabled: true
+          cost_power: 1
+          cost_weight: 4.0
+        CostCritic:
+          enabled: true
+          cost_power: 1
+          cost_weight: 3.81
+          near_collision_cost: 254    # ★ 기본 253 (inscribed 에 닿으면 큰 벌점). 미로 통로 (약 0.53 m) 는 폭 0.355 차체 가장자리가 inscribed (장애물 0.14 m 안) 에 닿을 수밖에 없어 멈춤 → 254 (lethal) 만
+          critical_cost: 300.0
+          consider_footprint: true         # 사각 차체 (기본 false = 원)
+          collision_cost: 1000000.0
+          near_goal_distance: 1.0
+          trajectory_point_step: 2
+        GoalCritic:
+          enabled: true
+          cost_power: 1
+          cost_weight: 5.0
+          threshold_to_consider: 1.4
+        GoalAngleCritic:
+          enabled: true
+          cost_power: 1
+          cost_weight: 3.0
+          threshold_to_consider: 0.15      # ★ 기본 0.5. 목표 0.5 m 안에서 방향 벌점이 켜지면 옆에 있는 목표 앞에서 멈춤 (Gazebo 2026-11-04)
+        PathAlignCritic:
+          enabled: true
+          cost_power: 1
+          cost_weight: 14.0
+          max_path_occupancy_ratio: 0.05
+          trajectory_point_step: 4
+          threshold_to_consider: 0.15      # ★ 기본 0.5. 목표 근처까지 Smac 경로를 따르게
+          offset_from_furthest: 20
+          use_path_orientations: false
+        PathFollowCritic:
+          enabled: true
+          cost_power: 1
+          cost_weight: 5.0
+          offset_from_furthest: 5
+          threshold_to_consider: 0.15      # ★ 기본 1.4. 위와 같음
+        PathAngleCritic:
+          enabled: true
+          cost_power: 1
+          cost_weight: 2.0
+          offset_from_furthest: 4
+          threshold_to_consider: 0.15
+          max_angle_to_furthest: 1.0
+          mode: 0
+        PreferForwardCritic:
+          enabled: true
+          cost_power: 1
+          cost_weight: 5.0
+          threshold_to_consider: 0.5
+
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      update_frequency: 10.0
+      publish_frequency: 5.0
+      global_frame: odom
+      robot_base_frame: base_link
+      rolling_window: true
+      width: 2
+      height: 2
+      resolution: 0.02
+      track_unknown_space: false         # objects 지도의 '모름' (물체 밖) 을 빈칸으로 읽음 — 움직이는 창은 큰 값으로 합칠 때 '모름' 이 이김
+      use_maximum: true                  # 정적 층 2 장을 큰 값으로 합침 (global_costmap 설명)
+      footprint: "[[0.1328, 0.1676], [0.1328, -0.1676], [-0.2135, -0.1676], [-0.2135, 0.1676]]"   # ★ B안 외곽
+      footprint_padding: 0.01
+      plugins: ["static_layer", "objects_layer", "obstacle_layer", "inflation_layer"]
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_topic: /map
+        map_subscribe_transient_local: true
+      objects_layer:                     # 라이다에 안 보이는 고정 물체 (퍽 상자 70 mm · 받침대). 이 층이 없으면 MPPI 가 상자를 못 봄
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_topic: /map_objects
+        map_subscribe_transient_local: true
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        observation_sources: scan
+        scan:
+          topic: /scan_merged
+          data_type: "LaserScan"
+          marking: true
+          clearing: true
+          max_obstacle_height: 2.0
+          obstacle_max_range: 2.5
+          raytrace_max_range: 3.0
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        inflation_radius: 0.30           # ★ 외곽 외접 반지름 (0.2855, padding 포함) 보다 크게
+        cost_scaling_factor: 10.0        # ★ 좁은 미로라 비용이 빨리 줄게 (기본 3.0)
+      always_send_full_costmap: true
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      update_frequency: 2.0
+      publish_frequency: 1.0
+      global_frame: map
+      robot_base_frame: base_link
+      resolution: 0.01                   # 지도 (slam_walls_001 · objects, 0.01 m) 와 같게
+      track_unknown_space: true
+      use_maximum: true                  # 정적 층 2 장 (/map · /map_objects) 을 큰 값으로 합침. Nav2 1.5 는 층마다가 아니라 costmap 단위로만 받음
+      footprint: "[[0.1328, 0.1676], [0.1328, -0.1676], [-0.2135, -0.1676], [-0.2135, 0.1676]]"   # ★ B안 외곽
+      footprint_padding: 0.01
+      plugins: ["static_layer", "objects_layer", "obstacle_layer", "inflation_layer"]
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_topic: /map
+        map_subscribe_transient_local: true
+      objects_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_topic: /map_objects
+        map_subscribe_transient_local: true
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        observation_sources: scan
+        scan:
+          topic: /scan_merged
+          data_type: "LaserScan"
+          marking: true
+          clearing: true
+          max_obstacle_height: 2.0
+          obstacle_max_range: 2.5
+          raytrace_max_range: 3.0
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        inflation_radius: 0.30           # ★
+        cost_scaling_factor: 10.0        # ★
+      always_send_full_costmap: true
+
+planner_server:
+  ros__parameters:
+    expected_planner_frequency: 20.0
+    planner_plugins: ["GridBased"]
+    GridBased:
+      plugin: "nav2_smac_planner::SmacPlanner2D"
+      tolerance: 0.05                    # ★ 목표 칸이 막혔을 때 이 거리 안의 칸 허용
+      downsample_costmap: false          # ★ 지도 해상도 그대로 계획. SDF 지도 (0.025) 를 줄이면 0.05 로 거침 (2026-11-04). 0.01 지도는 계산 시간 확인
+      downsampling_factor: 2             # 0.01 → 0.02 m (계산량)
+      allow_unknown: false
+      max_iterations: 1000000
+      max_on_approach_iterations: 1000
+      max_planning_time: 2.0
+      cost_travel_multiplier: 2.0        # 벽에서 떨어진 길을 고름
+      use_final_approach_orientation: false
+
+behavior_server:
+  ros__parameters:
+    local_costmap_topic: local_costmap/costmap_raw
+    global_costmap_topic: global_costmap/costmap_raw
+    local_footprint_topic: local_costmap/published_footprint
+    global_footprint_topic: global_costmap/published_footprint
+    cycle_frequency: 10.0
+    behavior_plugins: ["spin", "backup", "wait"]   # 기본 BT 가 쓰는 것만. spin 은 drive_node 도 씀 (drive.yaml spin_action)
+    spin:
+      plugin: "nav2_behaviors::Spin"
+    backup:
+      plugin: "nav2_behaviors::BackUp"
+      acceleration_limit: 1.5
+      deceleration_limit: -1.5
+      minimum_speed: 0.05
+    wait:
+      plugin: "nav2_behaviors::Wait"
+    local_frame: odom
+    global_frame: map
+    robot_base_frame: base_link
+    transform_tolerance: 0.1
+    simulate_ahead_time: 2.0
+    max_rotational_vel: 1.0              # ★ = MPPI wz_max
+    min_rotational_vel: 0.3              # ★ 모의에서 약 0.15 rad/s 아래 회전 명령은 거의 안 돎 (drive_rl README)
+    rotational_acc_lim: 2.0
+
+velocity_smoother:
+  ros__parameters:
+    smoothing_frequency: 20.0
+    scale_velocities: false
+    feedback: "OPEN_LOOP"
+    max_velocity: [0.2, 0.0, 1.0]        # ★ = MPPI vx_max · wz_max
+    min_velocity: [-0.1, 0.0, -1.0]
+    max_accel: [1.5, 0.0, 2.0]           # diff_drive linear.x.max_acceleration 1.5
+    max_decel: [-1.5, 0.0, -2.0]
+    odom_topic: /odometry/filtered
+    odom_duration: 0.1
+    deadband_velocity: [0.0, 0.0, 0.0]
+    velocity_timeout: 1.0
+
+collision_monitor:
+  ros__parameters:
+    enabled: true
+    base_frame_id: "base_link"
+    odom_frame_id: "odom"
+    cmd_vel_in_topic: "/nav2/cmd_vel_smoothed"
+    cmd_vel_out_topic: "/cmd_vel_nav"    # launch 인자 cmd_vel_out 이 덮어씀 (Gazebo 는 /cmd_vel)
+    state_topic: "collision_monitor_state"
+    transform_tolerance: 0.2
+    source_timeout: 1.0
+    base_shift_correction: true
+    stop_pub_timeout: 2.0
+    polygons: ["FootprintApproach"]
+    FootprintApproach:                   # 차체 외곽이 time_before_collision 안에 닿을 속도면 줄임
+      type: "polygon"
+      action_type: "approach"
+      footprint_topic: "/local_costmap/published_footprint"
+      time_before_collision: 1.2
+      simulation_time_step: 0.1
+      min_points: 6
+      visualize: false
+      enabled: true
+    observation_sources: ["scan"]
+    scan:
+      type: "scan"
+      topic: "/scan_merged"
+      enabled: true
