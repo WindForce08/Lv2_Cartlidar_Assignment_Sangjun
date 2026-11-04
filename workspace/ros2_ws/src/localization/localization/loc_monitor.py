@@ -20,7 +20,7 @@ import tf2_ros
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, TwistStamped
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.duration import Duration
-from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
+from rclpy.executors import ExternalShutdownException, SingleThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from rclpy.time import Time
@@ -60,7 +60,7 @@ class LocMonitor(Node):
         P = [('backend', 'carto'), ('pose_topic', ''),             # pose_topic 빈 값 = carto /tracked_pose, amcl /amcl_pose
              ('map', ''), ('mission_frame', 'map'), ('odom_frame', 'odom'), ('base_frame', 'base_link'),
              ('scan_topics', ['/scan_front_filtered', '/scan_rear_filtered']), ('r_min', 0.15), ('r_max', 3.5), ('n_points', 90),
-             ('res_r_max', 2.0), ('startup_grace_s', 15.0),
+             ('res_r_max', 2.0), ('startup_grace_s', 15.0), ('tf_wait_s', 0.3),   # 스캔 시각 TF 가 아직 안 온 짝을 다음 스캔 때 다시 볼 최대 시간(모의 · 실물 시각)
              ('res_mode', 'cell_median'), ('check_mode', 'front'),   # 'interp_p75' · 'pair'(앞 · 뒤 중 나중에 온 스캔에서 짝 검사 → 스캔 주기 가까이)
              ('res_thr', 0.03), ('suspect_s', 0.5), ('lost_s', 2.0), ('jump_xy', 0.10), ('jump_yaw_deg', 5.0), ('gap_s', 0.5),
              ('gate_in', '/cmd_vel_gate_in'), ('gate_out', '/cmd_vel_nav'),
@@ -86,6 +86,7 @@ class LocMonitor(Node):
         self.recover_since = None
         self.traj = g('trajectory_id')
         self.scans = {}                  # topic → (stamp, pts)
+        self.pending = []                # TF 가 아직 안 와 검사를 미룬 스캔 짝(오래된 것부터)
         self.T_laser = {}
         self.lock = threading.Lock()
         self.lost_lock = threading.Lock()      # lost() 가 여러 콜백 스레드에서 동시에 불려 작업 스레드를 두 번 만들지 않게
@@ -141,7 +142,9 @@ class LocMonitor(Node):
         self.pub_status.publish(String(data=s))
         self.pub_lock.publish(Bool(data=s not in OK_STATES))
 
-    def lookup(self, parent, child, stamp, timeout=0.1):
+    def lookup(self, parent, child, stamp, timeout=0.0):
+        """콜백 안에서는 기다리지 않는다(timeout 0). 기다리면 코어가 적은 기계(Jetson)에서 실행기가 막혀 TF 수신이 밀리고 검사가 모두 실패한다(11-04 Jetson 부하 측정).
+        다시 찾기 작업 스레드만 timeout 을 준다."""
         try:
             return tf_pose(self.buf.lookup_transform(parent, child, stamp, timeout=Duration(seconds=timeout)))
         except tf2_ros.TransformException:
@@ -165,7 +168,7 @@ class LocMonitor(Node):
     def on_scan(self, topic, m):
         if topic not in self.T_laser:                        # 정적 · 3차원(라이다 roll π 장착) → 2×3
             try:
-                t = self.buf.lookup_transform(self.g('base_frame'), m.header.frame_id, Time(), timeout=Duration(seconds=1.0)).transform
+                t = self.buf.lookup_transform(self.g('base_frame'), m.header.frame_id, Time()).transform   # 아직 없으면 다음 스캔 때 다시
             except tf2_ros.TransformException:
                 return
             self.T_laser[topic] = lc.T2d_from_tf(t.translation.x, t.translation.y, t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w)
@@ -184,13 +187,25 @@ class LocMonitor(Node):
         if self.g('check_mode') == 'pair':     # 앞 · 뒤 어느 쪽이 나중에 와도 짝이 맞으면 검사(옛 방식은 앞이 먼저 오면 지난 뒤 스캔과 0.1 s 차라 대부분 버림 → 약 1.1 Hz)
             if not others or abs((st - others[0][0]).nanoseconds) * 1e-9 > 0.06:
                 return
-            self.check([(st, near), (others[0][0], others[0][2])] if front else [(others[0][0], others[0][2]), (st, near)])
+            self.queue_check([(st, near), (others[0][0], others[0][2])] if front else [(others[0][0], others[0][2]), (st, near)], st)
             return
         if not front or not others:   # 앞 스캔이 올 때 둘을 합쳐 판단(뒤 스캔은 같은 주기 것)
             return
         if abs((st - others[0][0]).nanoseconds) * 1e-9 > 0.06:
             return
-        self.check([(st, near), (others[0][0], others[0][2])])
+        self.queue_check([(st, near), (others[0][0], others[0][2])], st)
+
+    def queue_check(self, scans, newest):
+        """짝을 줄에 넣고, 스캔 시각 TF 가 들어온 짝부터 검사. tf_wait_s 넘게 TF 가 안 오면 건너뜀(n_skip)."""
+        self.pending.append(scans)
+        keep = []
+        for sc in self.pending:
+            if keep or not self.check(sc):        # 앞 짝이 아직이면 뒤 짝도 기다림(시각 순서 유지)
+                if (newest - sc[0][0]).nanoseconds * 1e-9 > self.g('tf_wait_s'):
+                    self.n_skip += 1
+                else:
+                    keep.append(sc)
+        self.pending = keep
 
     def check(self, scans):
         """scans = [(stamp, 잔차용 점), …] — 스캔마다 자기 stamp 의 자세로 놓음(회전 중 앞 스캔 자세 하나로 뒤 스캔까지 놓으면 끝점이 밀림).
@@ -198,9 +213,11 @@ class LocMonitor(Node):
         st = scans[0][0]
         poses = [self.lookup(self.g('mission_frame'), self.g('base_frame'), t) for t, _ in scans]
         odom = self.lookup(self.g('odom_frame'), self.g('base_frame'), st)
-        if any(p is None for p in poses) or odom is None or sum(len(q) for _, q in scans) < 20:
+        if any(p is None for p in poses) or odom is None:
+            return False                          # TF 가 아직 — queue_check 가 다음 스캔 때 다시
+        if sum(len(q) for _, q in scans) < 20:
             self.n_skip += 1
-            return
+            return True
         pose = poses[0]
         r = lc.residual_multi(self.field, [(p, q) for p, (_, q) in zip(poses, scans)], self.g('res_mode'))
         self.res_win.append(r)
@@ -228,6 +245,7 @@ class LocMonitor(Node):
                     self.bad_since = None
                     self.last_good = (t, pose, odom)
                     self.set_state('OK', residual=round(r, 4), recover_s=round(self.now_s() - self.recover_since, 2))
+        return True
 
     def on_tracked(self, m):
         self.last_tracked_rx = self.now_s()
@@ -293,7 +311,7 @@ class LocMonitor(Node):
             st, pts = self.latest_pts()
             cand = None
             if pts is not None:
-                odom = self.lookup(self.g('odom_frame'), self.g('base_frame'), st)
+                odom = self.lookup(self.g('odom_frame'), self.g('base_frame'), st, timeout=0.1)   # 작업 스레드라 기다려도 됨
                 if self.last_good is not None and odom is not None:
                     center = compose(self.last_good[1], compose(inverse(self.last_good[2]), odom))
                     t0 = time.monotonic()
@@ -373,7 +391,7 @@ class LocMonitor(Node):
 def main():
     rclpy.init()
     n = LocMonitor()
-    ex = MultiThreadedExecutor(num_threads=4)
+    ex = SingleThreadedExecutor()      # 콜백이 기다리지 않으므로 하나로 충분(다시 찾기는 따로 작업 스레드)
     ex.add_node(n)
     try:
         ex.spin()
