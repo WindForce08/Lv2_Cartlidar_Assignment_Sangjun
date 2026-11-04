@@ -13,7 +13,11 @@ from __future__ import annotations
 import os
 import sys
 
-_ISAAC = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # urdf_261028/isaac
+# 팀 공유본 isaac/ (waffle_4wd_isaac 가 있는 곳) 찾기: 저장소 = urdf_and_usd/policy/manipulator -> ../../isaac,
+#   docker (sync_to_docker.sh) = waffle_shared_261028/manipulator -> ../isaac, 예전 배치 isaac/rl -> ..
+_UP3 = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_ISAAC = next((p for p in (_UP3, os.path.join(_UP3, "isaac"), os.path.join(os.path.dirname(_UP3), "isaac"))
+               if os.path.isdir(os.path.join(p, "waffle_4wd_isaac"))), _UP3)
 if _ISAAC not in sys.path:
     sys.path.insert(0, _ISAAC)
 

@@ -4,6 +4,7 @@ __pycache__/
 # Isaac 변환 · 학습 중 생기는 것
 isaac/usd/**/.asset-transformer-*/
 isaac/rl/logs/
+policy/manipulator/logs/
 *.log
 # AI 도구 메모 (팀 결정 2026-10-26: 저장소에 올리지 않음)
 AGENTS.md

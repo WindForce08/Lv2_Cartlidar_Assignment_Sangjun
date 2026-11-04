@@ -63,7 +63,7 @@ ament_export_include_directories(include/${PROJECT_NAME})
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   # test_ik.cpp는 이전 ArmIK(ArmGeometry · JointLimits) 기준이라 빠짐 — 현재 ArmIK(ArmIKParams) 시험은 TODO
-  ament_add_gtest(test_control_logic test/test_fsm.cpp test/test_align.cpp)
+  ament_add_gtest(test_control_logic test/test_fsm.cpp test/test_align.cpp test/test_turn.cpp)
   target_link_libraries(test_control_logic arm_ik)
 endif()
 
