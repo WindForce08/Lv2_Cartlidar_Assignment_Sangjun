@@ -10,6 +10,7 @@ import numpy as np
 import rclpy
 import tf2_ros
 from rclpy.executors import ExternalShutdownException
+from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from rclpy.time import Time
@@ -110,6 +111,9 @@ def main():
         rclpy.spin(ScanBodyMask())
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
+    except _rclpy.RCLError:
+        if rclpy.ok():                 # 종료 신호가 대기 집합을 만드는 중에 context 를 닫은 경우만 조용히(그 밖은 그대로 오류)
+            raise
 
 
 if __name__ == '__main__':
