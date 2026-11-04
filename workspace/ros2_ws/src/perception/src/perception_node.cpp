@@ -425,7 +425,7 @@ public:
       RCLCPP_FATAL(get_logger(), "%s", cls_err.c_str());
       throw std::runtime_error("detector.class_names");
     }
-    // 팔 카메라(ARM_ALIGN) 검출기: arm.detector = main(기본, 주 검출기와 같은 것) | color(엔진이 있어도 색 검출)
+    // 팔 카메라(ARM_ALIGN) 검출기: arm.detector = main(기본, 주 검출기 또는 arm.engine_path 엔진) | color(엔진이 있어도 색 검출)
     //   주 검출기가 색 검출기(엔진 없음)면 main 도 아래에서 라벨 인식 색 검출기를 따로 둔다 (color 와 같음)
     const std::string arm_det = declare_parameter("arm.detector", std::string("main"));
     arm_lock_log_ = declare_parameter("arm.lock_log", false);   // 진단용: ARM_LOCK 줄을 장마다 남김
@@ -455,13 +455,35 @@ public:
     } else if (arm_det == "color" && !main_color) {
       arm_detector_ = std::make_unique<ColorDetector>(dc);   // 라벨 인식 끔: 라벨 없는 색 검출
     }
+    // 팔 전용 엔진 (arm.engine_path): main 이고 주 검출기가 엔진일 때만. 팔 영상(detect_width 로 줄인 16:9)과
+    //   D435(4:3)는 가로세로 비가 달라 입력 모양이 다른 엔진을 쓴다. 비우면 주 검출기를 같이 씀.
+    //   class_names 는 주 검출기와 같은 것을 쓰므로 클래스 수가 다르면 시작하지 않는다
+    const std::string arm_engine = declare_parameter("arm.engine_path", std::string(""));
+    std::string arm_info;
+    if (!arm_engine.empty() && arm_det == "main" && !main_color) {
+      DetectorConfig ac = dc;
+      ac.type = "tensorrt";
+      ac.engine_path = arm_engine;
+      arm_detector_ = make_detector(ac, arm_info);
+      if (!arm_detector_) {
+        RCLCPP_WARN(get_logger(), "arm.engine_path 를 쓰지 못해 팔도 주 검출기를 씀: %s", arm_info.c_str());
+        arm_info.clear();
+      } else if (arm_detector_->num_classes() != detector_->num_classes()) {
+        RCLCPP_FATAL(get_logger(), "arm.engine_path 클래스 수 %d 가 주 검출기 %d 와 다름 (class_names 를 같이 씀)",
+          arm_detector_->num_classes(), detector_->num_classes());
+        throw std::runtime_error("arm.engine_path");
+      }
+    } else if (!arm_engine.empty()) {
+      RCLCPP_WARN(get_logger(), "arm.engine_path 는 arm.detector main · 주 검출기 엔진일 때만 씀: 무시");
+    }
+    const bool arm_engine_own = arm_detector_ && arm_detector_->name() == "tensorrt";
     // target_class 는 주 검출기 번호. 팔이 다른 검출기(엔진 + 색)면 번호 뜻이 달라 팔에는 쓰지 않는다
-    arm_class_filter_ = !arm_detector_ || main_color;
+    arm_class_filter_ = !arm_detector_ || main_color || arm_engine_own;
     split_.min_m = depth_min_;
     split_.max_m = depth_max_;
     split_.max_piece_m = size_max_m_;
-    RCLCPP_INFO(get_logger(), "검출기: %s %s · 팔 %s · 태그 %s · 마커 %s", detector_->name().c_str(), info.c_str(),
-      (arm_detector_ ? *arm_detector_ : *detector_).name().c_str(),
+    RCLCPP_INFO(get_logger(), "검출기: %s %s · 팔 %s%s · 태그 %s · 마커 %s", detector_->name().c_str(), info.c_str(),
+      (arm_detector_ ? *arm_detector_ : *detector_).name().c_str(), arm_engine_own ? (" " + arm_info).c_str() : "",
       tag_->ok() ? "사용 가능" : "패밀리 오류", marker_->ok() ? "사용 가능" : "사전 이름 오류");
 
     tf_ = std::make_unique<TfHelper>(*this);
