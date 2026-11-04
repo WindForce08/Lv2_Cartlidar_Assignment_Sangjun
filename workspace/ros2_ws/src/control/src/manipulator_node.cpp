@@ -28,6 +28,7 @@
 //     pallet_load_<열>_<칸>_tilt      쥔 퍽을 팔레트 칸에 놓기 = pallet_place_traj.json 의 칸 궤적 (3 열 쥔 구간 0.4 rad/s, #75)
 //     pallet_unload_<열>_<칸>_tilt    팔레트 칸의 퍽을 집어 들기 = 놓기 궤적 거꾸로 (빈 집게로 rotate_back · return · retract 거꾸로
 //                                     → 0.3 s → 쥠 → place · carry · rotate 거꾸로 → q_front, 0.8 rad/s, Isaac pallet_unload 24/24)
+//                                    pallet_* 은 sag.enabled 면 처짐 보정 스트리밍 (sag_comp.hpp, 시작 자세에서 sag.settle_time 먼저 맞춤)
 //     place_<L>_<dx>_<dy>_tilt        쥔 퍽을 장소 L 의 3×3 칸 (dx, dy = m1 · 0 · p1) 에 45° 로 놓기.
 //                                    칸 좌표 = mission_planner config/approach_poses.yaml cells (지도) → TF 로 팔 기준
 //     place_at:<frame>:<x>:<y>:<z>   쥔 퍽을 칸 좌표 (frame 기준 x, y, 윗면 높이 z) 에 놓기 — perception place_box 칸 (#74)
@@ -65,6 +66,7 @@
 #include "rclcpp_components/register_node_macro.hpp"
 #include "ament_index_cpp/get_package_share_path.hpp"
 #include "control/arm_ik.hpp"
+#include "control/sag_comp.hpp"
 #include "control/target_look_pose.hpp"
 #include "robot_interfaces/action/arm_pose.hpp"
 #include "robot_interfaces/action/execute_skill.hpp"
@@ -328,7 +330,15 @@ private:
     pallet_require_held_ = declare_parameter<bool>("pallet.require_held", true);
     // 칸 안에서 벌리는 폭: 끝까지 열면 손가락이 칸 벽에 닿음 (Isaac FINGER_RELEASED 37.6 mm). 기본 = gripper.open_position
     pallet_release_ = declare_parameter<double>("pallet.release_position", gripper_open_);
-    pallet_dwell_ = declare_parameter<double>("pallet.place_dwell", 0.3);   // 놓는 자세에서 벌리기 · 쥐기 전 머묾 (처짐 가라앉음)
+    pallet_dwell_ = declare_parameter<double>("pallet.place_dwell", 0.3);
+    // 처짐 보정 (sag_comp.hpp): 팔레트 칸 궤적을 계획 + 적분 bias 로 스트리밍 (Isaac pallet_place_check --ki 4, 24/24)
+    sag_enabled_ = declare_parameter<bool>("sag.enabled", true);
+    sag_ki_ = declare_parameter<double>("sag.ki", 4.0);
+    sag_bias_max_ = declare_parameter<double>("sag.bias_max", 0.15);
+    sag_settle_ = declare_parameter<double>("sag.settle_time", 1.5);
+    sag_rate_ = declare_parameter<double>("sag.rate_hz", 50.0);
+    sag_horizon_ = declare_parameter<double>("sag.horizon", 0.06);
+    sag_max_error_ = declare_parameter<double>("sag.max_error", 0.3);   // 놓는 자세에서 벌리기 · 쥐기 전 머묾 (처짐 가라앉음)
     // place_<L>_*: 칸 좌표표 (빈 문자열 = <mission_planner share>/config/approach_poses.yaml), 칸 좌표 frame
     place_cells_file_ = declare_parameter<std::string>("place.cells_file", "");
     place_cells_frame_ = declare_parameter<std::string>("place.cells_frame", "map");
@@ -570,6 +580,12 @@ private:
     requirePositive("pallet.speed", pallet_speed_);
     requirePositive("pallet.row3_hold_speed", pallet_row3_hold_speed_);
     requireNonNegative("pallet.place_dwell", pallet_dwell_);
+    requireNonNegative("sag.ki", sag_ki_);
+    requireNonNegative("sag.bias_max", sag_bias_max_);
+    requireNonNegative("sag.settle_time", sag_settle_);
+    requirePositive("sag.rate_hz", sag_rate_);
+    requirePositive("sag.horizon", sag_horizon_);
+    requirePositive("sag.max_error", sag_max_error_);
     if (gripper_mode_ == GripperMode::ARM_JOINT && !(pallet_release_ >= gripper_open_ && pallet_release_ < gripper_close_)) {
       throw std::invalid_argument("pallet.release_position must be in [gripper.open_position, gripper.close_position)");
     }
@@ -1806,6 +1822,10 @@ private:
     const double out_speed = pallet_speed_;
     const double in_grip = load ? gripper_close_ : pallet_release_;
     const double out_grip = load ? pallet_release_ : gripper_close_;
+    if (sag_enabled_ && gripper_mode_ != GripperMode::ACTION) {   // 처짐 보정 스트리밍 (sag.*)
+      runPalletStream(in, out, in_speed, out_speed, in_grip, out_grip, load);
+      return;
+    }
     if (gripper_mode_ == GripperMode::ARM_JOINT) {gripper_cmd_ = in_grip;}
     sendWaypoints(in, in_speed, in_grip, pallet_dwell_, [this, out, out_speed, out_grip, load](bool ok, const std::string & msg) {
         if (!ok) {
@@ -1836,6 +1856,115 @@ private:
               });
           });
       });
+  }
+
+  // 팔레트 칸 궤적 + 처짐 보정 (sag_comp.hpp, Isaac pallet_place_check --ki 와 같은 식).
+  //   시간표: 시작 자세 settle → in (in_grip) → 머묾 → 그리퍼 out_grip (gripper.move_time) → [꺼내기: settle_time 뒤 쥠 확인] → out
+  //   sag.rate_hz 로 /arm_controller/joint_trajectory 한 점 (계획 + bias, 6 번째 = 그리퍼). 측정이 계획에서 max_error 넘게 벗어나면 중지
+  void runPalletStream(
+    const std::vector<std::vector<double>> & in, const std::vector<std::vector<double>> & out,
+    double in_speed, double out_speed, double in_grip, double out_grip, bool load)
+  {
+    const auto current = currentJoints();
+    if (!current) {
+      finishSkill(false, "no recent /joint_states for arm joints");
+      return;
+    }
+    auto arm5 = [](const std::vector<double> & q) {Arm5 a{}; for (size_t j = 0; j < 5; ++j) {a[j] = q[j];} return a;};
+    std::vector<Arm5> qin, qout;
+    for (const auto * src : {&in, &out}) {
+      for (const auto & q : *src) {
+        std::vector<double> q6(q.begin(), q.end());
+        q6.push_back(0.0);
+        if (q.size() != 5 || !withinLimits(q6)) {
+          finishSkill(false, "pallet: waypoint outside joint limits or not 5 joints");
+          return;
+        }
+        (src == &in ? qin : qout).push_back(arm5(q));
+      }
+    }
+    const double grip0 = sixthValue(*current);
+    JointTimeline tl(arm5(*current), grip0);
+    tl.hold(sag_settle_, grip0);                          // 지금 자세에서 bias 먼저 맞춤
+    tl.moveThrough(qin, in_speed, in_grip, min_duration_);
+    tl.hold(pallet_dwell_, in_grip);                      // 놓는 · 집는 자세에서 머묾
+    tl.hold(gripper_move_time_, out_grip);                // 그리퍼 바꿈
+    sag_check_t_.reset();
+    if (!load && gripper_mode_ == GripperMode::ARM_JOINT) {
+      tl.hold(gripper_settle_, out_grip);                 // 쥔 뒤 GripGuard 판정 시간
+      sag_check_t_ = tl.duration();
+    }
+    tl.moveThrough(qout, out_speed, out_grip, 0.02);
+    sag_tl_ = tl;
+    sag_int_ = SagIntegrator(sag_ki_, sag_bias_max_);
+    sag_load_ = load;
+    sag_start_ = sag_last_ = now();
+    RCLCPP_INFO(get_logger(), "pallet %s: stream %.1f s (settle %.1f s, ki %.1f, %.0f Hz)", load ? "load" : "unload",
+      tl.duration(), sag_settle_, sag_ki_, sag_rate_);
+    const uint64_t id = job_id_;
+    skill_timer_ = rclcpp::create_timer(
+      this, get_clock(), rclcpp::Duration::from_seconds(1.0 / sag_rate_),
+      [this, id]() {if (id == job_id_) {palletStreamTick();}}, job_cb_group_);
+  }
+
+  void palletStreamTick()
+  {
+    if (job_ != Job::SKILL || skill_gh_->is_canceling() || !sag_tl_) {return;}   // 취소 마무리는 onTick
+    const auto cur = currentJoints();
+    if (!cur) {
+      finishSkill(false, "pallet: no recent /joint_states during stream");
+      return;
+    }
+    const rclcpp::Time t_now = now();
+    const double t = (t_now - sag_start_).seconds();
+    const double dt = std::clamp((t_now - sag_last_).seconds(), 0.0, 0.1);
+    sag_last_ = t_now;
+    const auto p = sag_tl_->at(t);
+    Arm5 meas{};
+    double err = 0.0;
+    size_t err_j = 0;
+    for (size_t j = 0; j < 5; ++j) {
+      meas[j] = (*cur)[j];
+      if (std::abs(p.q[j] - meas[j]) > err) {err = std::abs(p.q[j] - meas[j]); err_j = j;}
+    }
+    if (err > sag_max_error_) {
+      char buf[160];
+      std::snprintf(buf, sizeof(buf), "pallet: joint%zu %.3f rad off plan at %.1f s (blocked?)", err_j + 1, err, t);
+      finishSkill(false, buf);
+      return;
+    }
+    sag_int_.update(p.q, meas, dt);
+    // 컨트롤러는 한 점을 horizon 에 걸쳐 따라가므로 horizon 앞의 계획을 낸다 (안 그러면 움직이는 동안 속도 × horizon 만큼
+    // 늘 뒤처지고, 적분이 그 뒤처짐까지 처짐으로 쌓아 칸 앞에서 지나침. mock 팔: 0.8 rad/s 에서 bias 0.055 rad)
+    const auto ahead = sag_tl_->at(t + sag_horizon_);
+    const Arm5 c = sag_int_.command(ahead.q);
+    std::vector<double> q(c.begin(), c.end());
+    q.push_back(gripper_mode_ == GripperMode::ARM_JOINT ? ahead.grip : gripper_roll_default_);
+    for (size_t i = 0; i < q.size(); ++i) {q[i] = std::clamp(q[i], lower_[i], upper_[i]);}
+    trajectory_msgs::msg::JointTrajectory jt;
+    jt.joint_names = joint_names_;
+    trajectory_msgs::msg::JointTrajectoryPoint point;
+    point.positions = q;
+    point.time_from_start = rclcpp::Duration::from_seconds(sag_horizon_);
+    jt.points.push_back(point);
+    jt_pub_->publish(jt);
+    last_sent_ = q;
+    if (gripper_mode_ == GripperMode::ARM_JOINT) {gripper_cmd_ = ahead.grip;}
+
+    if (sag_check_t_ && t >= *sag_check_t_) {   // 꺼내기: 집었는지
+      sag_check_t_.reset();
+      const auto holding = gripperHolding();
+      if (gripper_fail_on_empty_ && (!holding || !*holding)) {
+        finishSkill(false, "pallet_unload: empty grasp (no puck in slot?)");
+        return;
+      }
+    }
+    if (t >= sag_tl_->duration()) {
+      const auto & b = sag_int_.bias();
+      RCLCPP_INFO(get_logger(), "pallet: sag bias [%.3f %.3f %.3f %.3f %.3f] rad", b[0], b[1], b[2], b[3], b[4]);
+      sag_tl_.reset();
+      finishSkill(true, sag_load_ ? "loaded" : "unloaded");
+    }
   }
 
   // 경유점을 한 궤적으로. 경유점 사이 시간 = 관절 변화 최대값 / speed, 첫 점은 지금 자세에서 출발, 끝에서 dwell 초 머묾
@@ -2128,6 +2257,13 @@ private:
   std::map<std::pair<int, int>, std::vector<PalletSegment>> pallet_;   // (열, 칸) → 구간
   std::map<std::pair<int, int>, std::vector<double>> pallet_front_;    // (열, 칸) → 앞 운반 자세 q_front (5 관절)
   double pallet_release_{-0.764}, pallet_dwell_{0.3};
+  bool sag_enabled_{true};
+  double sag_ki_{4.0}, sag_bias_max_{0.15}, sag_settle_{1.5}, sag_rate_{50.0}, sag_horizon_{0.06}, sag_max_error_{0.3};
+  std::optional<JointTimeline> sag_tl_;            // 팔레트 스트리밍 시간표 (job_cb_group_ 전용)
+  SagIntegrator sag_int_{4.0, 0.15};
+  std::optional<double> sag_check_t_;              // 꺼내기 쥠 확인 시각
+  bool sag_load_{true};
+  rclcpp::Time sag_start_{0, 0, RCL_ROS_TIME}, sag_last_{0, 0, RCL_ROS_TIME};
   std::vector<double> transit_tilt_;                                   // 팔레트 궤적 이동 자세 (5 관절)
   std::string place_cells_file_, place_cells_frame_, floor_frame_;
   std::map<std::string, std::pair<double, double>> place_cells_;      // "L1/-1,0" → (x, y)

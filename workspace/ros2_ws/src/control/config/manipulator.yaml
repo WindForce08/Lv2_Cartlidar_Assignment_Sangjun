@@ -128,6 +128,17 @@ manipulator_node:
       require_held: true         # pallet_load 전에 그리퍼가 퍽을 쥐고 있는지 확인
       release_position: 0.0798   # rad = 2100 tick, 실측 36.4 mm (Isaac FINGER_RELEASED 37.6). 칸 안에서 놓을 때 · 꺼내러 들어갈 때 이만큼만 벌림 (끝까지 열면 칸 벽에 닿음, #75)
       place_dwell: 0.3           # s, 놓는 자세에서 벌리기 · 쥐기 전 머묾 (Isaac 0.3)
+    # 팔 처짐 보정 (include/control/sag_comp.hpp): 팔레트 칸 궤적을 50 Hz 로 계획 + bias 스트리밍 (/arm_controller/joint_trajectory),
+    #   bias += ki · dt · (계획 − 측정). Isaac pallet_place_check.py --ki 4 와 같은 식 (보정 없이 4/24 → 24/24).
+    #   펌웨어 P 800 · I 0 이라 퍽을 쥔 팔이 6 ~ 13 mm 처지고 칸 틈은 1 ~ 2 mm. gripper.mode action 이면 쓰지 않음
+    sag:
+      enabled: true              # ★ 실물 벤치에서 스트리밍 추종 확인. 문제가 있으면 false (= 경유점 궤적 한 번에, 보정 없음)
+      ki: 4.0                    # 1/s
+      bias_max: 0.15             # rad
+      settle_time: 1.5           # s, 시작 자세에서 bias 를 먼저 맞춤 (칸마다 이만큼 늘어남)
+      rate_hz: 50.0
+      horizon: 0.06              # s, 스트리밍 한 점의 time_from_start
+      max_error: 0.3             # rad, 측정이 계획에서 이보다 벗어나면 중지 (칸에 걸림)
     place:
       cells_file: ""             # 빈 문자열 = <mission_planner share>/config/approach_poses.yaml (L1~L3 cells, 지도 좌표)
       cells_frame: map           # 칸 좌표 frame (발제 원점 지도)

@@ -49,6 +49,9 @@ class WaffleTopPickEnv(DirectRLEnv):
         self.actions = torch.zeros(n, cfg.action_space, device=dev)
         self.prev_actions = torch.zeros_like(self.actions)
         self.arm_target = r.data.default_joint_pos.torch[:, self._arm].clone()
+        self.prev_target = self.arm_target.clone()  # 행동 지연: 새 목표 전 값
+        self.delay_steps = torch.zeros(n, dtype=torch.long, device=dev)  # 리셋 때 뽑은 지연 (물리 스텝)
+        self._sub = 0  # 이번 정책 스텝 안의 물리 스텝 번호
         self.is_box = torch.zeros(n, dtype=torch.bool, device=dev)
         self.tilted = torch.zeros(n, dtype=torch.bool, device=dev)  # 기울임 모드 (팔레트 기둥 옆 칸에 넣을 퍽)
         self._ready_tilt = torch.tensor([[READY_TILT[j] for j in ARM_JOINTS]], device=dev)
@@ -155,6 +158,8 @@ class WaffleTopPickEnv(DirectRLEnv):
     def _pre_physics_step(self, actions):
         self.prev_actions = self.actions.clone()
         self.actions = actions.clamp(-1.0, 1.0)
+        self.prev_target = self.arm_target.clone()
+        self._sub = 0
         q = self.robot.data.joint_pos.torch[:, self._arm]
         lead = self.cfg.target_lead_max
         dq = self._ik_step(self.actions[:, :3] * self.cfg.cart_scale)
@@ -186,7 +191,10 @@ class WaffleTopPickEnv(DirectRLEnv):
     def _apply_action(self):
         cmd = self.robot.actuators.target_command
         g = torch.where(self.actions[:, -1:] > 0.0, self.cfg.gripper_open, self.cfg.gripper_closed)
-        cmd.set_position_index(value=self.arm_target.contiguous(), joint_ids=self._arm)
+        # 행동 지연 (도메인 랜덤화 11 · 13 쪽): 이 정책 스텝의 처음 delay_steps 물리 스텝은 이전 목표
+        tgt = torch.where((self._sub < self.delay_steps)[:, None], self.prev_target, self.arm_target)
+        self._sub += 1
+        cmd.set_position_index(value=tgt.contiguous(), joint_ids=self._arm)
         cmd.set_position_index(value=g.expand(-1, 2).contiguous(), joint_ids=self._gl + self._gr)
         cmd.set_velocity_index(value=torch.zeros(self.num_envs, len(self._wheels), device=self.device), joint_ids=self._wheels)
 
@@ -203,8 +211,13 @@ class WaffleTopPickEnv(DirectRLEnv):
         roll = torch.atan2((torch.cross(want, close, dim=1) * appr).sum(1), (want * close).sum(1))
         nb = self.to_base(self._obj("puckN").data.root_pos_w.torch)[:, :2] - pb[:, :2]
         nb = torch.where(self.nb_absent[:, None], self._nb_absent_obs, nb)
+        jp = d.joint_pos.torch[:, self._arm] - d.default_joint_pos.torch[:, self._arm]
+        jv = d.joint_vel.torch[:, self._arm]
+        if self.cfg.dr_obs_noise:  # 관절 측정 잡음 (도메인 랜덤화 13 쪽)
+            jp = jp + torch.randn_like(jp) * self.cfg.obs_noise_joint_pos
+            jv = jv + torch.randn_like(jv) * self.cfg.obs_noise_joint_vel
         obs = torch.cat((
-            d.joint_pos.torch[:, self._arm] - d.default_joint_pos.torch[:, self._arm], d.joint_vel.torch[:, self._arm],
+            jp, jv,
             d.joint_pos.torch[:, self._gl], pb, gb, pb - gb, self.vec_base(appr), self.vec_base(close), nb,
             self.is_box.float().unsqueeze(1), torch.stack((torch.cos(roll), torch.sin(roll)), dim=1), self.actions,
             self.tilted.float().unsqueeze(1),
@@ -390,6 +403,9 @@ class WaffleTopPickEnv(DirectRLEnv):
         r.write_joint_position_to_sim_index(position=q, env_ids=env_ids)
         r.write_joint_velocity_to_sim_index(velocity=torch.zeros_like(q), env_ids=env_ids)
         self.arm_target[env_ids] = q[:, self._arm]
+        self.prev_target[env_ids] = q[:, self._arm]
+        self.delay_steps[env_ids] = (torch.randint(0, c.dr_delay_max_steps + 1, (len(env_ids),), device=self.device)
+                                     if c.dr_delay else 0)
 
         # 상자: 로봇 앞 끝에서 gap (가장 가까운 면 · 모서리 기준), 가로 이동, 요. 퍽 2 개 = 상자 중심 ± 0.04 (상자 x 축)
         yaw = U(0.0, math.pi, (n,))
