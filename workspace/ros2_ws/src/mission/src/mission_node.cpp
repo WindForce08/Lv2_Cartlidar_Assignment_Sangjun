@@ -41,7 +41,8 @@
 //                                 박스마다 goto (survey.sides 면의 approach_poses.yaml stage) [+ approach survey.approach_distance] 뒤에 붙는다
 //   survey_finish                 /perception/survey/finish. 성공 = 12칸 확정 → 완료 파일 (message = 경로) 을 계획기 퍽 등록표
 //                                 (survey.pucks_out, mission_planner pucks_file 과 같은 경로) 로 바꿔 씀.
-//                                 실패면 /perception/survey/revisit → 문제 칸이 있는 박스만 survey.revisit_arm_pose 로 다시 보고 finish (#53).
+//                                 실패면 /perception/survey/revisit → 문제 칸이 있는 박스만 survey.revisit_arm_pose ·
+//                                 survey.revisit_approach_distance (각도 · 거리를 바꿈) 로 다시 보고 finish (#53).
 //                                 다시 볼 칸이 없고 미확인 칸만 남으면 survey.on_unconfirmed: fail (안전 정지) | registered (등록표 그대로 계획)
 //   장소 태그 (/perception/task_marker, READ_MARKER, #39) — L1 · L2 · L3 = marker.ids (12 · 13 · 14):
 //     verify 에서 verify.check_marker 면 READ_MARKER 를 같이 켜고, 새로 본 태그 ID · 위치 (base_link · map) 를
@@ -346,7 +347,9 @@ private:
     survey_poses_ = declare_parameter<std::vector<double>>("survey.poses", std::vector<double>{});
     survey_approach_ = declare_parameter<double>("survey.approach_distance", 0.13);   // 0 = 조사 자세에서 바로 봄
     survey_arm_pose_ = declare_parameter<std::string>("survey.arm_pose", "BOX_VIEW");
-    survey_revisit_arm_pose_ = declare_parameter<std::string>("survey.revisit_arm_pose", "TAG_VIEW");   // 다른 각도
+    // 다시 보기 (#53): 처음과 다른 각도 · 거리로 문제 칸을 봄
+    survey_revisit_arm_pose_ = declare_parameter<std::string>("survey.revisit_arm_pose", "TAG_VIEW");
+    survey_revisit_approach_ = declare_parameter<double>("survey.revisit_approach_distance", 0.20);
     survey_mode_text_ = declare_parameter<std::string>("survey.mode", "READ_TAG+SEARCH_FRONT");
     survey_settle_ = declare_parameter<double>("survey.settle_s", 2.0);
     survey_max_rounds_ = declare_parameter<int>("survey.max_rounds", 2);              // 다시 보기 횟수 (perception max_revisits)
@@ -438,8 +441,12 @@ private:
         throw std::invalid_argument("survey.poses must have [x, y, yaw] for each of survey.boxes");
       }
       if (!parseModeNames(survey_mode_text_)) {throw std::invalid_argument("survey.mode: names joined by '+'");}
-      if (!(survey_settle_ >= 0.0) || survey_max_rounds_ < 0 || (survey_approach_ != 0.0 && survey_approach_ < 0.13)) {
-        throw std::invalid_argument("survey.settle_s >= 0, survey.max_rounds >= 0, survey.approach_distance 0 or >= 0.13");
+      auto approach_ok = [](double d) {return d == 0.0 || d >= 0.13;};   // drive FINE 하한 (TFmini)
+      if (!(survey_settle_ >= 0.0) || survey_max_rounds_ < 0 || !approach_ok(survey_approach_) ||
+        !approach_ok(survey_revisit_approach_))
+      {
+        throw std::invalid_argument("survey.settle_s >= 0, survey.max_rounds >= 0, "
+                "survey.approach_distance · revisit_approach_distance 0 or >= 0.13");
       }
       if (survey_on_unconfirmed_ != "fail" && survey_on_unconfirmed_ != "registered") {
         throw std::invalid_argument("survey.on_unconfirmed must be fail or registered");
@@ -787,7 +794,9 @@ private:
       if (survey_enabled_) {
         survey_round_ = 0;
         steps_.push_back(parseStep("survey_start"));
-        for (size_t i = 0; i < survey_boxes_.size(); ++i) {appendSurveyBox(steps_, survey_boxes_[i], survey_arm_pose_);}
+        for (size_t i = 0; i < survey_boxes_.size(); ++i) {
+          appendSurveyBox(steps_, survey_boxes_[i], survey_arm_pose_, survey_approach_);
+        }
         steps_.push_back(parseStep("survey_finish"));
       }
       steps_.push_back(parseStep("plan"));
@@ -1062,16 +1071,17 @@ private:
   }
 
   // ------------------------------------------------------------------ 퍽 측량 (#39 #53)
-  // 박스 하나 조사: 조사 자세로 주행 (+ 정밀 접근) → 팔 자세로 보기
-  void appendSurveyBox(std::vector<Step> & out, int64_t box, const std::string & arm_pose) const
+  // 박스 하나 조사: 조사 자세로 주행 (+ 정밀 접근) → 팔 자세로 보기.
+  //   arm_pose · approach 는 처음 조사와 다시 보기 (#53: 거리 · 각도를 바꿔 관측) 가 다름
+  void appendSurveyBox(std::vector<Step> & out, int64_t box, const std::string & arm_pose, double approach) const
   {
     for (size_t i = 0; i < survey_boxes_.size(); ++i) {
       if (survey_boxes_[i] != box) {continue;}
       std::ostringstream go;
       go << "goto " << survey_poses_[3 * i] << " " << survey_poses_[3 * i + 1] << " " << survey_poses_[3 * i + 2];
       out.push_back(parseStep(go.str()));
-      if (survey_approach_ > 0.0) {
-        out.push_back(parseStep("approach " + std::to_string(survey_approach_)));
+      if (approach > 0.0) {
+        out.push_back(parseStep("approach " + std::to_string(approach)));
       }
       out.push_back(parseStep("survey_view " + std::to_string(box) + " " + arm_pose));
       return;
@@ -1148,7 +1158,7 @@ private:
     }
     ++survey_round_;
     std::vector<Step> added;
-    for (int64_t b : boxes) {appendSurveyBox(added, b, survey_revisit_arm_pose_);}
+    for (int64_t b : boxes) {appendSurveyBox(added, b, survey_revisit_arm_pose_, survey_revisit_approach_);}
     added.push_back(parseStep("survey_finish"));
     RCLCPP_INFO(get_logger(), "survey revisit round %d: %zu box(es)", survey_round_, boxes.size());
     steps_.insert(steps_.begin() + static_cast<std::ptrdiff_t>(step_idx_) + 1, added.begin(), added.end());
@@ -1736,7 +1746,7 @@ private:
   std::vector<double> survey_poses_;
   std::vector<std::string> survey_sides_;
   std::string survey_poses_file_;
-  double survey_approach_{0.13}, survey_settle_{2.0};
+  double survey_approach_{0.13}, survey_revisit_approach_{0.20}, survey_settle_{2.0};
   int survey_max_rounds_{2}, survey_round_{0};
   std::string survey_arm_pose_, survey_revisit_arm_pose_, survey_mode_text_, survey_on_unconfirmed_, survey_pucks_out_;
 
