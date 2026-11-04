@@ -6,15 +6,44 @@ mission_node:
     plan:
       service: /mission_planner/plan
     timeout:
-      observe: 150.0             # 점멸 12 회 x (1 s 켜짐 + 1 s 꺼짐) x 확정 2 묶음 + 텀 + 바코드 읽기
+      observe: 180.0             # 묶음 약 26 s (12 x 2 s + 3 s 텀) x (중간부터 본 첫 묶음 + max_cycles 4) + 바코드 읽기
       plan: 60.0
       verify: 40.0
+      survey: 20.0               # survey start · finish 서비스
+      survey_view: 30.0          # 조사 자세 한 곳 (팔 자세 + settle_s)
+      check_marker: 10.0         # 놓기 전 장소 태그 확인
     observe:
       arm_pose: TAG_VIEW         # ★ 바코드 (80, 650, 450 mm) 를 팔 카메라로 읽을 자세 — manipulator 와 맞출 것
+      max_cycles: 4              # 신호 묶음이 반복됨 (12 회 → 3 s 꺼짐 → 다시). 이만큼 보고도 같은 순서 2 번이 안 나오면 안전 정지
     verify:
       arm_pose: TAG_VIEW         # ★ 팔 카메라로 장소 3 x 3 칸을 위에서 보는 자세 (CheckDice: READ_TAG 켜고 위에서 볼 때 부름)
       mode: READ_TAG+SEARCH_FRONT
       settle_s: 2.0              # 모드를 켠 뒤 퍽 목록이 모일 때까지
       tolerance: 0.0             # 0 = perception 설정값 (발제 기준 10 mm)
       stop_on_fail: false        # 틀려도 기록하고 계속 (복귀 10 점)
+      check_marker: true         # READ_MARKER 도 켜고 새로 본 장소 태그 ID · 위치를 같은 기록에 남김 (#39, 채점: 새 관측 기반 ID · 위치)
+      marker_wait_s: 3.0         # settle 뒤 태그를 더 기다리는 시간 (못 보면 seen=false 로 기록하고 칸 판정은 함)
+    marker:
+      ids: [12, 13, 14]          # L1 · L2 · L3 장소 태그 (tag36h11)
+      check_before_place: false  # ★ true = 장소 첫 놓기 앞에서 태그 ID 확인 (놓는 자리에서 태그가 보이는지 실물 확인 뒤)
     log_dir: /tmp/mission_log    # mission_log.jsonl (관측 · 계획 · 재검증 · 끝). 비우면 기록 안 함
+    # 퍽 측량 (perception_survey, #39 #53): observe 와 plan 사이. 끝나면 survey.pucks_out 에 계획기 퍽 등록표를 쓴다
+    #   → mission_planner 를 pucks_file:=<survey.pucks_out> 로 띄울 것 (planner.launch.py pucks_file 인자)
+    survey:
+      enabled: true
+      boxes: [1, 2, 3, 4, 5, 6]
+      # 박스마다 조사 자세 = 계획기 접근 자세표 (mission_planner approach_poses.yaml) 의 B<box>:<side> stage 를 시작할 때 읽음
+      #   (좌표를 여기 복사하지 않음 → 자세표만 고치면 됨). 박스와 같은 순서로 면 S · N · W · E
+      sides: [S, S, S, S, N, W]
+      poses_file: ""             # 빈 문자열 = <mission_planner share>/config/approach_poses.yaml
+      # poses: [x, y, yaw, ...]  # 자세표 대신 직접 줄 때만 (박스마다 3 개)
+      approach_distance: 0.13    # 조사 자세 뒤 정밀 접근 (FINE, TFmini 하한 0.13). 0 = 접근 없이 봄
+      arm_pose: BOX_VIEW         # ★ 팔 카메라로 박스 윗면 퍽 태그를 보는 자세 (manipulator, #74 · #65)
+      revisit_arm_pose: TAG_VIEW # 다시 볼 때 다른 각도 (#53: 거리 · 각도를 바꿔 관측)
+      mode: READ_TAG+SEARCH_FRONT
+      settle_s: 2.0              # 자세마다 관측을 쌓는 시간
+      max_rounds: 2              # 다시 보기 횟수 (perception_survey max_revisits 와 같게)
+      on_unconfirmed: fail       # 미확인 칸이 남으면 fail (안전 정지) | registered (pucks_file 등록표로 계획)
+      #   survey_start 때 pucks_out 을 지운다 (이전 미션 결과로 계획하지 않게). 그래서 registered 로 계획하려면
+      #   계획기 pucks_file 이 pucks_out 과 다른 경로의 미리 만든 등록표여야 한다 (같은 경로면 파일이 없어 plan 실패)
+      pucks_out: /tmp/mission_log/pucks_survey.yaml
