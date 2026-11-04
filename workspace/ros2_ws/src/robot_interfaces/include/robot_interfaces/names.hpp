@@ -42,6 +42,7 @@ inline constexpr const char * PERCEPTION_SET_MODE = "/perception/set_mode";
 inline constexpr const char * PERCEPTION_CHECK_DICE = "/perception/check_dice";
 inline constexpr const char * MISSION_START = "/mission/start";
 inline constexpr const char * MISSION_STOP = "/mission/stop";
+inline constexpr const char * MISSION_PLANNER_PLAN = "/mission_planner/plan";   // mission (plan 모드) → mission_planner_node, std_srvs/Trigger
 }  // namespace names
 
 namespace qos

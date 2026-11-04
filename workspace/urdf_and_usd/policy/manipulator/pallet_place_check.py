@@ -12,7 +12,12 @@
   처짐 보정 (--ki): 팀 팔 구동은 펌웨어 위치 P 800 · I 0 (강성 18.88 N·m/rad) 이라 퍽을 쥔 팔이 6 ~ 13 mm 처진다 (ki 0 으로 확인).
      호스트 (ROS 노드) 가 측정 관절값으로 목표를 고쳐 주는 적분 보정을 흉내 냄: 목표 = 계획 + bias, bias += ki · dt · (계획 − 측정).
 
+  빼기 (--unload): 칸에 앉힌 퍽을 놓기 궤적 거꾸로 꺼냄 = 빈 집게로 다가가기 (rotate_back -> return -> retract 거꾸로, 손가락 FINGER_RELEASED)
+     -> 놓는 자세에서 쥠 -> place -> carry -> rotate 거꾸로 (쥔 채) -> 앞 운반 자세. 결과: 쥔 퍽 - 손가락 가운데, 퍽 기울기 (집게 기준), 칸 축에서 벗어난 거리.
+  속도: 쥔 구간 = --row_speed (그 열) > --tilt_speed (기울인 칸) > --speed, 빈 집게 구간 = --empty_speed (없으면 쥔 구간과 같음).
+
     ./run_rl.sh pallet_check            # -> pallet_place_check.json
+    ./run_rl.sh pallet_unload           # -> pallet_unload_check.json
     ./run_rl.sh pallet_check_play       # 창으로 (대 수를 줄여 보기: --num_envs 4)
 """
 
@@ -33,7 +38,8 @@ parser.add_argument("--num_envs", type=int, default=24, help="대 수 (칸 12 x 
 parser.add_argument("--ki", type=float, default=4.0, help="[1/s] 호스트 쪽 처짐 보정: 관절 목표 = 계획 + 적분 (계획 − 측정) x ki. 0 = 끔 (펌웨어 I 0 그대로)")
 parser.add_argument("--bias_max", type=float, default=0.15, help="[rad] 처짐 보정 한도")
 parser.add_argument("--gui", action="store_true")
-parser.add_argument("--tilt_speed", type=float, default=0.4, help="[rad/s] 집게를 45° 기울여 놓는 칸 (궤적 tilt_deg) 만 이 속도. 0.8 이면 3열 상자 퍽 2 대가 칸 벽에 걸림 (2026-11-02)")
+parser.add_argument("--tilt_speed", type=float, default=0.8, help="[rad/s] 집게를 45° 기울여 놓는 칸 (궤적 tilt_deg) 의 쥔 구간 속도. 2026-11-03 12칸 45° 부터 0.8 + --row_speed 3:0.4 "
+                    "(0.8 로 모두 돌리면 3열 상자 퍽 4 대가 칸 벽에 걸림, 4칸만 기울이던 때 기본 0.4)")
 parser.add_argument("--settle_ki", action=argparse.BooleanOptionalAction, default=True,
                     help="퍽을 쥐기 전에 처짐 보정 (ki) 을 1.5 s 먼저 돌려 집게 자세를 맞춤 (실제로도 집을 때 이미 보정 중). 끄면 쥔 뒤 보정이 집게를 2 ~ 3° 돌려 기울인 칸 퍽이 기욺")
 parser.add_argument("--grip_close", type=float, default=-0.0075, help="쥐는 손가락 목표. 팀 값 FINGER_CLOSE −0.011 이면 한쪽 손가락만 힘 한계 (13 N) 에 걸려 "
@@ -45,6 +51,11 @@ parser.add_argument("--puck_mu", type=float, default=0.5, help="퍽 마찰 (정�
                     "팀 값 1.0 이면 틈 1 mm 칸에서 퍽이 조금 기울며 끼임 (떨어뜨리기 8/24 -> 0.5 에서 23/24, 2026-11-02)")
 parser.add_argument("--contact_offset", type=float, default=0.002, help="[m] 로봇 · 퍽 접촉 거리")
 parser.add_argument("--drop", action="store_true", help="팔 없이 퍽만: 칸 축 · 칸 방향에 맞춰 퍽 바닥 = 칸 벽 윗면 + 5 mm 에서 놓아 앉는지 (충돌 형상 확인)")
+parser.add_argument("--row_speed", default="3:0.4", help="[rad/s] 열별 쥔 구간 속도 '열:속도,...' (예 3:0.4). 그 열은 --speed · --tilt_speed 대신 (2026-11-03: 12칸 45° 에서 "
+                    "0.8 이면 3열만 실패 20/24)")
+parser.add_argument("--empty_speed", type=float, default=0.8, help="[rad/s] 퍽을 쥐지 않은 구간 (놓은 뒤 retract · return · rotate_back, 빼기 전 다가가기) 속도. 0 이면 쥔 구간과 같음")
+parser.add_argument("--unload", action="store_true", help="빼기 확인: 칸에 앉힌 퍽을 궤적 거꾸로 꺼내 봄 (기본 결과 pallet_unload_check.json)")
+parser.add_argument("--out", default=None, help="결과 JSON (기본 pallet_place_check.json, --unload 면 pallet_unload_check.json)")
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 args_cli.headless = not args_cli.gui
@@ -189,18 +200,30 @@ SEGS = list(PHASE_OF)
 
 
 ROLL_PI = {tuple(int(v) for v in x.split(":")) for x in args_cli.roll_pi.split(",") if x}
+ROW_SPEED = {int(x.split(":")[0]): float(x.split(":")[1]) for x in args_cli.row_speed.split(",") if x}
+OUT = args_cli.out or os.path.join(HERE, "pallet_unload_check.json" if args_cli.unload else "pallet_place_check.json")
 
 
-def timeline(slot, dt, speed):
+def seg_speed(slot, held):
+    """[rad/s] 쥔 구간 = --row_speed (그 열) > --tilt_speed (기울인 칸) > --speed, 빈 집게 구간 = --empty_speed (있으면)."""
+    if not held and args_cli.empty_speed:
+        return args_cli.empty_speed
+    if slot["row"] in ROW_SPEED:
+        return ROW_SPEED[slot["row"]]
+    if slot.get("tilt_deg") and args_cli.tilt_speed:
+        return args_cli.tilt_speed
+    return args_cli.speed
+
+
+def timeline(slot, dt):
     """칸 궤적 -> 물리 스텝마다 (팔 목표 5, 손가락 hold/open, 단계) 목록. 관절 공간 직선, 속도 한도.
     --roll_pi 칸: 손목 롤 (joint5) 을 rotate 동안 0 -> π (집게 몸이 J1 쪽을 봄, 닫는 축은 접선 그대로), rotate_back 동안 π -> 0."""
     roll = math.copysign(math.pi, slot["j1_yaw"]) if (slot["row"], slot["index"]) in ROLL_PI else 0.0
     out, prev = [], list(slot.get("q_front", Q_FRONT))
-    if slot.get("tilt_deg") and args_cli.tilt_speed:
-        speed = args_cli.tilt_speed
     for sg in slot["segments"]:
         ph = PHASE_OF[sg["name"]]
         g = 0 if sg["gripper"] == "hold" else 1
+        speed = seg_speed(slot, g == 0)
         nq = len(sg["q"])
         for iq, q in enumerate(sg["q"]):
             f = (iq + 1) / nq
@@ -213,6 +236,113 @@ def timeline(slot, dt, speed):
         out += [(list(prev), g, ph, SEGS.index(sg["name"]))] * int(dwell / dt)
     out += [(list(prev), 1, 4, len(SEGS) - 1)] * int(1.0 / dt)
     return out
+
+
+UNLOAD_PHASES = ["-", "approach", "grip", "lift", "carry"]
+
+
+def timeline_unload(slot, dt):
+    """빼기: 놓기 궤적 거꾸로 -> 물리 스텝마다 (팔 목표 5, 손가락 0 쥠 · 1 벌림, 단계 UNLOAD_PHASES, 놓기 구간 번호 SEGS).
+    빈 집게로 rotate_back · return · retract 를 거꾸로 따라 놓는 자세 (release) 까지 -> 0.3 s 멈춤 -> 쥠 0.6 s
+    -> place · carry · rotate 거꾸로 (쥔 채) -> 앞 운반 자세 -> 1 s 기다림."""
+    S = {sg["name"]: [list(q) for q in sg["q"]] for sg in slot["segments"]}
+    q_front = list(slot.get("q_front", Q_FRONT))
+    out, prev = [], q_front
+
+    def go(name, qs, g, ph):
+        nonlocal prev
+        speed = seg_speed(slot, g == 0)
+        for q in qs:
+            n = max(1, int(math.ceil(max(abs(a - b) for a, b in zip(q, prev)) / (speed * dt))))
+            for k in range(1, n + 1):
+                out.append(([p + (a - p) * k / n for a, p in zip(q, prev)], g, ph, SEGS.index(name)))
+            prev = q
+
+    def wait(sec, g, ph, name):
+        out.extend([(list(prev), g, ph, SEGS.index(name))] * int(sec / dt))
+
+    for name in ("rotate_back", "return", "retract"):
+        go(name, S[name][::-1], 1, 1)
+    go("release", S["release"], 1, 1)
+    wait(0.3, 1, 1, "release")
+    wait(0.6, 0, 2, "release")
+    go("place", S["place"][::-1], 0, 3)
+    go("carry", S["carry"][::-1], 0, 4)
+    go("rotate", S["rotate"][::-1] + [q_front], 0, 4)
+    wait(1.0, 0, 4, "rotate")
+    return out
+
+
+def unload_test(u, case, is_box, ids, q_start, step, puck_pose, ee_frame, exp_center, puck_up):
+    """빼기 확인: 칸에 퍽을 앉힘 (칸 축 · 칸 방향, 바닥 + 0.5 mm) -> 앞 운반 자세에서 자리 잡기 -> timeline_unload.
+    성공 = 끝에 쥔 퍽 중심 - 손가락 가운데 < 5 mm, 퍽 축 - 기대 축 < 5°, 퍽 바닥 가운데가 칸 축에서 수평 40 mm 넘게 벗어남 (칸 밖)."""
+    dev, n, dt = u.device, u.num_envs, u.physics_dt
+    rp, rq = u.robot.data.root_link_pos_w.torch, u.robot.data.root_link_quat_w.torch
+    loc = torch.tensor([[s["x"], s["y"], s["floor_z"] + 0.0005 + PUCK_H / 2] for s, _ in case], device=dev)
+    th = torch.tensor([math.radians(s["theta_deg"]) for s, _ in case], device=dev)
+    q_loc = torch.stack((torch.zeros_like(th), torch.zeros_like(th), torch.sin(th / 2), torch.cos(th / 2)), dim=1)  # (x,y,z,w), 루트 요 0 가정
+    pose = torch.cat((rp + quat_apply(rq, loc), q_loc), dim=1)
+    for k, m in (("puckC", ~is_box), ("puckB", is_box)):
+        o = u.scene[k]
+        cur = torch.cat((o.data.root_pos_w.torch, o.data.root_quat_w.torch), dim=1)
+        o.write_root_pose_to_sim_index(root_pose=torch.where(m[:, None], pose, cur), env_ids=ids)
+        o.write_root_velocity_to_sim_index(root_velocity=torch.zeros(n, 6, device=dev), env_ids=ids)
+    u.grip[:] = FINGER_RELEASED
+    bias = torch.zeros(n, 5, device=dev)
+    for _ in range(int(1.5 / dt)):  # 앞 운반 자세 자리 잡기 (처짐 보정) + 퍽이 칸에 앉음
+        if args_cli.ki > 0:
+            bias = torch.clamp(bias + args_cli.ki * dt * (q_start - u.robot.data.joint_pos.torch[:, u._arm]), -args_cli.bias_max, args_cli.bias_max)
+            u.arm_target[:] = q_start + bias
+        step()
+    tl = [timeline_unload(c[0], dt) for c in case]
+    T = max(len(x) for x in tl)
+    tgt = torch.tensor([[x[min(t, len(x) - 1)][0] for t in range(T)] for x in tl], device=dev)
+    grp = torch.tensor([[x[min(t, len(x) - 1)][1] for t in range(T)] for x in tl], device=dev)
+    phs = torch.tensor([[x[min(t, len(x) - 1)][2] for t in range(T)] for x in tl], device=dev)
+    fmax = {k: torch.zeros(n, len(UNLOAD_PHASES), device=dev) for k in ("arm", "finger", "puck")}
+    slip = torch.zeros(n, device=dev)
+    print(f"[PalletUnload] {n} 대, 궤적 {T} 스텝 ({T * dt:.1f} s)", flush=True)
+    for t in range(T):
+        if args_cli.ki > 0:
+            bias = torch.clamp(bias + args_cli.ki * dt * (tgt[:, t] - u.robot.data.joint_pos.torch[:, u._arm]), -args_cli.bias_max, args_cli.bias_max)
+        u.arm_target[:] = tgt[:, t] + bias
+        u.grip[:, 0] = torch.where(grp[:, t] > 0, torch.tensor(FINGER_RELEASED, device=dev), torch.tensor(FINGER_CLOSE, device=dev))
+        step()
+        ph = phs[:, t]
+        fp = torch.where(is_box, u.force("puckB_body"), u.force("puckC_body"))
+        for k, f in (("arm", u.force("arm_body")), ("finger", u.force("finger_body")), ("puck", fp)):
+            fmax[k].scatter_reduce_(1, ph[:, None], f[:, None], reduce="amax")
+        held = ph >= 3
+        if held.any():
+            pe, ex, _, _ = ee_frame()
+            pc, _ = puck_pose()
+            slip = torch.where(held, torch.maximum(slip, torch.linalg.norm(pc - exp_center(pe, ex), dim=1)), slip)
+        if t % 240 == 0:
+            print(f"[PalletUnload] t={t * dt:5.1f} s 단계 {[UNLOAD_PHASES[int(v)] for v in ph[:min(n, 12)].tolist()]}", flush=True)
+    pe, ex, _, _ = ee_frame()
+    pc, qc = puck_pose()
+    off = torch.linalg.norm(pc - exp_center(pe, ex), dim=1)
+    ax = quat_apply(qc, torch.tensor([[0, 0, 1.0]], device=dev).expand(n, 3))
+    ang = torch.rad2deg(torch.acos(torch.clamp((ax * puck_up(ex)).sum(1).abs(), max=1.0)))
+    bot = quat_apply_inverse(rq, pc - ax * (PUCK_H / 2) - rp)
+    res = []
+    for i, (s, shape) in enumerate(case):
+        away = math.hypot(float(bot[i, 0]) - s["x"], float(bot[i, 1]) - s["y"])
+        ok = float(off[i]) < 0.005 and float(ang[i]) < 5.0 and away > 0.040
+        r = dict(slot=f"{s['row']}열 {s['index']}", puck_shape=shape, held=ok, off_mm=round(float(off[i]) * 1000, 1), puck_tilt_vs_grip_deg=round(float(ang[i]), 1),
+                 away_from_slot_mm=round(away * 1000, 1), max_slip_mm=round(float(slip[i]) * 1000, 1), duration_s=round(len(tl[i]) * dt, 1),
+                 max_force_N={k: {UNLOAD_PHASES[j]: round(float(fmax[k][i, j]), 1) for j in range(1, len(UNLOAD_PHASES))} for k in fmax})
+        res.append(r)
+        f = r["max_force_N"]
+        print(f"[PalletUnload] {r['slot']} {shape:3s} {'쥠' if ok else '실패'} | 퍽-손가락 가운데 {r['off_mm']:5.1f} mm 기울기 {r['puck_tilt_vs_grip_deg']:5.1f}° 칸 축에서 {r['away_from_slot_mm']:6.1f} mm"
+              f" | 미끄럼 {r['max_slip_mm']:4.1f} mm | {r['duration_s']} s | 손가락-몸체 approach {f['finger']['approach']} grip {f['finger']['grip']} lift {f['finger']['lift']}"
+              f" | 퍽-몸체 lift {f['puck']['lift']}", flush=True)
+    summary = dict(held=sum(r["held"] for r in res), total=n, speed_rad_s=args_cli.speed, tilt_speed=args_cli.tilt_speed, row_speed=ROW_SPEED, empty_speed=args_cli.empty_speed,
+                   ki=args_cli.ki, puck_mu=args_cli.puck_mu, grip_close=FINGER_CLOSE, tilt_slots=sorted({(c[0]["row"], c[0]["index"]) for c in case if c[0].get("tilt_deg")}),
+                   duration_s_per_slot={r["slot"]: r["duration_s"] for r in res[:len(TRAJ["slots"])]},
+                   arm_body_max_N=round(float(fmax["arm"].max()), 1), finger_body_max_N=round(float(fmax["finger"].max()), 1))
+    print(f"[PalletUnload] 요약 {summary}", flush=True)
+    json.dump(dict(summary=summary, results=res), open(OUT, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
 
 
 def drop_test(u, case, is_box, ids):
@@ -314,6 +444,12 @@ def main():
         """쥔 퍽 중심 기대값 = TCP − 퍽 축 x GRASP_DZ (수직이면 gripper x 0.155 와 같음)."""
         return pe + ex * TRAJ["tcp_offset_ee"][0] - puck_up(ex) * TRAJ["grasp_dz"]
 
+    if args_cli.unload:
+        assert not ROLL_PI, "--unload 는 --roll_pi 없이"
+        unload_test(u, case, is_box, ids, q_start, step, puck_pose, ee_frame, exp_center, puck_up)
+        env.close()
+        return
+
     # 1. 앞 운반 자세에서 자리 잡기 (집게 벌림, 처짐 보정이 자리 잡을 때까지) -> 퍽을 손가락 사이에 -> 쥠
     bias = torch.zeros(n, 5, device=dev)
     for _ in range(int((1.5 if args_cli.settle_ki else 0.5) / dt)):
@@ -360,7 +496,7 @@ def main():
     print(f"[PalletCheck] 쥔 직후: 손가락 왼 {[round(v, 4) for v in fing0.tolist()]} 오른 {[round(v, 4) for v in u.robot.data.joint_pos.torch[:, u._gr[0]].tolist()]} 퍽-손가락 가운데 mm {[round(v * 1000, 1) for v in off0.tolist()]}", flush=True)
 
     # 2 ~ 3. 궤적
-    tl = [timeline(c[0], dt, args_cli.speed) for c in case]
+    tl = [timeline(c[0], dt) for c in case]
     T = max(len(x) for x in tl)
     tgt = torch.tensor([[x[min(t, len(x) - 1)][0] for t in range(T)] for x in tl], device=dev)  # (n, T, 5)
     grp = torch.tensor([[x[min(t, len(x) - 1)][1] for t in range(T)] for x in tl], device=dev)
@@ -419,6 +555,7 @@ def main():
         ok = dxy < 0.003 and abs(dz) < 0.003 and tilt < 5.0 and float(slip[i]) < 0.015
         r = dict(slot=f"{s['row']}열 {s['index']}", puck_shape=shape, seated=ok, xy_err_mm=round(dxy * 1000, 1), bottom_above_floor_mm=round(dz * 1000, 1),
                  tilt_deg=round(tilt, 1), box_face_err_deg=round(face, 1) if shape == "box" else None, max_slip_mm=round(float(slip[i]) * 1000, 1),
+                 duration_s=round(len(tl[i]) * dt, 1),
                  max_force_N={k: {PHASES[j]: round(float(fmax[k][i, j]), 1) for j in range(1, len(PHASES))} for k in fmax}, first_contact=first[i])
         res.append(r)
         f = r["max_force_N"]
@@ -428,10 +565,11 @@ def main():
         for k, v in first[i].items():
             print(f"[PalletCheck]     처음 닿음 {k}: {v}", flush=True)
     summary = dict(seated=sum(r["seated"] for r in res), total=n, speed_rad_s=args_cli.speed, ki=args_cli.ki, puck_mu=args_cli.puck_mu, roll_pi=sorted(ROLL_PI), tilt_slots=sorted({(c[0]["row"], c[0]["index"]) for c in case if c[0].get("tilt_deg")}), tilt_speed=args_cli.tilt_speed,
+                   row_speed=ROW_SPEED, empty_speed=args_cli.empty_speed, duration_s_per_slot={r["slot"]: r["duration_s"] for r in res[:len(TRAJ["slots"])]},
                    grip_close=FINGER_CLOSE, settle_ki=args_cli.settle_ki,
                    arm_body_max_N=round(float(fmax["arm"].max()), 1), finger_body_max_N=round(float(fmax["finger"].max()), 1))
     print(f"[PalletCheck] 요약 {summary}", flush=True)
-    json.dump(dict(summary=summary, traj_max_tilt_deg=TRAJ.get("max_tilt_deg"), results=res), open(os.path.join(HERE, "pallet_place_check.json"), "w", encoding="utf-8"),
+    json.dump(dict(summary=summary, traj_max_tilt_deg=TRAJ.get("max_tilt_deg"), results=res), open(OUT, "w", encoding="utf-8"),
               ensure_ascii=False, indent=1)
     env.close()
 

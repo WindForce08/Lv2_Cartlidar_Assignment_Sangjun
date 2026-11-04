@@ -19,6 +19,9 @@
 //              놓치면 offset_valid = false (다른 퍽으로 넘어가지 않음)
 //              잠근 동안 평면 교차(arm_plane.hpp)로 퍽 중심 /perception/arm_target(PointStamped, base_footprint) 과
 //              거리 /perception/arm_range(Range, tool_link 원점에서 +x 로 퍽 중심까지)도 낸다. D435 추적 위치의 예비 · 검증용
+//   /perception/place_box/measure (서비스, Trigger): 팔 카메라가 켜진 모드(READ_TAG · ARM_ALIGN)에서 팔 영상 arm.place_box.frames 장마다
+//              장소 상자 윗면을 찾아(place_box.hpp, 깊이 없이 윗면 높이 평면) odom 으로 모아 중앙값 → /perception/place_box (PoseStamped) ·
+//              /perception/place_box/cells (PoseArray, 칸 9 개) · /perception/place_box/status (String JSON, 실패 포함). 셋 다 latched
 //   READ_TAG : 왜곡 보정 원본에서 AprilTag → tag_id · tag_pose (Arducam 광학 프레임 기준, x 오른쪽 · y 아래 · z 앞)
 //              퍽 태그(tag.*)와 장소 태그(marker.*)를 각자 크기로 찾아 가장 크게 보이는 것 하나 (read_tag.hpp)
 //   /perception/pucks (토픽, PuckArray): SEARCH_* 또는 READ_TAG 가 켜져 있으면 result 와 같은 주기로 발행한다
@@ -76,7 +79,12 @@
 #include "sensor_msgs/msg/camera_info.hpp"
 #include "sensor_msgs/msg/image.hpp"
 #include "geometry_msgs/msg/point_stamped.hpp"
+#include "geometry_msgs/msg/pose_array.hpp"
+#include "geometry_msgs/msg/pose_stamped.hpp"
+#include "std_msgs/msg/string.hpp"
+#include "std_srvs/srv/trigger.hpp"
 #include "perception/arm_plane.hpp"
+#include "perception/place_box.hpp"
 #include "perception/arm_range.hpp"
 #include "perception/arm_target_lock.hpp"
 #include "sensor_msgs/msg/range.hpp"
@@ -400,6 +408,9 @@ public:
       RCLCPP_FATAL(get_logger(), "검출기 생성 실패: %s", info.c_str());
       throw std::runtime_error("detector");
     }
+    if (!dc.engine_path.empty() && detector_->name() != "tensorrt") {   // 실물에서 YOLO 없이 도는 것을 알아채게
+      RCLCPP_WARN(get_logger(), "detector.engine_path 를 쓰지 못해 색 검출기로 대신함: %s", info.c_str());
+    }
     split_on_ = split_on_ && detector_->name() != "tensorrt";   // 깊이 나누기는 색 검출기 덩어리에만
     // class_names 는 엔진 클래스 번호의 뜻. 색 검출기(auto 대체 포함)는 번호가 0 빨강 · 1 초록 · 2 파랑으로 정해져 있어 쓰지 않는다
     if (detector_->name() != "tensorrt" && !class_names_.empty()) {
@@ -476,6 +487,34 @@ public:
       plane_range_pub_ = create_publisher<sensor_msgs::msg::Range>(
         declare_parameter("arm.plane.range_topic", std::string("/perception/arm_range")), rclcpp::SensorDataQoS());
     }
+    // 장소 상자 윗면 찾기 (place_box.hpp): 서비스로 시작 → 팔 영상 frames 장 → 중앙값 → odom 기준 상자 · 칸 9 개 발행
+    pb_.cfg.box = declare_parameter("arm.place_box.box", pb_.cfg.box);
+    pb_.cfg.height = declare_parameter("arm.place_box.height", pb_.cfg.height);
+    pb_.cfg.search = declare_parameter("arm.place_box.search", pb_.cfg.search);
+    pb_.frame = declare_parameter("arm.place_box.frame", pb_.frame);
+    {
+      const auto pr = declare_parameter("arm.place_box.prior", std::vector<double>{0.2553, 0.0});
+      if (pr.size() == 2) {pb_.prior = cv::Point2d(pr[0], pr[1]);}
+    }
+    pb_.prior_yaw = declare_parameter("arm.place_box.prior_yaw", pb_.prior_yaw);
+    pb_.frames = static_cast<int>(declare_parameter("arm.place_box.frames", pb_.frames));
+    pb_.max_spread_m = declare_parameter("arm.place_box.max_spread_m", pb_.max_spread_m);
+    pb_.max_spread_rad = declare_parameter("arm.place_box.max_spread_deg", pb_.max_spread_rad * 180.0 / M_PI) * M_PI / 180.0;
+    pb_.pitch = declare_parameter("arm.place_box.cell_pitch", pb_.pitch);
+    {
+      const auto latched = rclcpp::QoS(1).reliable().transient_local();
+      pb_box_pub_ = create_publisher<geometry_msgs::msg::PoseStamped>("/perception/place_box", latched);
+      pb_cells_pub_ = create_publisher<geometry_msgs::msg::PoseArray>("/perception/place_box/cells", latched);
+      pb_status_pub_ = create_publisher<std_msgs::msg::String>("/perception/place_box/status", latched);
+    }
+    pb_srv_ = create_service<std_srvs::srv::Trigger>("/perception/place_box/measure",
+        [this](std_srvs::srv::Trigger::Request::SharedPtr, std_srvs::srv::Trigger::Response::SharedPtr res) {
+          if (!(mode_ & ARM_BITS)) {res->success = false; res->message = "팔 카메라가 꺼져 있음 (READ_TAG 또는 ARM_ALIGN 을 켜고 부를 것)"; return;}
+          pb_.samples.clear();
+          pb_.need = std::max(1, pb_.frames);
+          res->success = true;
+          res->message = "장소 상자 측정 시작: 팔 영상 " + std::to_string(pb_.need) + " 장 → /perception/place_box/status";
+        }, rclcpp::ServicesQoS(), ctl_cbg_);
     dice_srv_ = create_service<CheckDice>(names::PERCEPTION_CHECK_DICE,
         [this](CheckDice::Request::SharedPtr req, CheckDice::Response::SharedPtr res) {on_check_dice(*req, *res);},
         rclcpp::ServicesQoS(), ctl_cbg_);
@@ -1569,6 +1608,7 @@ private:
       arm_.marker = best_marker(places, *T, img->header.stamp, Puck::CAMERA_ARM);
     }
     if (mode & SetMode::Request::ARM_ALIGN) {publish_arm_range(img->header, (mode & SetMode::Request::READ_TAG) != 0, plane_pt);}
+    if (pb_.need > 0 && !newK_.empty()) {measure_place_box(u, frame, stamp);}
   }
 
   // /arm_range: 촬영 시각 팔 자세로 태그 퍽 중심(base_link) · D435 보유 점(odom) 을 range_frame 으로 옮겨 거리 계산
@@ -1614,6 +1654,77 @@ private:
         e->source == ArmRangeEstimate::Source::D435_HOLD ? "D435 보유" : "평면 교차", e->lateral);
     }
     arm_range_pub_->publish(m);
+  }
+
+  // 장소 상자 측정 한 장: 촬영 시각 팔 자세로 윗면을 찾아 odom 으로 옮겨 모은다. 다 모이면 중앙값 · 흩어짐 확인 뒤 발행
+  void measure_place_box(const cv::Mat & u, const std::string & frame, const rclcpp::Time & stamp)
+  {
+    const auto T_pc = lookup_at(pb_.frame, frame, stamp, false);
+    const auto T_op = lookup_at(odom_frame_, pb_.frame, stamp, false);
+    if (!T_pc || !T_op) {return;}   // TF 가 올 때까지 다음 장에서 다시
+    const tf2::Matrix3x3 & b = T_pc->getBasis();
+    const cv::Matx33d R(b[0][0], b[0][1], b[0][2], b[1][0], b[1][1], b[1][2], b[2][0], b[2][1], b[2][2]);
+    cv::Matx33d K;
+    for (int i = 0; i < 9; ++i) {K(i / 3, i % 3) = newK_.at<double>(i / 3, i % 3);}
+    const tf2::Vector3 & o = T_pc->getOrigin();
+    const auto r = find_place_box(u, K, R, cv::Vec3d(o.x(), o.y(), o.z()), pb_.prior, pb_.prior_yaw, pb_.cfg);
+    --pb_.need;
+    if (r.ok) {
+      const tf2::Vector3 c = *T_op * tf2::Vector3(r.x, r.y, pb_.cfg.height);
+      const tf2::Vector3 ax = T_op->getBasis() * tf2::Vector3(std::cos(r.yaw), std::sin(r.yaw), 0.0);
+      pb_.samples.push_back({c.x(), c.y(), c.z(), std::atan2(ax.y(), ax.x())});
+    }
+    if (pb_.need > 0) {return;}
+    std_msgs::msg::String st;
+    char buf[256];
+    if (pb_.samples.empty()) {
+      st.data = "{\"ok\": false, \"why\": \"윗면 못 찾음\"}";
+      pb_status_pub_->publish(st);
+      RCLCPP_WARN(get_logger(), "장소 상자: 윗면 못 찾음 (%d 장)", pb_.frames);
+      return;
+    }
+    // 요는 90° 마다 같아 첫 값 ±45° 로 맞춘 뒤 중앙값
+    auto med = [](std::vector<double> v) {std::nth_element(v.begin(), v.begin() + v.size() / 2, v.end()); return v[v.size() / 2];};
+    std::vector<double> xs, ys, zs, ws;
+    const double y0 = pb_.samples.front()[3];
+    for (const auto & s : pb_.samples) {
+      xs.push_back(s[0]); ys.push_back(s[1]); zs.push_back(s[2]);
+      ws.push_back(y0 + std::remainder(s[3] - y0, M_PI / 2));
+    }
+    const double mx = med(xs), my = med(ys), mz = med(zs), mw = med(ws);
+    double sp = 0.0, sw = 0.0;
+    for (size_t i = 0; i < xs.size(); ++i) {sp = std::max(sp, std::hypot(xs[i] - mx, ys[i] - my)); sw = std::max(sw, std::abs(ws[i] - mw));}
+    const bool ok = sp <= pb_.max_spread_m && sw <= pb_.max_spread_rad;
+    std::snprintf(buf, sizeof(buf), "{\"ok\": %s, \"frames\": %zu, \"x\": %.4f, \"y\": %.4f, \"yaw\": %.4f, \"spread_m\": %.4f, \"spread_deg\": %.3f, \"frame\": \"%s\"}",
+      ok ? "true" : "false", xs.size(), mx, my, mw, sp, sw * 180.0 / M_PI, odom_frame_.c_str());
+    st.data = buf;
+    pb_status_pub_->publish(st);
+    if (!ok) {
+      RCLCPP_WARN(get_logger(), "장소 상자: 장마다 흩어짐 %.1f mm · %.2f° 가 커서 내지 않음", sp * 1000, sw * 180.0 / M_PI);
+      return;
+    }
+    geometry_msgs::msg::PoseStamped ps;
+    ps.header.stamp = stamp;
+    ps.header.frame_id = odom_frame_;
+    ps.pose.position.x = mx;
+    ps.pose.position.y = my;
+    ps.pose.position.z = mz;
+    tf2::Quaternion q;
+    q.setRPY(0.0, 0.0, mw);
+    ps.pose.orientation = tf2::toMsg(q);
+    pb_box_pub_->publish(ps);
+    geometry_msgs::msg::PoseArray pa;
+    pa.header = ps.header;
+    for (const auto & c : place_cells(PlaceBoxResult{true, mx, my, mw, 0.0}, pb_.pitch)) {
+      geometry_msgs::msg::Pose p;
+      p.position.x = c.x;
+      p.position.y = c.y;
+      p.position.z = mz;
+      p.orientation = ps.pose.orientation;
+      pa.poses.push_back(p);
+    }
+    pb_cells_pub_->publish(pa);
+    RCLCPP_INFO(get_logger(), "장소 상자: %s (%.3f, %.3f) 요 %.1f° (%zu 장, 흩어짐 %.1f mm)", odom_frame_.c_str(), mx, my, mw * 180.0 / M_PI, xs.size(), sp * 1000);
   }
 
   void reset_arm_target()
@@ -1809,6 +1920,21 @@ private:
   rclcpp::Publisher<BarcodeMsg>::SharedPtr barcode_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr plane_target_pub_;
   rclcpp::Publisher<sensor_msgs::msg::Range>::SharedPtr plane_range_pub_;
+  struct PlaceBoxState
+  {
+    PlaceBoxConfig cfg;
+    std::string frame = "base_footprint";   // 윗면 높이 기준 (z = 바닥 위)
+    cv::Point2d prior{0.2553, 0.0};          // 최종 자리 (앞 끝 0.1328 + 면 0.02 + 반 변 0.1025) 의 상자 중심
+    double prior_yaw = 0.0;
+    int frames = 3;
+    double max_spread_m = 0.003, max_spread_rad = 1.0 * M_PI / 180.0, pitch = 0.06;
+    int need = 0;                            // 남은 장 수 (ctl_cbg_ 에서만)
+    std::vector<std::array<double, 4>> samples;   // odom x · y · z · 요
+  } pb_;
+  rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pb_box_pub_;
+  rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr pb_cells_pub_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr pb_status_pub_;
+  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr pb_srv_;
   MonoCamera bc_arm_;                          // 바코드 읽기용 팔 카메라 구독 (영상 · 처리 기록이 arm_ 과 따로)
   DepthCamera * bc_cam_ = nullptr;
   int bc_frames_ = 5, bc_min_valid_ = 0;

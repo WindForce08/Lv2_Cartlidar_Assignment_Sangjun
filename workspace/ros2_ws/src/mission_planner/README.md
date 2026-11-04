@@ -86,21 +86,25 @@ robot_interfaces 는 바꾸지 않음 (동결). 계획 단계 (`mission_planner/
 |---|---|
 | `goto x y yaw` | /drive/navigate (지도 좌표) + 팔 STOW |
 | `approach 0.13` | 기존 approach (COARSE → READY → FINE, TFmini 하한 0.13) |
-| `pick_target x y z` | /manipulator/pick, target = 지도 좌표 퍽 중심 |
-| `skill manipulator <이름>` | /manipulator/execute_skill — ★ manipulator 구현 필요: `toppick_tilt`, `pallet_load_<열>_<칸>[_tilt]`, `pallet_unload_<열>_<칸>[_tilt]`, `place_<L>_<dx>_<dy>[_tilt]` (dx, dy = m1 · 0 · p1) |
+| `skill manipulator <이름>` | /manipulator/execute_skill — ★ manipulator 구현 필요. 집기 · 놓기는 모두 집게 45°: `toppick_tilt`, `pallet_load_<열>_<칸>_tilt`, `pallet_unload_<열>_<칸>_tilt` (속도 규칙 #75), `place_<L>_<dx>_<dy>_tilt` (dx, dy = m1 · 0 · p1) |
+| `skill drive turn_<p\|m>17` · `turn_0` | /drive/execute_skill — ★ drive 구현 필요. 상자 퍽을 집기 전 FINE 정렬 방향에서 로봇 중심 둘레로 ±17° 제자리 회전 (J1→퍽 = 박스 축 = 퍽 면, ±3°), 집고 실은 뒤 `turn_0` 으로 되돌림. inline (박스 6) 은 회전 없음 |
 | `verify L cx cy z expect9 yshape` | 팔 TAG_VIEW → READ_TAG+SEARCH_FRONT → /perception/check_dice (지도 좌표 칸) → 기록, 틀려도 계속 (stop_on_fail false) |
 | `wait 3` | 복귀 뒤 정지 |
 
 기록: 계획기 log_dir 에 signal.json · allocation.json · plan.json · mission_lines.txt, mission_node log_dir 에 mission_log.jsonl (observe · plan · verify · finish).
 실패: 점멸 MISMATCH · 미등록 바코드 · 풀 수 없는 문제 = 재시도 없이 FAILED (발제: 오류 기록 후 안전 정지). 그 밖의 단계는 max_retries 재시도.
 
-연동 시험 (`test/mock_robot.py` = 가짜 drive · manipulator · perception): Q1 예제로 /mission/start → DONE (단계 85, 주행 18 · 정렬 30 · 집기 12 · skill 36 · check_dice 3, 23 s),
+연동 시험 (`test/mock_robot.py` = 가짜 drive · manipulator · perception): Q1 예제로 /mission/start → DONE (단계 93, 주행 18 · 정렬 30 · drive skill 8 (turn) · manipulator skill 48 · check_dice 3, 26 s),
 skill 거절 → 재시도 2 번 뒤 FAILED, 미등록 바코드 → 바로 FAILED.
 
 ## 남은 것 · 주의
 
 - `placement.csv` 가 나오면 문제 파일로 옮겨 계획을 다시 돌릴 것. 경기장 설치 실측이 발제 좌표와 다르면 SDF (generate_world.py) 를 고치고 `mission_make_maps`.
-- L2 가운데 · 먼 줄 기울여 놓기, 박스 6 inline 집기, single_load 의 상자 퍽 기울여 집기 (주행이 퍽 면을 J1 반경 ±3° 로 맞춰야 함) 는 Isaac · 실물 확인 전.
-- manipulator: 위 skill 이름 (팔레트 싣기 · 꺼내기, 칸 놓기, 기울여 집기) 구현 필요. 팔레트 궤적은 `urdf_and_usd/isaac/rl/pallet_place_traj.json`.
-- approach FINE 은 TFmini 하한 0.13 m 라 범퍼-박스 약 0.13 m 에서 멈춤 → 접근 자세표 final (0.02 m) 까지는 manipulator pick 의 최종 전진 (/arm_range) 이 맡아야 함.
+- 모든 집기 · 놓기 45° (2026-11-03): 팔레트 12 칸은 Isaac 24/24 (#75). 박스 위 집기 · L 칸 놓기 45° 와 상자 퍽 ±17° 회전 집기는 Isaac · 실물 확인 전.
+  J1 거리 범위 0.12 ~ 0.35 m (윗면 70 mm). 박스 ±Y 접근 gap 0.06 (회전 때 외곽-박스 여유 15 mm, 퍽 J1 0.203 m), L1 · L3 gap 0.06 (칸 0.139 ~ 0.266 m), L2 0.02 (0.207 ~ 0.332 m).
+  TopPick 다시 학습 필요 (#78): tilt_prob 1.0, 원기둥 퍽 gap 0.06, 회전 뒤 상자 퍽은 옆 퍽이 접선 방향. 회전 skill 은 drive #77.
+- per_location 은 팔레트 2 · 1 열 8 칸만 씀 (3 열 놓기는 쥔 구간 0.4 rad/s 라 칸당 약 6 s 더 걸림).
+- 45° 로 놓은 상자 퍽은 칸에서 J1→칸 방향으로 돌아 앉음 (L1 · L3 최대 23°, L2 16°). 칸 판정에 퍽 방향이 들어가는지 확인.
+- manipulator: 위 skill 이름 (팔레트 싣기 · 꺼내기, 칸 놓기, 기울여 집기) 구현 필요. 팔레트 궤적은 `urdf_and_usd/policy/manipulator/pallet_place_traj.json`.
+- approach FINE 은 TFmini 하한 0.13 m 라 범퍼-박스 약 0.13 m 에서 멈춤 → 접근 자세표 final (박스 0.06 · inline 0.04 · L1 L3 0.06 · L2 0.02 m) 까지는 #64 에서 정함.
 - observe · verify 팔 자세 (TAG_VIEW) 는 바코드 · 칸을 볼 수 있는지 실물 확인 (mission_plan.yaml observe.arm_pose · verify.arm_pose).

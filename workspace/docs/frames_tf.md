@@ -11,7 +11,7 @@ URDF 는 `opencr_hardware/urdf/robot.urdf.xacro`. 시뮬레이션 참고본 (`~/
 
 ## 축
 
-- `base_link`: +X 앞 · +Y 왼쪽 · +Z 위 (ROS REP 103). 원점 = 하판 윗면 중심, 바닥 위 56.25 mm.
+- `base_link`: +X 앞 · +Y 왼쪽 · +Z 위 (ROS REP 103). 원점 = 기준 모델(waffle_4wd_description B안)과 같음 — 바닥 위 6.75 mm (바퀴 중심 z 0.02625 − 반지름 0.033). 2026-11-02 `add7244` 부터 (이전 저장소 값 56.25 mm).
 - 광학 프레임 (`*_optical_frame`): +X 영상 오른쪽 · +Y 영상 아래 · +Z 앞 (보는 방향). 몸체 프레임 기준 rpy (-π/2, 0, -π/2).
 
 ## 프레임
@@ -21,11 +21,11 @@ URDF 는 `opencr_hardware/urdf/robot.urdf.xacro`. 시뮬레이션 참고본 (`~/
 | `map` → `odom` | — | slam_toolbox | nav2 | |
 | `odom` → `base_link` | — | **ekf 만** (diff_drive `enable_odom_tf: false`) | perception · manipulator (`fixed_frame`) | |
 | `base_footprint` | base_link | robot_state_publisher (URDF) | perception 찾기 · 바코드 (`base_frame`) | |
-| `imu_link` | base_link | URDF | imu_sensor_broadcaster · ekf | 뒤집어 장착 반영 (roll π) |
-| `laser_front` · `laser_rear` | base_link | URDF | LiDAR 드라이버 frame_id · slam_toolbox | ★ roll π 미적용, 이름 · 위치 추후 확정 |
-| `camera_front_link` · `camera_rear_link` | base_link | URDF | — | ★ C: 이름 불일치 |
-| `top_camera_front_link` → `top_camera_front_color_optical_frame` (뒤도 같음) | (URDF 에 없음) | realsense2_camera (`<camera_name>_link` 아래만) | perception D435 | ★ C: base_link 와 끊김 |
-| `arm_base_link` → `link1` ~ `gripper_roll_link` | base_link | URDF + /joint_states | manipulator (`arm_base_frame`) | |
+| `imu_link` | base_link (0.0095, 0, 0.0202), rpy 0 | URDF | imu_sensor_broadcaster · ekf | 아래 OpenCR 보드를 바로 놓음 (2026-11-02 확인, 이전 roll π 는 틀림). Isaac 브리지 `IMU_RPY` 도 rpy 0 (2026-11-03) |
+| `laser_front` · `laser_rear` | base_link (±0.1089, 0, 0.0755), roll π (뒤는 + yaw π) | URDF | LiDAR 드라이버 frame_id · slam_toolbox | 뒤집어 장착 반영 (2026-11-02). 스캔면 바닥 위 82 mm |
+| `top_camera_front_link` · `top_camera_rear_link` | base_link (앞 (−0.0481, +0.0250, 0.4836) · 뒤 (−0.2079, −0.0250, 0.4836)), pitch 0.6144 rad | URDF | realsense2_camera TF 뿌리 (왼쪽 IR = 깊이 원점) | C 적용 (2026-11-02) |
+| `top_camera_*_link` → `top_camera_*_color_optical_frame` | top_camera_*_link | realsense2_camera (실물) · Isaac 브리지 `/tf_static` (모의) | perception D435 · rear_obstacle | URDF 는 만들지 않음 (부모가 둘이 되지 않게) |
+| `arm_base_link` → `link1` ~ `gripper_roll_link` | base_link (0.096, 0, 0.1135) — joint2 축이 기준 모델 자리 | URDF + /joint_states | manipulator (`arm_base_frame`) | |
 | `arm_camera_link` → `arm_camera_optical_frame` | gripper_roll_link | URDF | Arducam UVC 드라이버 frame_id · perception 태그 | 그리퍼 장착 확인 (2026-10-28) |
 | `tfmini_link` | base_link (0.130, 0, 0.0243) | URDF | tfmini_node · scan_to_range (`frame_id`) — 박스 앞면 거리 | 렌즈면 원점. 받침대 설계 · Isaac 값, ★ 실측 |
 | `tool_link` | gripper_roll_link | URDF | perception `arm.range.frame` · `arm.plane.range_frame` · manipulator `range_frame` | ★ 이 프레임 기준 거리 토픽이 둘: `/arm_range` = 퍽 **표면** (manipulator 가 씀) · `/perception/arm_range` = 퍽 **중심** (예비 · 검증). 이름이 비슷하니 헷갈리지 말 것 |
@@ -34,11 +34,11 @@ URDF 는 `opencr_hardware/urdf/robot.urdf.xacro`. 시뮬레이션 참고본 (`~/
 
 | 저장소 | USD 261027 | 비고 |
 |---|---|---|
-| `base_link` (뿌리) → `base_footprint` (z -0.05625) | `base_footprint` (뿌리) → `base_link` (z +0.00675) | **부모 · 자식 방향이 반대.** 저장소 방향을 유지한다 (ekf 가 `odom → base_link` 를 발행하므로 base_link 가 뿌리여야 부모가 하나) |
+| `base_link` (뿌리) → `base_footprint` (z -0.00675) | `base_footprint` (뿌리) → `base_link` (z +0.00675) | **부모 · 자식 방향이 반대.** 저장소 방향을 유지한다 (ekf 가 `odom → base_link` 를 발행하므로 base_link 가 뿌리여야 부모가 하나) |
 | `top_camera_front_link` · `top_camera_rear_link` | 같은 이름. 아래에 `_optical_frame` → `_infra1/2_optical_frame` · `_color_optical_frame` | 원점 규약이 다름 (아래 D435 원점) |
 | `arm_camera_link` → `arm_camera_optical_frame` | `camera_link` → `camera_optical_frame` (arm_link_5 아래) | Arducam |
 | `laser_front` · `laser_rear` | `lidar_front` → `lidar_front_scan` (뒤도 같음) | 드라이버 frame_id 이름 추후 확정 |
-| `imu_link` | 없음 | 브리지가 저장소 `imu_link` 축으로 계산해 `/imu/data` 발행 |
+| `imu_link` | 없음 | 브리지가 저장소 `imu_link` 축(rpy 0, `IMU_RPY`)으로 계산해 `/imu/data` 발행 |
 | `tfmini_link` | 없음 | 시뮬레이션에 TFmini 센서 없음 |
 | 관절 `wheel_{left,right}_{front,rear}_joint` · `joint1~5` · `gripper_roll` | `Wheel_Revolute_*` · `RMX52_*` (팔 부호 반대) · 손가락 `gripper_left/right_joint` | 대응 · 부호 · 그리퍼 변환은 `waffle_bridge.py` |
 
@@ -49,23 +49,25 @@ URDF 는 `opencr_hardware/urdf/robot.urdf.xacro`. 시뮬레이션 참고본 (`~/
 - 그래서 저장소 URDF 의 `top_camera_*_link` 는 261027 link 위치가 아니라 **infra1 위치** (앞 y +0.025, 뒤 y -0.025 만큼 옮긴 곳) 에 둔다. 그대로 쓰면 실물에서 컬러가 25 mm 어긋난다.
 - 261027 의 컬러 외부보정 (`_optical_frame` 기준 (-0.04012, 0.00007, -0.00018), rpy (-0.0064, -0.0035, 0.0037)) 은 실물 D435 serial 261822072247 공장값 (rs-enumerate-devices -c, 2026-10-22). 둘째 D435 도 같다고 가정. 실물에서는 드라이버가 자기 공장값을 발행한다.
 
-### 위치값을 그대로 옮기지 않는다
+### 위치값 기준 (2026-11-02 부터)
 
-USD 위치는 저장소 URDF 와 기준이 달라 값을 바로 쓰지 않는다 (★ 어느 쪽이 실물인지 확인 필요).
+저장소 URDF 센서 · 바퀴 위치는 **기준 모델 waffle_4wd_description B안** 값이다 (`add7244`). 아래 USD 261027 은 그 이전 기준이라 값이 다르다 (★ 실물 측정으로 최종 확인).
 
-| 항목 | 저장소 | USD 261027 |
+| 항목 | 저장소 (= B안) | USD 261027 (이전) |
 |---|---|---|
-| base_link 원점 높이 | 바닥 위 56.25 mm | 바닥 위 6.75 mm |
-| 바퀴 | x ±0.100, y ±0.1585 (belt, 간격 0.317) | x ±0.08, y ±0.1546 (간격 0.3092) |
-| D435 기울기 | `camera_*_link` 0.35 rad (자리값) | 35.2° (0.6144 rad) |
-| LiDAR 스캔 프레임 | (±0.15, 0, 0.08) | (±0.1855, ±0.05, 0.0609) — 중심에서 옆으로 50 mm |
+| base_link 원점 높이 | 바닥 위 6.75 mm | 바닥 위 6.75 mm |
+| 바퀴 | x 앞 0.0925 · 뒤 −0.0675, y ±0.1585 (belt, 간격 0.317) | x ±0.08, y ±0.1546 (간격 0.3092) |
+| D435 기울기 | `top_camera_*_link` 0.6144 rad | 35.2° (0.6144 rad) |
+| LiDAR 스캔 프레임 | (±0.1089, 0, 0.0755) roll π | (±0.1855, ±0.05, 0.0609) — 중심에서 옆으로 50 mm |
+| TFmini | (0.130, 0, 0.0243) | 없음 |
 
 ## 적용할 것 (주석으로 남김)
 
 | 항목 | 내용 | 위치 |
 |---|---|---|
-| C | realsense 의 TF 뿌리는 `<camera_name>_link` (`top_camera_front_link` · `top_camera_rear_link`, infra1 = 깊이 원점). URDF 는 `camera_front_link` · `camera_rear_link` 라 `base_link → top_camera_*_color_optical_frame` 이 끊겨 perception `tf_->fixed()` 가 실패한다. 위치는 위 D435 원점대로 | robot.urdf.xacro, test_robot_description.cpp |
-| LiDAR roll π | LDS-03 은 3층 아래에 뒤집어 매달림 (261027 `simulation_metadata.json`: "LDS hangs upside down under floor 3 in CAD and hardware", USD `lidar_*_scan` roll 180°). 미적용이면 스캔 좌우가 뒤집힌다. 이름 · 위치와 함께 추후 확정 | robot.urdf.xacro |
+| C | **적용 (2026-11-02, `add7244`)**: URDF 에 realsense TF 뿌리 `top_camera_front_link` · `top_camera_rear_link` (infra1 = 깊이 원점) 를 두어 `base_link → top_camera_*_color_optical_frame` 이 이어짐. 시험이 이름을 확인 | robot.urdf.xacro, test_robot_description.cpp |
+| LiDAR roll π | **적용 (2026-11-02)**: LDS-03 은 3층 아래에 뒤집어 매달림 → `laser_*` roll π. 드라이버 reverse 는 끔 (sensors.launch.py) | robot.urdf.xacro |
+| IMU 축 | **적용 (2026-11-03)**: Isaac 브리지 `IMU_RPY` 를 URDF `imu_link` 와 같은 rpy 0 으로 (이전 (π, 0, π/2) 는 뒤집어 단 옛 가정 → 모의 ekf 회전 부호 반대) | tools/isaac_sim/waffle_bridge.py |
 | TFmini | **적용 (2026-11-02)**: `tfmini_link` 를 base_link (0.130, 0, 0.0243) 로 옮김 (바닥 위 31.05 mm, base_link 는 바닥 위 6.75 mm). /arm_range 는 이제 perception 계산값(기준 tool_link)이라 manipulator `range_offset` = 퍽 반지름 0.015 | robot.urdf.xacro, manipulator.yaml, test_robot_description.cpp |
 | A | manipulator STOW joint3 -2.3 이 펌웨어 범위 밖 → STOW 명령 거부 | manipulator.yaml |
 | B | manipulator `lower/upper_limits` 가 URDF · config.h 보다 넓음 | manipulator.yaml |
@@ -77,12 +79,7 @@ USD 위치는 저장소 URDF 와 기준이 달라 값을 바로 쓰지 않는다
 - 시뮬레이션의 정답 자세 (ground truth) 는 `/tf` 에 넣지 않는다. `sim_world` 프레임이나 별도 토픽으로 기록해 추정값과 비교한다.
 - 로봇 TF 는 실물 · 시뮬레이션 모두 robot_state_publisher 가 저장소 URDF 로 만든다. 시뮬레이션은 `sim:=true` 로 TopicBasedSystem 이 `/isaac_joint_states` 를 받아 joint_state_broadcaster 가 `/joint_states` (저장소 이름) 를 내므로 팔 · `arm_camera_optical_frame` TF 도 같은 방식으로 생긴다.
 - 시뮬레이션에는 realsense 드라이버가 없으므로 **브리지가 드라이버 대신 `top_camera_*_link → top_camera_*_color_optical_frame` 을 `/tf_static` 으로 발행**한다 (값은 위 D435 원점 · 공장 외부보정, 실물 드라이버와 같은 관계).
-- C 를 고치기 전까지 시뮬레이션 시험은 임시로 잇는다 (`camera_*_link` 는 자리값이라 위치는 USD 카메라와 다르다):
-
-  ```bash
-  ros2 run tf2_ros static_transform_publisher --frame-id camera_front_link --child-frame-id top_camera_front_link
-  ros2 run tf2_ros static_transform_publisher --frame-id camera_rear_link --child-frame-id top_camera_rear_link
-  ```
+- C 는 적용됐다 (2026-11-02): URDF 에 `top_camera_*_link` 가 있어 예전의 `static_transform_publisher` 임시 연결은 필요 없다.
 
 ## Isaac Sim 발행 규약
 
@@ -93,7 +90,7 @@ USD 위치는 저장소 URDF 와 기준이 달라 값을 바로 쓰지 않는다
 | `/isaac_joint_states` | Isaac → 호스트 | sensor_msgs/JointState | 저장소 관절 이름 (TopicBasedSystem 이 받음) |
 | `/isaac_joint_commands` | 호스트 → Isaac | sensor_msgs/JointState | 바퀴 velocity · 팔 position. 0.5 s 끊기면 바퀴 정지 |
 | `/clock` | Isaac → 호스트 | rosgraph_msgs/Clock | 시뮬레이션 시간 |
-| `/imu/data` | Isaac → 호스트 | sensor_msgs/Imu | `imu_link` (뒤집어 단 보드 축) |
+| `/imu/data` | Isaac → 호스트 | sensor_msgs/Imu | `imu_link` (URDF 와 같은 축, rpy 0) |
 | `/e_stop` | Isaac → 호스트 | std_msgs/Bool | false 10 Hz (실물은 OpenCRHardware) |
 | `/top_camera_front/color/image_raw` · `/color/camera_info` | Isaac → 호스트 | Image · CameraInfo | `top_camera_front_color_optical_frame` |
 | `/top_camera_front/aligned_depth_to_color/image_raw` | Isaac → 호스트 | Image 32FC1 m (컬러와 같은 크기, 맞은 곳 없으면 0) | `top_camera_front_color_optical_frame` |
@@ -121,7 +118,7 @@ Isaac Lab 3 (Isaac Sim 6.1) 에서 확인한 것 (2026-10-28, Sim 6.2 단독 실
 ## 점검
 
 ```bash
-ros2 run tf2_ros tf2_echo base_link top_camera_front_color_optical_frame   # C 가 남아 있으면 실패 (시뮬레이션은 임시 연결 후)
+ros2 run tf2_ros tf2_echo base_link top_camera_front_color_optical_frame   # 드라이버(실물) · 브리지(모의)가 광학 프레임을 내야 이어짐
 ros2 run tf2_ros tf2_echo base_link arm_camera_optical_frame
 ros2 run tf2_tools view_frames                                            # 부모가 둘 · 끊긴 나무 확인
 ros2 topic echo /top_camera_front/color/camera_info --once

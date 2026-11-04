@@ -6,7 +6,7 @@ from mission_planner.mission_lines import expect_cells, to_lines
 from mission_planner.planner import plan
 
 PROB = yaml.safe_load(open(os.path.join(os.path.dirname(__file__), "..", "config", "problem_q1_example.yaml"), encoding="utf-8"))
-KNOWN = {"goto", "approach", "pick_target", "skill", "verify", "wait"}
+KNOWN = {"goto", "approach", "skill", "verify", "wait"}
 
 
 def test_expect_cells():
@@ -27,17 +27,17 @@ def test_lines_q1(world):
         unloads = [ln.split()[2] for ln in lines if ln.startswith("skill manipulator pallet_unload")]
         places = [ln.split()[2] for ln in lines if ln.startswith("skill manipulator place_")]
         assert len(loads) == len(unloads) == len(places) == 12
-        # 기울여 놓을 칸 (L2 가운데 · 먼 줄) 의 퍽은 팔레트에서 꺼낼 때부터 45° (_tilt) -> 칸 번호만 비교
-        slot = lambda x, pre: x.replace(pre, "").replace("_tilt", "")  # noqa: E731
-        assert sorted(slot(x, "pallet_load_") for x in loads) == sorted(slot(x, "pallet_unload_") for x in unloads)
+        assert all(x.endswith("_tilt") for x in loads + unloads + places)          # 모두 45°
+        assert sorted(x.replace("pallet_load_", "") for x in loads) == sorted(x.replace("pallet_unload_", "") for x in unloads)
         assert len([t for t in types if t == "verify"]) == 3
-        picks = sum(t == "pick_target" for t in types) + sum("toppick_tilt" in ln for ln in lines)
-        assert picks == 12
-        if mode == "per_location":
-            assert not any("toppick_tilt" in ln or "pallet_load" in ln and "_tilt" in ln for ln in lines)
+        assert sum("toppick_tilt" in ln for ln in lines) == 12
+        turns = [ln.split()[2] for ln in lines if ln.startswith("skill drive")]
+        n_box = sum(s["shape"] == "box" and s["turn_deg"] != 0.0 for s in p["steps"] if s["type"] == "pick")
+        assert len(turns) == 2 * n_box and turns.count("turn_0") == n_box            # 돌고 -> 집고 -> 되돌림
+        assert set(turns) <= {"turn_0", "turn_p17", "turn_m17"}
         for ln in lines:                                   # mission_node checkStep 과 같은 인자 수
             a = ln.split()
-            if a[0] == "goto" or a[0] == "pick_target":
+            if a[0] == "goto":
                 assert len(a) == 4 and all(float(v) == float(v) for v in a[1:])
             if a[0] == "approach":
                 assert float(a[1]) >= 0.13

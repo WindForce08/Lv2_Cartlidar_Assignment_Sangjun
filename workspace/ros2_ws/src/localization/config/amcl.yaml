@@ -1,0 +1,53 @@
+# AMCL 설정 — localization.launch.py localization:=amcl 일 때만 씀(기본 carto 에서는 뜨지 않음).
+# mission_planner/config/amcl.yaml(문서 좌표 지도용)에서 출발해 Isaac 모의 녹화 재생으로 맞춘 값. 그 파일과 다른 점:
+#   robot_model_type OmniMotionModel · alpha5 0.1 — 4 륜 스키드 차체는 회전 중심이 base_link 뒤(모의 x −0.0658 m)라 제자리 회전 때
+#     base_link 가 옆으로 움직이는데, 차동 모델은 이 옆 이동을 표현하지 못해 옆 방향 오차가 커졌다(옴니 모델로 위치 RMSE 약 절반).
+#   update_min_d · update_min_a 0 — 매 스캔 갱신(정밀 정렬 구간에서도 따라오게). Jetson CPU 부하는 측정하지 않았다.
+#   laser_likelihood_max_dist 2.0.
+#   scan_topic /scan_merged — 이 패키지의 scan_merge(차체 가림 지운 앞 · 뒤 스캔을 움직임 보정해 합침), map_topic /map(maps/slam_walls_001).
+#   초기 자세 = 모의 출발 자세(base_link). launch 인자 start_x/y/yaw 로 덮어씀.
+amcl:
+  ros__parameters:
+    use_sim_time: false
+    global_frame_id: map
+    odom_frame_id: odom
+    base_frame_id: base_link
+    scan_topic: /scan_merged
+    map_topic: /map
+    robot_model_type: nav2_amcl::OmniMotionModel
+    tf_broadcast: true
+    transform_tolerance: 0.3
+    min_particles: 500
+    max_particles: 3000
+    pf_err: 0.02
+    pf_z: 0.99
+    resample_interval: 1
+    update_min_d: 0.0
+    update_min_a: 0.0
+    recovery_alpha_slow: 0.0
+    recovery_alpha_fast: 0.0
+    alpha1: 0.25
+    alpha2: 0.1
+    alpha3: 0.08
+    alpha4: 0.05
+    alpha5: 0.1
+    laser_model_type: likelihood_field
+    laser_min_range: 0.12
+    laser_max_range: 8.0
+    max_beams: 120
+    sigma_hit: 0.03
+    z_hit: 0.85
+    z_rand: 0.15
+    z_max: 0.0
+    z_short: 0.0
+    laser_likelihood_max_dist: 2.0
+    do_beamskip: false
+    set_initial_pose: true
+    always_reset_initial_pose: false
+    initial_pose:
+      x: 0.734
+      y: 0.95
+      z: 0.0
+      yaw: 3.14159265
+    save_pose_rate: 0.5
+    first_map_only: false

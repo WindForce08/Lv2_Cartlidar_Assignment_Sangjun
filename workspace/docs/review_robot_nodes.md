@@ -3,7 +3,7 @@
 > **현재 하드웨어 구성 갱신 (2026-10-26):** 아래 검토는 이전의 단일 OpenCR 결정을 기록한 이력이다. 지금 구성은 주행 모터 전용 OpenCR 1대 (4륜, ID 1~4 — 한때 6륜이었다가 가운데 2개를 뺌) 와 팔 모터 전용 OpenCR 1대이며, 통신 계약 제안은 [interfaces.md](interfaces.md) USB 패킷 절 (v5, [변경 요청](opencr_v5_change_request.md), 승인 대기) 이다. 아래 과거 수치는 현재 설정 기준으로 사용하지 않는다.
 
 > **TFmini · 거리 구조 갱신 (2026-11-02):** TFmini 는 팔 끝이 아니라 **차체 1층 정면 받침대**에 달고, 퍽이 놓인 박스(205 × 205 × 70 mm) 앞면 거리를 잰다 → `/tfmini/range` (mm 출력 + 실측 보정) → drive 정밀 정렬의 전후 거리와 `obstacle_stop`(twist_mux lock priority 60, 정밀 정렬 동안 정지 거리 = 목표 − 0.03 m).
-> `/arm_range` 는 TFmini 가 아니라 **perception_node 가 D435 · Arducam 측위로 낸 팔 끝(tool_link) → 퍽 표면 거리**(① Arducam 태그 ② D435 목표를 odom 에 붙잡아 둔 점)이고 manipulator 미세 보정 · 최종 전진에 쓴다. 정밀 목표는 렌즈 → 박스 앞면 ≥ 0.13 m.
+> `/arm_range` 는 TFmini 가 아니라 **perception_node 가 D435 · Arducam 측위로 낸 팔 끝(tool_link) → 퍽 표면 거리**(① Arducam 태그 ② D435 목표를 odom 에 붙잡아 둔 점 ③ 둘 다 없으면 팔 카메라 평면 교차, 2026-11-03 `f5ad509`)이고 manipulator 미세 보정 · 최종 전진에 쓴다. 정밀 목표는 렌즈 → 박스 앞면 ≥ 0.13 m.
 > 아래 표 · 목록의 TFmini 관련 칸은 이 구조로 고쳤다. 4절 검증 기록은 당시 결과 그대로이다. 자세한 내용은 [interfaces.md](interfaces.md) · [robot_nodes.html](robot_nodes.html).
 
 > **통신 정의 동기화 (2026-11-03):** [interfaces.md](interfaces.md) · [robot_nodes.html](robot_nodes.html) 을 지금 코드에 맞췄다. 이 검토에 걸리는 것:
@@ -57,7 +57,7 @@
 
 | # | 내용 | 제안 |
 |---|---|---|
-| 1 | **skill 성공 조건이 문서에 없음** — "타임아웃 시 0 속도 후 abort" 만 있어 정해진 시간 동안 하는 주행(slalom 등)도 항상 실패 | policies.yaml 에 `finish_on_timeout: true` (이번 구현에 넣음, 기본 false = 문서대로). 장기적으로 v1.2 의 success · termination 조건을 명세에 |
+| 1 | **skill 성공 조건이 문서에 없음** — "타임아웃 시 0 속도 후 abort" 만 있어 정해진 시간 동안 하는 주행(slalom 등)도 항상 실패 | policies.yaml 에 `finish_on_timeout: true` (이번 구현에 넣음, 기본 false = 문서대로). 장기적으로 v1.2 의 success · termination 조건을 명세에. **[2026-11-03] 코드 반영됨** — `robot_policy` `finish_on_timeout` (slalom_v1 = true). 남은 것은 interfaces · 명세 문서화 |
 | 2 | ~~ArmPose result 에 message 없음~~ | **반영 (2026-10-22)**: `string message` 추가. mission 이 pose · pick · align · skill 의 message 를 status.reason 에 붙임 (예: `read_tag 실패: pose TAG_VIEW 실패: 관절 상태 없음`) |
 | 3 | **/arm/skill_state · /arm/safety_state** — 문서 토픽표에 없음 (v1.2 의 모니터링 토픽) | 토픽표에 추가 또는 삭제 결정. ~~지금은 모니터링용으로 남김~~ **[2026-11-03]** 지금은 발행 코드가 없음 (이름 `names.hpp` · 메시지만 정의) → 발행을 구현할지 지울지 결정 |
 | 4 | **그리퍼 미정 동안 grasped** — 그리퍼가 없으면 grasped 를 판단할 수 없어 미션이 계속 재시도 | `gripper.assume_grasped_without_gripper: true` (벤치용, 그리퍼 정해지면 false) |
@@ -65,7 +65,7 @@
 | 6 | **`/perception/rear_obstacle` · `/perception/task_marker` 받는 쪽 없음** (2026-11-03) | rear_obstacle 은 drive 후진 판단에 쓸지, task_marker 는 mission 에 연결할지 결정 |
 | 7 | **`/localization/status` 내는 쪽 없음** (2026-11-03) — puck_survey 가 구독, 못 받으면 관측을 그대로 받음 | 재위치 노드를 만들지, 구독을 뺄지 결정 |
 | 8 | **puck_survey ↔ mission 연결 없음** (2026-11-03) — `/perception/puck_survey` · survey 서비스를 mission 이 쓰지 않음 (지금은 CLI) | mission 단계(예: survey)로 연결할지 결정 |
-| 9 | **`/perception/arm_range`(퍽 중심) 와 `/arm_range`(퍽 표면)** (2026-11-03) — 이름이 비슷한 두 토픽, 앞의 것은 받는 쪽 없음 | 하나로 합칠지, 이름을 바꿀지 결정 |
+| 9 | ~~**`/perception/arm_range`(퍽 중심) 와 `/arm_range`(퍽 표면)**~~ (2026-11-03) | **해결 (`f5ad509`, 이슈 #59 닫힘)**: 평면 교차가 `/arm_range` 의 세 번째 출처가 됨 (태그 → D435 보유 점 → 평면 교차). `/perception/arm_range` · `arm_target` 은 검증용으로 남음 |
 | 10 | **영상 복사 부하** (2026-11-03) — 처음 설계는 SDK 직접 열기(영상 토픽 없음), 지금은 드라이버 토픽 | Jetson 에서 드라이버 · perception 을 같은 컨테이너(intra-process)에 넣을지 1주차 부하 측정으로 결정 |
 
 ## 4. 검증 (이 PC: x86_64, ROS 2 Lyrical, RealSense · TensorRT · ONNX Runtime · controller_manager 없음)
@@ -85,10 +85,10 @@
 ## 5. 남은 일 (★ 실물 · 1주차)
 
 - READY 팔 끝 돌출(`approach.ready_reach`), base_link → 범퍼(`base.front_offset`), exclude_box
-- tfmini_link(박스 거리, 설계값 base_link (0.130, 0, -0.025)) · arm_camera_link · tool_link TF 실측 (/arm_range · pick ① 정확도), Arducam 보정값, 태그 실제 크기
+- tfmini_link(박스 거리, 설계값 base_link (0.130, 0, 0.0243) — 바닥 위 31 mm) · arm_camera_link · tool_link TF 실측 (/arm_range · pick ① 정확도), Arducam 보정값, 태그 실제 크기
 - TFmini 박스 재질 앞 0.10~0.40 m 줄자 보정표(`tfmini.yaml`, 사양 ±5 cm), mm 출력 확인, 미션표 `approach <거리>` 를 팔이 닿는 박스 거리로 실측
 - `/arm_range` D435 보유 점 오차 (정밀 거리에서 D435 시야 밖), `perception.yaml` `arm.range.*`
-- nav2 지도에 퍽 박스 6개 반영 (박스는 LiDAR 평면보다 낮아 /scan 에 안 잡힘), 시뮬레이션은 bringup `use_tfmini:=false`
+- ~~nav2 지도에 퍽 박스 6개 반영~~ **반영됨**: `mission_planner/maps/map_nav` 가 박스(70 mm)를 넣음 (AMCL 용 `map_amcl` 은 스캔면 위만이라 뺌). 시뮬레이션은 bringup `use_tfmini:=false`
 - STOW · READY · PLACE · TAG_VIEW 관절각 (STOW · TAG_VIEW 는 footprint 안)
 - 조이스틱 E-stop · 리셋 · 시작 · 정지 버튼 번호, 물리 스위치 핀
 - /diagnostics 발행 확인 뒤 `diagnostics.timeout: 3.0`
