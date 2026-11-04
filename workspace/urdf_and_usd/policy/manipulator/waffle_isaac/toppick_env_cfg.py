@@ -35,14 +35,17 @@ from isaaclab_physx.physics import PhysxCfg
 
 import isaaclab.sim as sim_utils
 from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidObjectCfg
+import isaaclab.envs.mdp as mdp
 from isaaclab.envs import DirectRLEnvCfg, ViewerCfg
+from isaaclab.managers import EventTermCfg as EventTerm
+from isaaclab.managers import SceneEntityCfg
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sensors import ContactSensorCfg
 from isaaclab.sim import SimulationCfg
 from isaaclab.utils import configclass
 
 from .dice2_cfg import box_cfg, puck_cfg
-from .robot_cfg import BODY_LINK, FINGER_CLOSE, FINGER_GRASP_RANGE, FLOOR_MATERIAL, WAFFLE_CFG
+from .robot_cfg import ARM_JOINTS, BODY_LINK, FINGER_CLOSE, FINGER_GRASP_RANGE, FINGER_LINKS_REGEX, FLOOR_MATERIAL, WAFFLE_CFG
 
 READY_POSE = {"joint1": 0.0, "joint2": 0.48, "joint3": -0.76, "joint4": 1.84, "joint5": 0.0}
 """시작 자세 = TCP 가 J1 축 앞 0.20 m (base x 0.296), 상자 위 퍽의 잡는 높이보다 5 cm 위, 집게 아래 (pallet_traj.Arm IK, 2026-11-02). 학습 때 잡음."""
@@ -82,6 +85,60 @@ class TopPickSceneCfg(InteractiveSceneCfg):
     light = AssetBaseCfg(prim_path="/World/Light", spawn=sim_utils.DomeLightCfg(intensity=2000.0, color=(0.85, 0.85, 0.85)))
 
 
+def _friction(asset, **kw):
+    """퍽 · 손가락 마찰 (학습 시작 때 한 번, 환경마다 다른 값 64 통). PhysX 는 두 재질의 평균을 쓰므로 양쪽을 같은 범위로."""
+    return EventTerm(func=mdp.randomize_rigid_body_material, mode="startup", params={
+        "asset_cfg": SceneEntityCfg(asset, **kw), "static_friction_range": DR_FRICTION, "dynamic_friction_range": DR_FRICTION,
+        "restitution_range": (0.0, 0.0), "num_buckets": 64, "make_consistent": True})
+
+
+def _mass(asset):
+    return EventTerm(func=mdp.randomize_rigid_body_mass, mode="startup", params={
+        "asset_cfg": SceneEntityCfg(asset), "mass_distribution_params": DR_PUCK_MASS, "operation": "scale"})
+
+
+DR_FRICTION = (0.3, 1.0)  # ★ 퍽 (PLA) · 손가락 정지 마찰. 실측 (경사판 미끄럼 각) 뒤 중심을 옮길 것. 지금 팀 값 1.0, 놓기 확인 0.5 가정
+DR_GAIN = (0.8, 1.25)     # ★ 팔 강성 · 감쇠 배율 (팀 18.88 = 펌웨어 P 800 환산). 처짐 6 ~ 13 mm 가 약 −20 ~ +25 % 변함. 처짐 실측 뒤 좁힐 것
+DR_PUCK_MASS = (0.8, 1.2)  # 3D 프린팅 채움 편차
+
+
+@configclass
+class TopPickEventCfg:
+    """물리 무작위화 (도메인 랜덤화 자료 6 · 10 ~ 14 쪽, #71 4번). Isaac Lab 6.1 의 재질 · 구동 이득 · 질량 함수는 CPU 텐서라
+    학습 시작 때 한 번 (환경 256 개가 서로 다른 값). 지연 · 관절 관측 잡음은 toppick_env.py (리셋마다 · 스텝마다).
+    끄기: set_dr(cfg, "none" | "all" | "-friction,-gains,-mass,-delay,-obs_noise") — toppick_eval.py --dr, 절제 실험."""
+    friction_puck_cyl = _friction("puckT_cyl")
+    friction_puck_box = _friction("puckT_box")
+    friction_puck_nb = _friction("puckN")
+    friction_fingers = _friction("robot", body_names=FINGER_LINKS_REGEX)
+    arm_gains = EventTerm(func=mdp.randomize_actuator_gains, mode="startup", params={
+        "asset_cfg": SceneEntityCfg("robot", joint_names=ARM_JOINTS), "stiffness_distribution_params": DR_GAIN,
+        "damping_distribution_params": DR_GAIN, "operation": "scale", "distribution": "uniform"})
+    mass_puck_cyl = _mass("puckT_cyl")
+    mass_puck_box = _mass("puckT_box")
+    mass_puck_nb = _mass("puckN")
+
+
+DR_TERMS = {"friction": ("friction_puck_cyl", "friction_puck_box", "friction_puck_nb", "friction_fingers"),
+            "gains": ("arm_gains",), "mass": ("mass_puck_cyl", "mass_puck_box", "mass_puck_nb")}
+
+
+def set_dr(cfg, spec: str = "all"):
+    """무작위화 켜고 끄기. "all" · "none" · 뺄 것만 "-friction,-delay" (friction · gains · mass · delay · obs_noise)."""
+    off = set(DR_TERMS) | {"delay", "obs_noise"} if spec == "none" else {
+        x.strip().lstrip("-") for x in spec.split(",") if x.strip().startswith("-")}
+    bad = off - set(DR_TERMS) - {"delay", "obs_noise"}
+    if bad:
+        raise ValueError(f"모르는 무작위화: {bad}")
+    for k, names in DR_TERMS.items():
+        if k in off:
+            for n in names:
+                setattr(cfg.events, n, None)
+    cfg.dr_delay = "delay" not in off
+    cfg.dr_obs_noise = "obs_noise" not in off
+    return cfg
+
+
 @configclass
 class WaffleTopPickEnvCfg(DirectRLEnvCfg):
     decimation = 4  # 30 Hz
@@ -92,6 +149,14 @@ class WaffleTopPickEnvCfg(DirectRLEnvCfg):
     viewer: ViewerCfg = ViewerCfg(eye=(0.75, -0.6, 0.55), lookat=(0.28, 0.0, 0.12), origin_type="env", env_index=0)
     sim: SimulationCfg = SimulationCfg(dt=1 / 120, render_interval=decimation, physics=PhysxCfg(), physics_material=FLOOR_MATERIAL)
     scene: TopPickSceneCfg = TopPickSceneCfg(num_envs=256, env_spacing=1.5, replicate_physics=True, clone_in_fabric=True)
+    events: TopPickEventCfg = TopPickEventCfg()
+
+    # 무작위화 (events 밖: toppick_env.py). set_dr 로 끔
+    dr_delay = True
+    dr_delay_max_steps = 4  # ★ 물리 스텝 (120 Hz) → 0 ~ 33 ms. 새 팔 목표를 리셋 때 뽑은 스텝 수만큼 늦게 적용. 실기 왕복 지연 실측 뒤
+    dr_obs_noise = True
+    obs_noise_joint_pos = 0.005  # [rad] 가우스 σ, 관절 관측 (Dynamixel 측정). IK 는 참값
+    obs_noise_joint_vel = 0.05   # [rad/s]
 
     cart_scale = 0.005  # [m / 스텝] 잡는 점 변위 최대 (30 Hz -> 15 cm/s)
     rot_hold_weight = 0.3
