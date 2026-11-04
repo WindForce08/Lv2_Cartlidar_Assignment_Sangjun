@@ -30,7 +30,7 @@
 - 폴더 구조 그대로 둘 것: `isaac/urdf/*.urdf` 와 `isaac/tools/*.py` 가 `../waffle_4wd_description/` 를 상대 경로로 쓴다 (USD 는 메시가 안에 들어 있어 USD 폴더만 옮겨도 됨).
 - 큰 파일: `waffle_4wd_description/meshes/b/body_keep.stl` 31 MB, USD `geometries.usd` 각 24 MB.
 - **stow 자세**: zero → stow 로 갈 때 위팔이 팔레트 칸에 걸린다 (Isaac 오차 0.21 rad). J1 을 먼저 다 돌린 뒤 접을 것 (`CHANGES_B.md` 확인할 것 1).
-- 강화 학습 (`isaac/rl/` · `policy/manipulator/`, 2026-11-02): 팔레트 칸에는 **위에서 집기**로 (옆에서 쥐면 3열 4칸만). 집기 = `Waffle-TopPick-Direct` (상자를 로봇 앞 0 ~ 5 cm 에,
+- 강화 학습 (2026-11-04 정리: 팔 = `policy/manipulator/`, 주행 · 도킹 = `isaac/rl/`): 팔레트 칸에는 **위에서 집기**로 (옆에서 쥐면 3열 4칸만). 집기 = `Waffle-TopPick-Direct` (상자를 로봇 앞 0 ~ 5 cm 에,
   `policies/toppick_latest.pt` 실제 과제 86 % = 기울임 92 % · 수직 80 %, `./run_rl.sh toppick_eval`),
   놓기 = 고정 궤적 (바깥 열부터 채움). Isaac 놓기 확인 **24/24**: 뒤 프로파일 기둥 옆 ±147° · ±155.6° 4칸은 **집게를 45° 기울여** 놓음 (퍽은 세운 채, joint5 한계 그대로).
   이 4칸 퍽은 상자에서 집을 때부터 45° 로 쥠 (TopPick 기울임 모드).

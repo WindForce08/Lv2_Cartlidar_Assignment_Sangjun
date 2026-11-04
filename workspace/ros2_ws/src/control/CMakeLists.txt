@@ -27,6 +27,8 @@ find_package(robot_policy REQUIRED)
 find_package(diagnostic_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(ament_index_cpp REQUIRED)
+find_package(yaml_cpp_vendor REQUIRED)   # pallet_place_traj.json · approach_poses.yaml 읽기
+find_package(yaml-cpp REQUIRED)
 
 # 순수 C++ (ROS 없음): IK
 add_library(arm_ik STATIC src/arm_ik.cpp)
@@ -52,7 +54,7 @@ endmacro()
 robot_component(drive_node control::DriveNode drive)
 robot_component(manipulator_node control::ManipulatorNode manipulator)
 target_link_libraries(manipulator_node PUBLIC arm_ik robot_policy::robot_policy
-  ${action_msgs_TARGETS} ament_index_cpp::ament_index_cpp)
+  ${action_msgs_TARGETS} ament_index_cpp::ament_index_cpp yaml-cpp::yaml-cpp)
 target_link_libraries(drive_node PUBLIC robot_policy::robot_policy)
 
 install(TARGETS arm_ik ARCHIVE DESTINATION lib)
@@ -62,9 +64,15 @@ ament_export_include_directories(include/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
-  # test_ik.cpp는 이전 ArmIK(ArmGeometry · JointLimits) 기준이라 빠짐 — 현재 ArmIK(ArmIKParams) 시험은 TODO
-  ament_add_gtest(test_control_logic test/test_fsm.cpp test/test_align.cpp)
+  ament_add_gtest(test_control_logic test/test_fsm.cpp test/test_align.cpp test/test_ik.cpp test/test_turn.cpp)
   target_link_libraries(test_control_logic arm_ik)
+  # manipulator.yaml 한계 · 자세 · 팔레트 궤적 = URDF 한계 (#83)
+  ament_add_gtest(test_config_limits test/test_config_limits.cpp)
+  target_link_libraries(test_config_limits yaml-cpp::yaml-cpp)
+  target_compile_definitions(test_config_limits PRIVATE
+    MANIPULATOR_YAML="${CMAKE_CURRENT_SOURCE_DIR}/config/manipulator.yaml"
+    PALLET_JSON="${CMAKE_CURRENT_SOURCE_DIR}/config/pallet_place_traj.json"
+    URDF_XACRO="${CMAKE_CURRENT_SOURCE_DIR}/../opencr_hardware/urdf/robot.urdf.xacro")
 endif()
 
 ament_package()

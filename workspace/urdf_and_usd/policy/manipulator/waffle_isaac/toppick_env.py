@@ -14,8 +14,10 @@ from isaaclab.utils.math import quat_apply, quat_apply_inverse, quat_from_euler_
 
 from .dice2_cfg import BOX_SIZE, BOX_H, GRASP_OFFSET_A5, PUCK_Z
 from .robot_cfg import ARM_JOINTS, EE_BODY, GRIPPER_JOINT, GRIPPER_MIMIC, WHEEL_REGEX
-from .toppick_env_cfg import READY_TILT
+from .toppick_env_cfg import NB_ABSENT, READY_TILT
 from .train_log import TrainLog
+
+LAYOUTS = ("rand", "A", "B", "C")  # 배치 종류 번호 0 ~ 3 (#78)
 
 if TYPE_CHECKING:
     from .toppick_env_cfg import WaffleTopPickEnvCfg
@@ -53,6 +55,13 @@ class WaffleTopPickEnv(DirectRLEnv):
         self.puck_z0 = torch.full((n,), PUCK_Z, device=dev)
         self.perc_bias = torch.zeros(n, 3, device=dev)
         self.perc_yaw = torch.zeros(n, device=dev)  # 인식한 상자 퍽 요 (치우침 포함, 월드 = 루트 요 0)
+        self.latched = torch.zeros(n, dtype=torch.bool, device=dev)  # 인식 좌표 고정 (#82)
+        self.perc_fix = torch.zeros(n, 3, device=dev)  # 고정한 인식 좌표 (월드)
+        self.layout = torch.zeros(n, dtype=torch.long, device=dev)  # LAYOUTS 번호
+        self.nb_absent = torch.zeros(n, dtype=torch.bool, device=dev)  # 옆 퍽 없음 (C 먼 퍽)
+        self._nb_absent_obs = torch.tensor([NB_ABSENT], device=dev)
+        self.nb_xy0 = torch.zeros(n, 2, device=dev)
+        self.nb_bad = torch.zeros(n, dtype=torch.bool, device=dev)  # 에피소드 중 옆 퍽이 넘어졌거나 밀림
         self.nb_prev = torch.zeros(n, 2, device=dev)
         self.root0 = torch.zeros(n, 3, device=dev)
         self.hold = torch.zeros(n, dtype=torch.long, device=dev)
@@ -130,6 +139,14 @@ class WaffleTopPickEnv(DirectRLEnv):
     def puck_up(self):
         return quat_apply(self.puck_quat_w(), self._ez)[:, 2].abs()
 
+    def nb_up(self):
+        return quat_apply(self._obj("puckN").data.root_quat_w.torch, self._ez)[:, 2].abs()
+
+    def nb_ok(self):
+        """옆 퍽이 서 있고 시작 자리에서 success_nb_move 안 (옆 퍽 없으면 참)."""
+        moved = torch.linalg.norm(self._obj("puckN").data.root_pos_w.torch[:, :2] - self.nb_xy0, dim=1)
+        return self.nb_absent | ((self.nb_up() > self.cfg.upright_min) & (moved < self.cfg.success_nb_move))
+
     def _contact(self, k):
         f = self.scene[k].data.normal_force_matrix_w.torch
         return torch.linalg.norm(f, dim=-1).amax(dim=(1, 2)) > self.cfg.contact_force
@@ -177,6 +194,7 @@ class WaffleTopPickEnv(DirectRLEnv):
     def _get_observations(self):
         d = self.robot.data
         perc = self.puck_pos_w() + self.perc_bias + (torch.rand(self.num_envs, 3, device=self.device) * 2 - 1) * self.cfg.perc_jitter
+        perc = torch.where(self.latched[:, None], self.perc_fix, perc)  # 관찰 자세에서 잰 값 그대로 (#82)
         pb = self.to_base(perc)
         gb = self.to_base(self.grasp_w())
         appr, close = self.ee_axes_w()
@@ -184,6 +202,7 @@ class WaffleTopPickEnv(DirectRLEnv):
         want = want * torch.where((want * close).sum(1, keepdim=True) < 0, -1.0, 1.0)  # 앞뒤 대칭
         roll = torch.atan2((torch.cross(want, close, dim=1) * appr).sum(1), (want * close).sum(1))
         nb = self.to_base(self._obj("puckN").data.root_pos_w.torch)[:, :2] - pb[:, :2]
+        nb = torch.where(self.nb_absent[:, None], self._nb_absent_obs, nb)
         obs = torch.cat((
             d.joint_pos.torch[:, self._arm] - d.default_joint_pos.torch[:, self._arm], d.joint_vel.torch[:, self._arm],
             d.joint_pos.torch[:, self._gl], pb, gb, pb - gb, self.vec_base(appr), self.vec_base(close), nb,
@@ -214,8 +233,11 @@ class WaffleTopPickEnv(DirectRLEnv):
         lifted = (lift > c.lift_min) & near & (up > c.upright_min)
         height = (torch.clamp(lift, 0.0, c.lift_goal) - torch.clamp(lift - c.lift_goal, min=0.0)) / c.lift_goal * near.float()
         xy = self._obj("puckN").data.root_pos_w.torch[:, :2]
-        moved = torch.linalg.norm(xy - self.nb_prev, dim=1)
+        moved = torch.linalg.norm(xy - self.nb_prev, dim=1) * (~self.nb_absent).float()
         self.nb_prev = xy.clone()
+        nb_toppled = (self.nb_up() < c.topple_cos) & ~self.nb_absent
+        nb_ok = self.nb_ok()
+        self.nb_bad |= ~nb_ok
         toppled = (up < c.topple_cos) & (lift < c.lift_min)
         arm_box = self._contact("arm_box_contact")
         body_box = self._contact("body_box_contact")
@@ -235,11 +257,12 @@ class WaffleTopPickEnv(DirectRLEnv):
             "action_rate": c.rew_action_rate * torch.sum(torch.square(self.actions - self.prev_actions), dim=1),
             "joint_vel": c.rew_joint_vel * torch.sum(torch.square(self.robot.data.joint_vel.torch[:, self._arm]), dim=1),
             "neighbor_moved": c.rew_neighbor_moved * moved,
+            "neighbor_toppled": c.rew_neighbor_toppled * nb_toppled.float(),
             "toppled": c.rew_toppled * toppled.float(),
             "base_tilt": c.rew_base_tilt * tilt,
             "fall": c.rew_fall * self._fell().float(),
         })
-        held = (lift > c.success_lift) & near & (up > c.upright_min) & (down > c.tilt_ok_cos)
+        held = (lift > c.success_lift) & near & (up > c.upright_min) & (down > c.tilt_ok_cos) & nb_ok   # 옆 퍽도 그대로 (#71)
         self.hold = torch.where(held, self.hold + 1, torch.zeros_like(self.hold))
         self.succeeded |= self.hold >= int(c.success_hold_s / (c.sim.dt * c.decimation))
         self.max_lift = torch.maximum(self.max_lift, lift * near.float())
@@ -251,6 +274,7 @@ class WaffleTopPickEnv(DirectRLEnv):
         log["Metrics/grasped_ratio"] = grasped.float().mean().item()
         log["Metrics/lifted_ratio"] = lifted.float().mean().item()
         log["Metrics/toppled_ratio"] = toppled.float().mean().item()
+        log["Metrics/neighbor_toppled_ratio"] = nb_toppled.float().mean().item()
         log["Metrics/arm_box_contact_ratio"] = arm_box.float().mean().item()
         log["Metrics/body_box_contact_ratio"] = body_box.float().mean().item()
         return rew
@@ -278,6 +302,43 @@ class WaffleTopPickEnv(DirectRLEnv):
         o.write_root_pose_to_sim_index(root_pose=pose, env_ids=env_ids)
         o.write_root_velocity_to_sim_index(root_velocity=torch.zeros(len(env_ids), 6, device=self.device), env_ids=env_ids)
 
+    def _real_layout(self, lay, U):
+        """실제 배치 A · B · C (#78 표) -> (상자 중심 xy, 상자 요, 집을 퍽 xy, 옆 퍽 xy, 상자 퍽 여부, 옆 퍽 없음). base 좌표 (루트 요 0).
+        A: 박스 ±Y 면 접근 (간격 box_gap), 상자 x 축 = 옆 -> 두 퍽이 J1 앞 옆 ±puck_dx, 집을 퍽 무작위, 원기둥.
+        B: A 에서 로봇이 회전 중심 (x_r, 0) 둘레로 th 돌아 J1 을 집을 퍽 줄 위로 (drive turn_*, #77). 상자 퍽.
+        C: 박스 6 inline (간격 inline_gap), 상자 x 축 = 앞뒤. 가까운 퍽 (옆 퍽 = 뒤) 또는 먼 퍽 (옆 퍽 없음).
+        모두 간격 · 가로 흔들기, 정렬 · 회전 오차 layout_yaw_jit 를 로봇 회전으로 더함."""
+        c, n, dev = self.cfg, lay.shape[0], self.device
+        half = BOX_SIZE / 2
+        B, C = lay == 2, lay == 3
+        s = torch.where(torch.rand(n, device=dev) < 0.5, 1.0, -1.0)  # 집을 퍽 쪽 (+ = 왼쪽, turn_p)
+        gap = torch.where(C, c.inline_gap, c.box_gap) + U(-c.layout_gap_jit, c.layout_gap_jit, (n,))
+        ctr = torch.stack((c.robot_front + gap.clamp(min=c.min_corner_gap) + half, U(-c.layout_lat_jit, c.layout_lat_jit, (n,))), dim=1)
+        ax = torch.where(C, 0.0, math.pi / 2)  # 상자 x 축 (두 퍽을 잇는 선)
+        u = torch.stack((torch.cos(ax), torch.sin(ax)), dim=1)
+        far = C & (torch.rand(n, device=dev) < c.inline_far_prob)
+        sel = torch.where(C, torch.where(far, 1.0, -1.0), s).unsqueeze(1)
+        tgt, nbr = ctr + sel * c.puck_dx * u, ctr - sel * c.puck_dx * u
+        # 로봇 회전: B 는 (x_r, 0) 둘레 th (J1 옆 이동 = puck_dx), 모두 + 오차. 회전 전 좌표 p -> 회전 뒤 base 좌표 R(-th)(p - o)
+        x_r = U(*c.turn_icr_range, (n,))
+        th = torch.where(B, s * torch.asin((c.puck_dx / (c.joint1_x - x_r)).clamp(-1.0, 1.0)), torch.zeros(n, device=dev))
+        th = th + U(-c.layout_yaw_jit, c.layout_yaw_jit, (n,))
+        cx = torch.where(B, x_r, torch.zeros(n, device=dev))
+        o = torch.stack((cx - cx * torch.cos(th), -cx * torch.sin(th)), dim=1)  # 회전 뒤 base 원점 (회전 전 좌표)
+        ct, st = torch.cos(th), torch.sin(th)
+
+        def new(p):
+            d = p - o
+            return torch.stack((ct * d[:, 0] + st * d[:, 1], -st * d[:, 0] + ct * d[:, 1]), dim=1)
+
+        bc, tgt, nbr, yaw = new(ctr), new(tgt), new(nbr), ax - th
+        # 차체 앞 끝 - 상자 가장 가까운 모서리 >= min_corner_gap (B 는 돌아서 모서리가 다가옴)
+        cy, sy = torch.cos(yaw), torch.sin(yaw)
+        corner_x = torch.stack([bc[:, 0] + half * (a * cy - b * sy) for a in (-1, 1) for b in (-1, 1)], dim=1).amin(dim=1)
+        push = (c.robot_front + c.min_corner_gap - corner_x).clamp(min=0.0)
+        shift = torch.stack((push, torch.zeros_like(push)), dim=1)
+        return bc + shift, yaw, tgt + shift, nbr + shift, B, far
+
     def _reset_idx(self, env_ids: Sequence[int] | None):
         if env_ids is None:
             env_ids = self.robot._ALL_INDICES
@@ -294,6 +355,11 @@ class WaffleTopPickEnv(DirectRLEnv):
                 log["Metrics/success_tilt"] = ok[tl].mean().item()
             if (~tl).any():
                 log["Metrics/success_vertical"] = ok[~tl].mean().item()
+            ly = self.layout[env_ids]
+            for k, name in enumerate(LAYOUTS):
+                if (ly == k).any():
+                    log[f"Metrics/success_{name}"] = ok[ly == k].mean().item()
+            log["Metrics/neighbor_disturbed"] = self.nb_bad[env_ids].float().mean().item()
             log["Metrics/max_lift"] = self.max_lift[env_ids].mean().item()
             log["Metrics/arm_box_steps"] = self.arm_box_steps[env_ids].mean().item()
             self.tlog.reset(env_ids)
@@ -313,7 +379,12 @@ class WaffleTopPickEnv(DirectRLEnv):
         tilted = torch.rand(n, device=dev) < c.tilt_prob
         self.tilted[env_ids] = tilted
         q[:, self._arm] = torch.where(tilted[:, None], self._ready_tilt.expand(n, 5), q[:, self._arm])
-        near = torch.rand(n, device=dev) < c.near_start_prob
+        # 배치 종류 (#78): 0 무작위, 1 ~ 3 = 실제 배치 A · B · C (기울임 모드만)
+        real = (torch.rand(n, device=dev) < c.layout_prob) & tilted
+        pick = torch.multinomial(torch.tensor(c.layout_weights, device=dev, dtype=torch.float), n, replacement=True) + 1
+        lay = torch.where(real, pick, torch.zeros_like(pick))
+        self.layout[env_ids] = lay
+        near = (torch.rand(n, device=dev) < c.near_start_prob) & (lay == 0)
         nz = torch.where(near, c.near_noise, c.ready_noise).unsqueeze(1)
         q[:, self._arm] = torch.clamp(q[:, self._arm] + U(-1.0, 1.0, (n, 5)) * nz, self._lo, self._hi)
         r.write_joint_position_to_sim_index(position=q, env_ids=env_ids)
@@ -333,27 +404,44 @@ class WaffleTopPickEnv(DirectRLEnv):
         self._place("boxA", env_ids, bc, yaw, torch.full((n,), BOX_H / 2, device=dev))
         is_box = torch.rand(n, device=dev) < c.box_shape_prob
         fix = tilted & is_box
-        if fix.any():  # 기울임 모드 상자 퍽: 상자 x 축 (두 퍽을 잇는 선) 을 집을 퍽의 J1 반경 방향에 맞춤 -> 퍽 면 = 반경 · 접선 (주행이 차체를 돌려 맞췄다고 가정).
+        if fix.any():  # 기울임 모드 상자 퍽: 상자 x 축 (두 퍽을 잇는 선) 을 집을 퍽의 J1 반경 방향 (옆 퍽이 뒤) 또는 접선 (옆 퍽이 옆, 실제 배치 B) 에 맞춤
             noise = U(-c.tilt_box_align, c.tilt_box_align, (n,))
+            tan = torch.rand(n, device=dev) < c.tilt_box_tangent_prob
+            side = torch.where(torch.rand(n, device=dev) < 0.5, 1.0, -1.0).unsqueeze(1)
             for _ in range(8):  # 요가 바뀌면 상자 자리 (half_proj) · 집을 퍽 자리도 조금 바뀜 -> 되풀이 (8 번이면 0.1° 안, 순수 계산 4000 개로 확인)
                 tq = bc - off
-                yaw_f = torch.atan2(tq[:, 1], tq[:, 0] - c.joint1_x) + noise
+                yaw_f = torch.atan2(tq[:, 1], tq[:, 0] - c.joint1_x) + noise + tan.float() * (math.pi / 2)
                 yaw = torch.where(fix, yaw_f, yaw)
                 half_proj = BOX_SIZE / 2 * (torch.cos(yaw).abs() + torch.sin(yaw).abs())
-                off = torch.stack((torch.cos(yaw), torch.sin(yaw)), dim=1) * 0.04  # 요가 ±90° 안이라 +x 쪽 = 옆 퍽 (부호 그대로)
+                off = torch.stack((torch.cos(yaw), torch.sin(yaw)), dim=1) * 0.04  # 반경: 요가 ±90° 안이라 +x 쪽 = 옆 퍽 (부호 그대로)
+                off = torch.where(tan[:, None], off * side, off)  # 접선: 옆 퍽은 왼쪽 · 오른쪽 무작위
                 bc_fix = torch.where(near[:, None], want + off, torch.stack((c.robot_front + gap + half_proj, lat), dim=1))
                 bc = torch.where(fix[:, None], bc_fix, bc)
-            self._place("boxA", env_ids, bc, yaw, torch.full((n,), BOX_H / 2, device=dev))
         tgt, nbr = bc - off, bc + off  # 집을 퍽 = J1 축에 가까운 쪽 (로봇 쪽)
+        nb_absent = torch.zeros(n, dtype=torch.bool, device=dev)
+        if real.any():
+            r_bc, r_yaw, r_tgt, r_nbr, r_box, r_absent = self._real_layout(lay, U)
+            m = real[:, None]
+            bc, tgt, nbr = torch.where(m, r_bc, bc), torch.where(m, r_tgt, tgt), torch.where(m, r_nbr, nbr)
+            yaw = torch.where(real, r_yaw, yaw)
+            is_box = torch.where(lay == 3, is_box, torch.where(real, r_box, is_box))  # C 는 모양 무작위
+            nb_absent = real & r_absent
+        self._place("boxA", env_ids, bc, yaw, torch.full((n,), BOX_H / 2, device=dev))
         self.is_box[env_ids] = is_box
+        self.nb_absent[env_ids] = nb_absent
         park = torch.tensor([0.0, 0.7], device=dev).expand(n, 2)
+        nbr = torch.where(nb_absent[:, None], park + torch.tensor([0.2, 0.0], device=dev), nbr)
         z = torch.full((n,), PUCK_Z, device=dev)
         self._place("puckT_box", env_ids, torch.where(is_box[:, None], tgt, park), yaw, z)
         self._place("puckT_cyl", env_ids, torch.where(is_box[:, None], park + torch.tensor([0.1, 0.0], device=dev), tgt), yaw, z)
         self._place("puckN", env_ids, nbr, yaw, z)
         self.nb_prev[env_ids] = nbr + org[:, :2]
+        self.nb_xy0[env_ids] = nbr + org[:, :2]
+        self.nb_bad[env_ids] = False
         self.puck_z0[env_ids] = PUCK_Z + org[:, 2]
         self.perc_bias[env_ids] = U(-c.perc_bias, c.perc_bias, (n, 3))
+        self.latched[env_ids] = torch.rand(n, device=dev) < c.perc_latch_prob
+        self.perc_fix[env_ids] = torch.cat((tgt + org[:, :2], (PUCK_Z + org[:, 2]).unsqueeze(1)), dim=1) + self.perc_bias[env_ids]
         self.perc_yaw[env_ids] = yaw + U(-c.perc_yaw_bias, c.perc_yaw_bias, (n,))
         self.actions[env_ids] = 0.0
         self.actions[env_ids, -1] = 1.0

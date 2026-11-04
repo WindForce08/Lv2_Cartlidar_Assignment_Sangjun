@@ -29,7 +29,8 @@
 | /perception/barcode | robot_interfaces/Barcode | Reliable, depth 1 | perception_node (READ_BARCODE) | mission (plan 모드), mission_planner |
 | /perception/task_marker | robot_interfaces/TaskMarker | Reliable, depth 1 | perception_node (READ_MARKER) | (없음) |
 | /perception/rear_obstacle · `/reason` · `/distance` | std_msgs/Bool · String · Float32 | Reliable + TransientLocal (distance 기본) | rear_obstacle (뒤 D435 깊이, perception.launch `use_rear_obstacle`) | (없음 — 후진 판단에 쓸지 결정 필요) |
-| /localization/status | std_msgs/String | Reliable + TransientLocal | **(발행 노드 없음 — 재위치 노드 미구현)** | perception_survey (못 받으면 관측을 그대로 받음) |
+| /localization/status | std_msgs/String | Reliable + TransientLocal | loc_monitor (localization 패키지, 10 Hz · 바뀔 때: OK · SUSPECT · LOST · RECOVERING · CONFIRM · FAILED) | perception_survey (OK 일 때만 관측을 받음, 1 s 넘게 못 받으면 그대로 받음) |
+| /localization/lock | std_msgs/Bool | Reliable + TransientLocal | loc_monitor (OK · SUSPECT 가 아니면 true) | (없음 — twist_mux lock 연결 #93) |
 | /perception/obstacle_stop | std_msgs/Bool | Reliable + TransientLocal, 10 Hz | obstacle_stop (`/tfmini/range` 판정) | twist_mux (lock priority 60, 0.5 s: drive · nav 막음, 조이스틱 통과) |
 | /perception/obstacle_stop/reason | std_msgs/String | Reliable + TransientLocal | obstacle_stop (obstacle · too_close · stale · clear · no_return) | 모니터링 |
 | /tfmini/scan | sensor_msgs/LaserScan | SensorData | Gazebo (gz_bridge) | scan_to_range → /tfmini/range |
@@ -57,7 +58,7 @@
 |---|---|---|---|---|
 | /drive/navigate | Action | nav2_msgs/NavigateToPose | mission | drive → nav2 (같은 위치면 spin) |
 | /drive/align | Action | robot_interfaces/AlignBase | mission | drive |
-| /drive/execute_skill | Action | robot_interfaces/ExecuteSkill | mission | drive |
+| /drive/execute_skill | Action | robot_interfaces/ExecuteSkill | mission | drive (강화학습 정책, 또는 정해진 회전 `turn_p<deg>` · `turn_m<deg>` · `turn_0` = 직전 FINE 정렬 방향 기준, #77) |
 | /manipulator/pose | Action | robot_interfaces/ArmPose | mission | manipulator |
 | /manipulator/pick | Action | robot_interfaces/Pick | mission | manipulator |
 | /manipulator/execute_skill | Action | robot_interfaces/ExecuteSkill | mission | manipulator |
@@ -91,6 +92,11 @@
 | Barcode | /perception/barcode (LOCATE 위치 · READ 문자열) |
 | CheckDice | /perception/check_dice (선반 3×3 주사위 판정) |
 | Puck · PuckArray | /perception/pucks. Puck = tag_id · color · shape · pose (base_link) · standing · confidence · camera |
+
+- **상자 퍽 면 요** (#81, 메시지는 그대로): 대상은 `shape = SHAPE_CUBOID` · `standing` · `orientation_valid`인 퍽이다.
+  - 값: `pose.orientation`의 x축을 base_link xy 평면에 투영한 각을 90° 주기로 접은 것 [−45°, 45°)이다. 태그가 면 모서리와 나란하므로 이 x축이 옆면 방향이다.
+  - 헬퍼: C++ `perception/face_yaw.hpp`, Python `perception_survey.face_yaw`(`face_yaw(qx, qy, qz, qw)`, `face_yaw_error(면 요, J1 → 퍽 방향각)`).
+  - 팔 카메라 태그 퍽에만 있다. D435 색 검출 퍽은 방향이 없다(orientation_valid false).
 
 ## USB 패킷 (opencr_protocol.hpp = opencr_firmware/opencr_protocol.h)
 

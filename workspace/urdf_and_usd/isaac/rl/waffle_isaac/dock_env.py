@@ -19,6 +19,7 @@ from waffle_4wd_isaac.robot_cfg import ARM_JOINTS, FINGER_JOINTS, WHEEL_SPEED_MA
 if TYPE_CHECKING:
     from .dock_env_cfg import WaffleDockEnvCfg
 
+RESULTS = {1: "성공", 2: "면 넘음", 3: "차체 접촉", 4: "벗어남", 5: "시간 초과"}
 FRONT = 0.1328  # base_link 에서 앞 끝 (상판) x, mission_planner/poses.py 와 같음
 HALF_W = 0.1676  # 바퀴 바깥 y
 
@@ -66,6 +67,12 @@ class WaffleDockEnv(DirectRLEnv):
         self.collided = torch.zeros(n, dtype=torch.bool, device=self.device)
         self.lost = torch.zeros(n, dtype=torch.bool, device=self.device)
         self.hit_body = torch.zeros(n, dtype=torch.bool, device=self.device)
+        # 평가용 (dock_eval.py): 목표 고정, 끝난 에피소드 결과 (RESULTS 번호) · 마지막 오차 (앞뒤, 옆, 요) · 길이 [스텝]
+        self.eval_target: torch.Tensor | None = None
+        self.last_err = torch.zeros(n, 3, device=self.device)
+        self.ep_result = torch.zeros(n, dtype=torch.long, device=self.device)
+        self.ep_err = torch.zeros(n, 3, device=self.device)
+        self.ep_len = torch.zeros(n, dtype=torch.long, device=self.device)
         print(f"[Dock] 목표 {len(self.target_names)} 곳: {', '.join(self.target_names)}", flush=True)
 
     @property
@@ -149,6 +156,7 @@ class WaffleDockEnv(DirectRLEnv):
         self.collided = contact | over
         self.hit_body = contact
         self.lost = dist > self.cfg.max_dist
+        self.last_err = torch.stack((along, lat, eyaw), dim=1)
         rew = (
             self.cfg.rew_progress * progress
             + self.cfg.rew_success * self.success.float()
@@ -184,10 +192,18 @@ class WaffleDockEnv(DirectRLEnv):
             log["Episode/collision_rate"] = self.collided[env_ids].float().mean().item()
             log["Episode/body_contact_rate"] = self.hit_body[env_ids].float().mean().item()
             log["Episode/lost_rate"] = self.lost[env_ids].float().mean().item()
+            code = torch.full((len(env_ids),), 5, dtype=torch.long, device=self.device)
+            code[self.lost[env_ids]] = 4
+            code[self.collided[env_ids]] = 2
+            code[self.hit_body[env_ids]] = 3
+            code[self.success[env_ids]] = 1
+            self.ep_result[env_ids] = code
+            self.ep_err[env_ids] = self.last_err[env_ids]
+            self.ep_len[env_ids] = self.episode_length_buf[env_ids]
         super()._reset_idx(env_ids)
         n = len(env_ids)
         dev = self.device
-        idx = torch.randint(0, self.targets.shape[0], (n,), device=dev)
+        idx = torch.randint(0, self.targets.shape[0], (n,), device=dev) if self.eval_target is None else self.eval_target[env_ids]
         self.tgt_idx[env_ids] = idx
         t = self.targets[idx]
         org = self.scene.env_origins[env_ids, :2]

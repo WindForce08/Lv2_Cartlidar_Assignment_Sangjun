@@ -4,7 +4,7 @@
 # B안 팔레트 (2026-11-02): 위에서 집기 + 고정 궤적 놓기
 #   ./run_rl.sh toppick [환경 수] [반복]       위에서 집기 학습 -> logs/rsl_rl/waffle_toppick/
 #   ./run_rl.sh toppick_play [환경 수]         위에서 집기 최근 체크포인트를 창으로
-#   ./run_rl.sh toppick_eval [환경 수]         위에서 집기 실제 과제 평가 (policies/toppick_latest.pt, 기울임 · 수직 모드별)
+#   ./run_rl.sh toppick_eval [환경 수] [--seed N] [--layout mix|rand|A|B|C]  위에서 집기 평가 (policies/toppick_latest.pt, 배치별)
 #   ./run_rl.sh pallet_check                   팔레트 놓기 고정 궤적 확인 (칸 12 x 원기둥 · 상자, pallet_place_check.json). 궤적은 python3 pallet_traj.py
 #   ./run_rl.sh pallet_check_play [대 수]      위 것을 창으로
 #   ./run_rl.sh pallet_drop                    팔 없이 퍽만 칸에 떨어뜨려 팔레트 충돌 형상 확인
@@ -49,7 +49,7 @@ pol() { [ -f "$HERE/policies/$1" ] && echo "--checkpoint $HERE/policies/$1" || e
 case "${1:-}" in
   toppick) "${PY[@]}" "$HERE/train.py" --task Waffle-TopPick-Direct --num_envs "${2:-256}" --max_iterations "${3:-300}" --viz none ;;
   toppick_play) env -u HEADLESS "${PY[@]}" "$HERE/play.py" --task Waffle-TopPick-Direct --num_envs "${2:-16}" --checkpoint latest --viz kit ;;
-  toppick_eval) "${PY[@]}" "$HERE/toppick_eval.py" --num_envs "${2:-256}" ;;
+  toppick_eval) "${PY[@]}" "$HERE/toppick_eval.py" --num_envs "${2:-256}" "${@:3}" ;;
   pallet_check) "${PY[@]}" "$HERE/pallet_place_check.py" ;;
   pallet_check_play) env -u HEADLESS "${PY[@]}" "$HERE/pallet_place_check.py" --gui --num_envs "${2:-4}" ;;
   pallet_drop) "${PY[@]}" "$HERE/pallet_place_check.py" --drop ;;

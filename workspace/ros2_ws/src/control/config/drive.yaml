@@ -46,3 +46,13 @@ drive_node:
       max_angular: 1.5
       scan_bins: 360
       front_margin: 0.10             # 정책 주행: 범퍼 앞면(base.front_offset) + 이 거리 안에 점 (±scan.half_angle) → 전진 0, 회전 허용 ★
+    turn:                          # 상자 퍽 45° 집기 제자리 회전 turn_p<deg> · turn_m<deg> · turn_0 (#77). skill.enabled 와 상관없이 받음
+      kp: 2.0                      # (rad/s) / rad, 되먹임 = /odometry/filtered yaw, 기준 = 직전 FINE 정렬 성공 때 yaw
+      max_angular: 0.6
+      min_angular: 0.15            # ★ 실물에서 제자리 회전이 시작되는 최소 속도로
+      tolerance_deg: 1.0           # 끝 yaw 허용 (이슈 ±1.5°)
+      settle_cycles: 6             # 20 Hz × 6 = 0.3 s
+      max_deg: 30.0                # 이보다 큰 회전 이름은 거부
+      j1_x: 0.096                  # base_link → J1 축 x (mission_planner poses.J1_X)
+      center_x: -0.04035           # 계획기가 가정한 회전 중심 = 외곽 가운데 (poses.CENTER_X)
+      icr_x: -0.0658               # ★ 실제 제자리 회전 중심 x (Isaac B안 모의 #92). J1 옆 이동이 같게 각을 바꿈: 17.06° → 14.3°. 실물 회전 시험으로 다시 잼

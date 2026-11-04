@@ -29,8 +29,10 @@
   <depend>diagnostic_msgs</depend>
   <depend>nav_msgs</depend>
   <depend>ament_index_cpp</depend>
+  <depend>yaml_cpp_vendor</depend>
 
   <exec_depend>perception</exec_depend>
+  <exec_depend>mission_planner</exec_depend>   <!-- place_<L>_* 칸 좌표표 (config/approach_poses.yaml) -->
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
 

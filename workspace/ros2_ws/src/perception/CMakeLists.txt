@@ -110,6 +110,8 @@ if(BUILD_TESTING)
   # 장소 상자 윗면 찾기 (place_box.hpp, 헤더만)
   ament_add_gtest(test_place_box test/test_place_box.cpp)
   target_link_libraries(test_place_box perception_detector)
+  ament_add_gtest(test_face_yaw test/test_face_yaw.cpp)
+  target_link_libraries(test_face_yaw perception_detector)   # include 경로
   ament_add_gtest(test_perception_logic test/test_tfmini.cpp test/test_vision.cpp test/test_tracker_tag.cpp
     test/test_inputs.cpp test/test_lidar.cpp test/test_puck.cpp test/test_signal.cpp test/test_dice.cpp
     test/test_signal_light.cpp test/test_depth_split.cpp
