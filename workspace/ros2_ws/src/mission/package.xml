@@ -23,7 +23,9 @@
   <depend>tf2_ros</depend>
   <depend>tf2_geometry_msgs</depend>
   <depend>yaml_cpp_vendor</depend>
+  <depend>ament_index_cpp</depend>
 
+  <exec_depend>mission_planner</exec_depend>   <!-- survey 조사 자세 (approach_poses.yaml) -->
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
 

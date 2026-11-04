@@ -38,7 +38,7 @@
 //   퍽 측량 (survey.enabled, 이슈 #39 #53) — observe 와 plan 사이에 붙는다:
 //   survey_start                  /perception/survey/start (std_srvs/Trigger) → survey.mode 켜기
 //   survey_view <box> <arm_pose>  팔 자세 → survey.mode → survey.settle_s 기다림 (perception_survey 가 /perception/pucks 를 쌓음)
-//                                 박스마다 goto (survey.poses) [+ approach survey.approach_distance] 뒤에 붙는다
+//                                 박스마다 goto (survey.sides 면의 approach_poses.yaml stage) [+ approach survey.approach_distance] 뒤에 붙는다
 //   survey_finish                 /perception/survey/finish. 성공 = 12칸 확정 → 완료 파일 (message = 경로) 을 계획기 퍽 등록표
 //                                 (survey.pucks_out, mission_planner pucks_file 과 같은 경로) 로 바꿔 씀.
 //                                 실패면 /perception/survey/revisit → 문제 칸이 있는 박스만 survey.revisit_arm_pose 로 다시 보고 finish (#53).
@@ -77,6 +77,7 @@
 #include "diagnostic_msgs/msg/diagnostic_status.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "nav2_msgs/action/navigate_to_pose.hpp"
+#include "ament_index_cpp/get_package_share_path.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
 #include "rclcpp_components/register_node_macro.hpp"
@@ -336,12 +337,13 @@ private:
     log_dir_ = declare_parameter<std::string>("log_dir", "");                // 비우면 기록 안 함
 
     // 퍽 측량 (perception_survey, #39 #53). 박스 1~6 마다 조사 자세 [x, y, yaw] (지도 = 발제 좌표)
-    //   기본값 = mission_planner config/approach_poses.yaml 의 stage (B1~B4 남쪽 · B5 북쪽 · B6 서쪽)
+    //   = 계획기 접근 자세표 (mission_planner approach_poses.yaml) 의 B<box>:<side> stage 를 읽음 (한 곳에서만 고치게).
+    //   survey.poses 를 주면 그 값을 대신 씀 (자세표 없이 시험할 때)
     survey_enabled_ = declare_parameter<bool>("survey.enabled", false);
     survey_boxes_ = declare_parameter<std::vector<int64_t>>("survey.boxes", {1, 2, 3, 4, 5, 6});
-    survey_poses_ = declare_parameter<std::vector<double>>("survey.poses", {
-      1.468, 0.3647, 1.5708, 3.67, 2.4667, 1.5708, 2.936, 4.6687, 1.5708,
-      0.734, 4.6687, 1.5708, 2.202, 5.9393, -1.5708, 2.9847, 3.886, 0.0});
+    survey_sides_ = declare_parameter<std::vector<std::string>>("survey.sides", {"S", "S", "S", "S", "N", "W"});
+    survey_poses_file_ = declare_parameter<std::string>("survey.poses_file", "");   // 빈 문자열 = mission_planner share
+    survey_poses_ = declare_parameter<std::vector<double>>("survey.poses", std::vector<double>{});
     survey_approach_ = declare_parameter<double>("survey.approach_distance", 0.13);   // 0 = 조사 자세에서 바로 봄
     survey_arm_pose_ = declare_parameter<std::string>("survey.arm_pose", "BOX_VIEW");
     survey_revisit_arm_pose_ = declare_parameter<std::string>("survey.revisit_arm_pose", "TAG_VIEW");   // 다른 각도
@@ -358,6 +360,36 @@ private:
     timeout_["check_marker"] = declare_parameter<double>("timeout.check_marker", 10.0);
     timeout_["survey"] = declare_parameter<double>("timeout.survey", 20.0);          // start · finish 서비스
     timeout_["survey_view"] = declare_parameter<double>("timeout.survey_view", 30.0);
+  }
+
+  // 계획기 접근 자세표에서 survey.boxes 마다 B<box>:<side> 의 stage [x, y, yaw] 를 읽음. 없으면 노드 시작 실패
+  void loadSurveyPoses()
+  {
+    if (survey_sides_.size() != survey_boxes_.size()) {
+      throw std::invalid_argument("survey.sides must have one side (S | N | W | E) for each of survey.boxes");
+    }
+    std::string file = survey_poses_file_;
+    try {
+      if (file.empty()) {
+        file = (ament_index_cpp::get_package_share_path("mission_planner") / "config" / "approach_poses.yaml").string();
+      }
+      const YAML::Node doc = YAML::LoadFile(file);
+      for (size_t i = 0; i < survey_boxes_.size(); ++i) {
+        const std::string key = "B" + std::to_string(survey_boxes_[i]) + ":" + survey_sides_[i];
+        const YAML::Node a = doc[key];
+        if (!a || !a["stage"] || a["stage"].size() != 3) {
+          throw std::invalid_argument(key + " stage [x, y, yaw] not in " + file);
+        }
+        if (a["ok"] && !a["ok"].as<bool>()) {
+          throw std::invalid_argument(key + " is not reachable (ok: false) in " + file);
+        }
+        for (const auto & v : a["stage"]) {survey_poses_.push_back(v.as<double>());}
+      }
+    } catch (const std::exception & e) {   // 패키지 · 파일 없음, YAML 오류, 키 없음
+      throw std::invalid_argument("survey poses (" + (file.empty() ? std::string("mission_planner") : file) + "): " +
+              e.what());
+    }
+    RCLCPP_INFO(get_logger(), "survey: %zu pose(s) from %s", survey_boxes_.size(), file.c_str());
   }
 
   void validation()
@@ -398,11 +430,12 @@ private:
       throw std::invalid_argument("diagnostics.timeout must be >= 0 (0 = off)");
     }
     if (plan_mode_ && survey_enabled_) {
-      if (survey_poses_.size() != 3 * survey_boxes_.size()) {
-        throw std::invalid_argument("survey.poses must have [x, y, yaw] for each of survey.boxes");
-      }
       for (int64_t b : survey_boxes_) {
         if (b < 1 || b > 6) {throw std::invalid_argument("survey.boxes must be 1..6");}
+      }
+      if (survey_poses_.empty()) {loadSurveyPoses();}
+      if (survey_poses_.size() != 3 * survey_boxes_.size()) {
+        throw std::invalid_argument("survey.poses must have [x, y, yaw] for each of survey.boxes");
       }
       if (!parseModeNames(survey_mode_text_)) {throw std::invalid_argument("survey.mode: names joined by '+'");}
       if (!(survey_settle_ >= 0.0) || survey_max_rounds_ < 0 || (survey_approach_ != 0.0 && survey_approach_ < 0.13)) {
@@ -843,6 +876,9 @@ private:
     } else if (s.type == "plan") {
       requestPlan();
     } else if (s.type == "survey_start") {
+      // 이전 미션의 등록표가 남아 있으면 이번 측량이 실패해도 계획기가 그 퍽 배치로 계획하므로 지운다
+      std::error_code ec;
+      std::filesystem::remove(survey_pucks_out_, ec);
       callTrigger(survey_start_client_, "/perception/survey/start", [this](bool ok, const std::string & msg) {
           if (!ok) {failStep("survey start: " + msg); return;}
           logEvent("survey", "\"event\": \"start\"");
@@ -1698,6 +1734,8 @@ private:
   bool survey_enabled_{false};
   std::vector<int64_t> survey_boxes_;
   std::vector<double> survey_poses_;
+  std::vector<std::string> survey_sides_;
+  std::string survey_poses_file_;
   double survey_approach_{0.13}, survey_settle_{2.0};
   int survey_max_rounds_{2}, survey_round_{0};
   std::string survey_arm_pose_, survey_revisit_arm_pose_, survey_mode_text_, survey_on_unconfirmed_, survey_pucks_out_;

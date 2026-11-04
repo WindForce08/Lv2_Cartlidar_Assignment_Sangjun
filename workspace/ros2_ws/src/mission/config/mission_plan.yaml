@@ -32,9 +32,11 @@ mission_node:
     survey:
       enabled: true
       boxes: [1, 2, 3, 4, 5, 6]
-      # 박스마다 조사 자세 [x, y, yaw] (지도 = 발제 좌표) = mission_planner approach_poses.yaml stage (B1~B4 S · B5 N · B6 W)
-      poses: [1.468, 0.3647, 1.5708,  3.67, 2.4667, 1.5708,  2.936, 4.6687, 1.5708,
-              0.734, 4.6687, 1.5708,  2.202, 5.9393, -1.5708,  2.9847, 3.886, 0.0]
+      # 박스마다 조사 자세 = 계획기 접근 자세표 (mission_planner approach_poses.yaml) 의 B<box>:<side> stage 를 시작할 때 읽음
+      #   (좌표를 여기 복사하지 않음 → 자세표만 고치면 됨). 박스와 같은 순서로 면 S · N · W · E
+      sides: [S, S, S, S, N, W]
+      poses_file: ""             # 빈 문자열 = <mission_planner share>/config/approach_poses.yaml
+      # poses: [x, y, yaw, ...]  # 자세표 대신 직접 줄 때만 (박스마다 3 개)
       approach_distance: 0.13    # 조사 자세 뒤 정밀 접근 (FINE, TFmini 하한 0.13). 0 = 접근 없이 봄
       arm_pose: BOX_VIEW         # ★ 팔 카메라로 박스 윗면 퍽 태그를 보는 자세 (manipulator, #74 · #65)
       revisit_arm_pose: TAG_VIEW # 다시 볼 때 다른 각도 (#53: 거리 · 각도를 바꿔 관측)
@@ -42,4 +44,6 @@ mission_node:
       settle_s: 2.0              # 자세마다 관측을 쌓는 시간
       max_rounds: 2              # 다시 보기 횟수 (perception_survey max_revisits 와 같게)
       on_unconfirmed: fail       # 미확인 칸이 남으면 fail (안전 정지) | registered (pucks_file 등록표로 계획)
+      #   survey_start 때 pucks_out 을 지운다 (이전 미션 결과로 계획하지 않게). 그래서 registered 로 계획하려면
+      #   계획기 pucks_file 이 pucks_out 과 다른 경로의 미리 만든 등록표여야 한다 (같은 경로면 파일이 없어 plan 실패)
       pucks_out: /tmp/mission_log/pucks_survey.yaml
